@@ -11,6 +11,10 @@ The repository also includes two collaboration folders:
 - `design_docs/`: Use for planned design and architecture work. Each design document lives in its own dated folder named `[date] - [design summary]`.
 - `meeting/`: Use for discussion records. Each meeting or topic discussion should be recorded in its own subfolder with `notes.md`, plus any artifacts and action items.
 
+## Language Guidelines
+
+All documentation, agent instructions, and project artifacts created within this repository must be written in English.
+
 ## Agent Roles
 
 ### 1. Developer Agent (Primary)
