@@ -23,19 +23,40 @@
   - Downstream Integration: expose standardized records to automation workflows, calendars, and notifications.
 - Normalized record format should include a stable set of fields for downstream processing, such as:
   - `id`: internal record identifier
-  - `source_ids`: mapping of source-specific item IDs and provenance metadata
+  - `source_entries`: provenance collection (array of source items)
+    - `source_id`: original ID from the source (e.g., tweet ID)
+    - `source_name`: source identifier (e.g., "twitter")
+    - `publish_time`: when the source item was published
+    - `url`: link to the original source item
+    - `author`: who posted it (user ID, username)
+    - `raw_content`: original text/content
   - `title`: canonical event title or announcement summary
   - `description`: normalized content summary
-  - `timestamp`: normalized publish or source item time
   - `event_time` / `start_time` / `end_time`: actual event or activity time
-  - `location` / `venue`: normalized place information for the event
-  - `type`: event category (e.g. announcement, live stream, merchandise, release)
-    - `collaboration`: activities defined by a partnership or co-branded project
-    - `side event`: ancillary activities related to a main event, such as merch or pre-show sessions
+  - `venue`: normalized place information for the event
+    - `name`: venue name (e.g., "Tokyo Dome", "Twitch")
+    - `address`: physical address (for in-person events)
+    - `coordinates`: latitude/longitude (optional)
+    - `url`: platform/stream URL (for virtual events)
+    - `city` / `country`: geographic context
+  - `type`: event category
+    - `announcement` — general announcement
+    - `live_stream` — live stream event
+    - `merchandise` — merchandise release/news
+    - `release` — song/album/content release
+    - `concert` — concert or live show
+    - `broadcast` — TV/radio program update
+    - `collaboration` — partnership or co-branded project
+    - `side_event` — ancillary activity (merch booth, pre-show session, etc.)
+  - `is_cancelled`: boolean flag for cancelled events
   - `artist`: normalized artist/personality metadata
-  - `source_metadata`: source-specific details preserved for auditing and context
+    - `id`: unique artist identifier
+    - `name`: display name
+    - `handle`: social media handle (e.g., Twitter/X username)
+    - `profile_url`: link to artist profile
+    - `categories`: artist type (e.g., singer, Vtuber, idol, voice actor)
+    - `groups`: associated groups or units (if applicable)
   - `tags`: normalized labels for event type, platform, fandom, or priority
-- Source-specific original time and location should also be preserved in `source_metadata` when available, so the normalized event can retain context and provenance.
 - Support one event with multiple source entries, including multiple items from the same source. The normalized event should represent the consolidated activity, while preserving each source item in `source_entries` or equivalent provenance collections.
 - Adopt a main event + related sub-events design. Main events and sub-events share the same event-like data structure.
 - The only structural difference is:
@@ -46,10 +67,11 @@
 - Sub-events should not have their own `sub_events`; only main events can have children in the hierarchy.
 - Interfaces should be abstract and stable: `fetchUpdates()`, `normalize(raw)`, `merge(existing, normalized)`, `save(record)`, `export(record)`.
 - Basic end-to-end flow should be expressed clearly in the design notes before any implementation details.
+- Merge/deduplication goal: consolidate multiple source items referring to the same event into a single normalized record while preserving all provenance in `source_entries`.
 
 ## Artifacts
 
--
+- `ARCHITECTURE.md` in project root
 
 ## Decisions
 
@@ -57,4 +79,4 @@
 
 ## Action Items
 
--
+- Create `ARCHITECTURE.md` in project root
