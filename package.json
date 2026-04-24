@@ -7,10 +7,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "start:tui": "tsx src/index.tsx",
-    "login:twitter": "tsx scratch/twitter_login.ts",
-    "test:twitter": "tsx scratch/test_twitter.ts",
-    "test:scheduler": "tsx scratch/test_scheduler.ts",
-    "test:watchlist": "tsx scratch/test_watchlist.ts",
+    "login:twitter": "tsx src/scripts/twitter_login.ts",
+    "start:backend": "tsx src/daemon.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
