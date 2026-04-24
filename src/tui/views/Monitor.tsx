@@ -7,6 +7,9 @@ export default function Monitor() {
   const [stats, setStats] = useState<{ total: number; new: number; processed: number; error: number } | null>(null);
   const [recentItems, setRecentItems] = useState<RawItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [cursor, setCursor] = useState(0);
+  const [windowStart, setWindowStart] = useState(0);
+  const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
 
   const storage = React.useMemo(() => new RawStorage(), []);
 
@@ -14,7 +17,7 @@ export default function Monitor() {
     setLoading(true);
     const [s, items] = await Promise.all([
       storage.getStats(),
-      storage.getUnprocessed(undefined, 10),
+      storage.getUnprocessed(undefined, 100), // Fetch up to 100 items
     ]);
     setStats(s);
     setRecentItems(items);
@@ -23,9 +26,36 @@ export default function Monitor() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  useInput((input) => {
+  useInput((input, key) => {
+    // Refresh
     if (input === "r") {
       loadData();
+      return;
+    }
+
+    if (recentItems.length === 0) return;
+
+    // Navigation
+    if (key.upArrow && cursor > 0) {
+      const newCursor = cursor - 1;
+      setCursor(newCursor);
+      if (newCursor < windowStart) setWindowStart(newCursor);
+    }
+    if (key.downArrow && cursor < recentItems.length - 1) {
+      const newCursor = cursor + 1;
+      setCursor(newCursor);
+      if (newCursor >= windowStart + 10) setWindowStart(newCursor - 9);
+    }
+
+    // Expand / Collapse
+    if (key.return) {
+      const selected = recentItems[cursor];
+      setExpandedItemId(expandedItemId === selected.id ? null : selected.id);
+    }
+
+    // Collapse on Esc
+    if (key.escape) {
+      setExpandedItemId(null);
     }
   });
 
@@ -66,14 +96,44 @@ export default function Monitor() {
           <Text color="yellow" italic>No unprocessed items.</Text>
         ) : (
           <Box flexDirection="column" marginTop={1}>
-            {recentItems.map((item) => (
-              <Box key={item.id} flexDirection="row" gap={2}>
-                <Text dimColor>{formatTimestamp(item.fetchedAt)}</Text>
-                <Text color="blue">{item.sourceName}</Text>
-                <Text>{item.sourceId.substring(0, 20)}</Text>
-                <StatusBadge status={item.status} />
+            {recentItems.slice(windowStart, windowStart + 10).map((item, index) => {
+              const actualIndex = windowStart + index;
+              const tweetText = item.rawData?.legacy?.full_text || "[No text found]";
+              const snippet = tweetText.replace(/\n/g, " ").substring(0, 40) + (tweetText.length > 40 ? "..." : "");
+              const rawCreatedAt = item.rawData?.legacy?.created_at;
+              const postTime = rawCreatedAt ? formatTimestamp(new Date(rawCreatedAt)) : "Unknown post time";
+              const isSelected = actualIndex === cursor;
+              const isExpanded = expandedItemId === item.id;
+              
+              return (
+                <Box key={item.id} flexDirection="column">
+                  <Box flexDirection="row" gap={2}>
+                    <Text color={isSelected ? "cyan" : undefined}>{isSelected ? "▸" : " "}</Text>
+                    <Text dimColor>↓ {formatTimestamp(item.fetchedAt)}</Text>
+                    <Text color="blue">{item.sourceName}</Text>
+                    <Text>{item.sourceId.substring(0, 19)}</Text>
+                    <StatusBadge status={item.status} />
+                    <Text color="gray">✉ {postTime}</Text>
+                    <Text dimColor italic>{snippet}</Text>
+                  </Box>
+
+                  {/* Expanded JSON View */}
+                  {isExpanded && (
+                    <Box marginLeft={4} marginTop={1} marginBottom={1} borderStyle="single" padding={1} width="95%">
+                      <Text>{JSON.stringify(item.rawData, null, 2).split("\n").slice(0, 30).join("\n")}</Text>
+                      <Text dimColor italic>... (truncated for preview)</Text>
+                    </Box>
+                  )}
+                </Box>
+              );
+            })}
+            {recentItems.length > 10 && (
+              <Box marginTop={1}>
+                <Text dimColor italic>
+                  Showing {windowStart + 1} - {Math.min(windowStart + 10, recentItems.length)} of {recentItems.length} items
+                </Text>
               </Box>
-            ))}
+            )}
           </Box>
         )}
       </Box>
@@ -81,7 +141,7 @@ export default function Monitor() {
       {/* Keybindings */}
       <Box marginTop={1} borderStyle="single" borderColor="gray" paddingX={1}>
         <Text dimColor>
-          <Text color="white">r</Text> Refresh
+          ↑↓ Navigate  ⏎ Expand  <Text color="white">r</Text> Refresh
         </Text>
       </Box>
     </Box>
@@ -102,5 +162,6 @@ function formatTimestamp(date: Date): string {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
+    timeZoneName: "short"
   });
 }
