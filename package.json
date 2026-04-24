@@ -9,6 +9,7 @@
     "start:tui": "tsx src/index.tsx",
     "login:twitter": "tsx scratch/twitter_login.ts",
     "test:twitter": "tsx scratch/test_twitter.ts",
+    "test:scheduler": "tsx scratch/test_scheduler.ts",
     "test:watchlist": "tsx scratch/test_watchlist.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
