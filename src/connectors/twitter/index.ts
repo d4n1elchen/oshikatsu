@@ -1,6 +1,6 @@
 import { chromium, type BrowserContext, type Page } from "playwright";
 import type { BaseConnector } from "../types";
-import type { SourceEntry } from "../../core/types";
+import type { WatchTarget } from "../../core/types";
 
 export interface TwitterConnectorConfig {
   browser: {
@@ -34,7 +34,7 @@ export class TwitterConnector implements BaseConnector {
     this.page = await this.context.newPage();
   }
 
-  async fetchUpdates(source: SourceEntry): Promise<Record<string, any>[]> {
+  async fetchUpdates(source: WatchTarget): Promise<Record<string, any>[]> {
     if (!this.page) throw new Error("Browser not started");
 
     const username = source.sourceConfig.username as string;

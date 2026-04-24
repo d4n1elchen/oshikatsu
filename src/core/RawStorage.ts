@@ -10,15 +10,17 @@ export class RawStorage {
    * Handles deduplication via the unique index on (source_name, source_id)
    * and using SQLite's INSERT OR IGNORE behavior.
    */
-  async saveItems(items: Omit<NewRawItem, "id" | "fetchedAt" | "status">[], watchTargetId: string): Promise<void> {
-    if (items.length === 0) return;
+  async saveItems(watchTargetId: string, sourceName: string, items: Array<{ sourceId: string; rawData: any }>): Promise<number> {
+    if (items.length === 0) return 0;
 
-    const valuesToInsert: NewRawItem[] = items.map(item => ({
-      ...item,
-      id: randomUUID(),
+    const newItems: NewRawItem[] = items.map(item => ({
+      id: `${sourceName}_${item.sourceId}`, // Deterministic ID for deduplication
       watchTargetId,
+      sourceName,
+      sourceId: item.sourceId,
+      rawData: item.rawData,
       fetchedAt: new Date(),
-      status: "new" as const
+      status: "new",
     }));
 
     try {
@@ -29,7 +31,7 @@ export class RawStorage {
 
       return result.length;
     } catch (e) {
-      console.error(`Error saving raw items for sourceEntry ${sourceEntryId}:`, e);
+      console.error(`Error saving raw items for watchTarget ${watchTargetId}:`, e);
       return 0;
     }
   }

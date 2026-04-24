@@ -2,9 +2,9 @@ import React, { useState, useCallback } from "react";
 import { Box, Text, useInput } from "ink";
 import { TextInput } from "@inkjs/ui";
 import { WatchListManager } from "../../core/WatchListManager";
-import type { Artist, SourceEntry } from "../../core/types";
+import type { Artist, WatchTarget } from "../../core/types";
 
-type Mode = "browse" | "add-artist" | "edit-artist" | "add-source";
+type Mode = "browse" | "add-artist" | "edit-artist" | "add-target";
 
 interface FormState {
   step: number;
@@ -15,7 +15,7 @@ interface FormState {
 }
 
 export default function WatchList() {
-  const [artists, setArtists] = useState<(Artist & { sources?: SourceEntry[] })[]>([]);
+  const [artists, setArtists] = useState<(Artist & { targets?: WatchTarget[] })[]>([]);
   const [loading, setLoading] = useState(true);
   const [cursor, setCursor] = useState(0);
   const [expandedArtistId, setExpandedArtistId] = useState<string | null>(null);
@@ -28,11 +28,11 @@ export default function WatchList() {
   const loadData = useCallback(async () => {
     setLoading(true);
     const data = await wlm.listArtists();
-    // Load sources for each artist
+    // Load targets for each artist
     const enriched = await Promise.all(
       data.map(async (artist) => ({
         ...artist,
-        sources: await wlm.getSourcesForArtist(artist.id),
+        targets: await wlm.getTargetsForArtist(artist.id),
       }))
     );
     setArtists(enriched);
@@ -73,9 +73,9 @@ export default function WatchList() {
       setMode("edit-artist");
     }
 
-    // Add source to selected artist
+    // Add target to selected artist
     if (input === "s" && artists.length > 0) {
-      setMode("add-source");
+      setMode("add-target");
       setForm({ step: 0, name: "", categories: "", platform: "twitter", username: "" });
     }
 
@@ -129,16 +129,16 @@ export default function WatchList() {
     );
   }
 
-  // --- Add Source Form ---
-  if (mode === "add-source" && artists.length > 0) {
+  // --- Add Target Form ---
+  if (mode === "add-target" && artists.length > 0) {
     const selectedArtist = artists[cursor];
     return (
-      <AddSourceForm
+      <AddTargetForm
         artistName={selectedArtist.name}
         onDone={async (username) => {
           if (username.trim()) {
-            await wlm.addSource(selectedArtist.id, "twitter", "user_timeline", { username: username.trim() });
-            flash(`Added source @${username.trim()} to ${selectedArtist.name}`);
+            await wlm.addTarget(selectedArtist.id, "twitter", "user_timeline", { username: username.trim() });
+            flash(`Added target @${username.trim()} to ${selectedArtist.name}`);
           }
           setMode("browse");
           await loadData();
@@ -174,27 +174,26 @@ export default function WatchList() {
                 </Text>
                 <Text dimColor> [{artist.categories.join(", ") || "no tags"}]</Text>
                 {artist.groups && artist.groups.length > 0 && (
-                  <Text dimColor> &lt;{artist.groups.join(", ")}&gt;</Text>
+                  <Text dimColor> &lt{artist.groups.join(", ")}&gt;</Text>
                 )}
                 <Text> {artist.enabled ? "✅" : "❌"}</Text>
-                {artist.sources && artist.sources.length > 0 && (
-                  <Text dimColor> ({artist.sources.length} source{artist.sources.length > 1 ? "s" : ""})</Text>
+                {artist.targets && artist.targets.length > 0 && (
+                  <Text dimColor> ({artist.targets.length} target{artist.targets.length > 1 ? "s" : ""})</Text>
                 )}
               </Box>
 
-              {/* Expanded source list */}
-              {expandedArtistId === artist.id && artist.sources && (
-                <Box flexDirection="column" marginLeft={4} marginBottom={1}>
-                  {artist.sources.length === 0 ? (
-                    <Text dimColor italic>No sources configured</Text>
+              {/* Targets List (Expanded) */}
+              {expandedArtistId === artist.id && artist.targets && (
+                <Box flexDirection="column" marginLeft={4} marginTop={1} marginBottom={1}>
+                  {artist.targets.length === 0 ? (
+                    <Text color="yellow" italic>No targets configured.</Text>
                   ) : (
-                    artist.sources.map(src => (
-                      <Box key={src.id}>
-                        <Text color={src.enabled ? "green" : "gray"}>
-                          {src.enabled ? "● " : "○ "}
-                        </Text>
-                        <Text dimColor>{src.platform}</Text>
-                        <Text> @{(src.sourceConfig as any).username || "?"}</Text>
+                    artist.targets.map((target) => (
+                      <Box key={target.id} flexDirection="row" gap={2}>
+                        <Text>└─</Text>
+                        <Text color="blue">{target.platform}</Text>
+                        <Text color="cyan">{target.sourceConfig.username ? `@${target.sourceConfig.username}` : target.sourceType}</Text>
+                        <Text> {target.enabled ? "✅" : "❌"}</Text>
                       </Box>
                     ))
                   )}
@@ -215,7 +214,7 @@ export default function WatchList() {
       {/* Keybindings help */}
       <Box marginTop={1} borderStyle="single" borderColor="gray" paddingX={1}>
         <Text dimColor>
-          ↑↓ Navigate  ⏎ Expand  <Text color="white">a</Text> Add Artist  <Text color="white">e</Text> Edit  <Text color="white">s</Text> Add Source  <Text color="white">t</Text> Toggle  <Text color="white">d</Text> Delete
+          ↑↓ Navigate  ⏎ Expand  <Text color="white">a</Text> Add Artist  <Text color="white">e</Text> Edit  <Text color="white">s</Text> Add Target  <Text color="white">t</Text> Toggle  <Text color="white">d</Text> Delete
         </Text>
       </Box>
     </Box>
@@ -303,7 +302,7 @@ function ArtistForm({ initialName = "", initialCategories = "", initialGroups = 
   );
 }
 
-function AddSourceForm({ artistName, onDone, onCancel }: {
+function AddTargetForm({ artistName, onDone, onCancel }: {
   artistName: string;
   onDone: (username: string) => void;
   onCancel: () => void;
@@ -314,11 +313,11 @@ function AddSourceForm({ artistName, onDone, onCancel }: {
 
   return (
     <Box flexDirection="column">
-      <Text bold color="cyan">Add Source for: {artistName}</Text>
+      <Text bold color="cyan">Add Target for: {artistName}</Text>
       <Box marginTop={1}>
         <Text>Twitter/X username: </Text>
         <TextInput
-          key="source-username"
+          key="target-username"
           placeholder="username (no @)..."
           onSubmit={(value: string) => {
             onDone(value);

@@ -49,15 +49,15 @@ export class IngestionScheduler {
     console.log("Scheduler stopped.");
   }
 
-  /** Execute one full ingestion cycle across all active sources. */
+  /** Execute one full ingestion cycle across all active targets. */
   async runOnce(): Promise<void> {
     console.log(`\n--- Starting ingestion cycle: ${new Date().toISOString()} ---`);
     
-    // 1. Fetch active Twitter sources
-    const activeTwitterSources = await this.wlm.getActiveSources("twitter");
-    console.log(`Found ${activeTwitterSources.length} active Twitter sources.`);
+    // 1. Fetch active Twitter targets
+    const activeTwitterTargets = await this.wlm.getActiveTargets("twitter");
+    console.log(`Found ${activeTwitterTargets.length} active Twitter watch targets.`);
 
-    if (activeTwitterSources.length > 0) {
+    if (activeTwitterTargets.length > 0) {
       // Initialize Twitter Connector
       const twitterConnector = new TwitterConnector({
         browser: {
@@ -74,23 +74,23 @@ export class IngestionScheduler {
       try {
         await twitterConnector.start();
 
-        // Process each source sequentially for safety (anti-bot)
-        for (const source of activeTwitterSources) {
-          console.log(`Fetching updates for ${source.sourceConfig.username}...`);
+        // Process each target sequentially for safety (anti-bot)
+        for (const target of activeTwitterTargets) {
+          console.log(`Fetching updates for ${target.sourceConfig.username}...`);
           try {
-            const items = await twitterConnector.fetchUpdates(source);
-            console.log(`Fetched ${items.length} total items from ${source.sourceConfig.username}`);
+            const items = await twitterConnector.fetchUpdates(target);
+            console.log(`Fetched ${items.length} total items from ${target.sourceConfig.username}`);
             
             if (items.length > 0) {
               const newItemsCount = await this.storage.saveItems(
-                source.id,
+                target.id,
                 "twitter",
                 items.map(i => ({ sourceId: i.sourceId, rawData: i.rawData }))
               );
               console.log(`Saved ${newItemsCount} NEW items to Raw Storage.`);
             }
           } catch (e) {
-            console.error(`Failed to fetch/save for source ${source.id}:`, e);
+            console.error(`Failed to fetch/save for watch target ${target.id}:`, e);
           }
         }
       } catch (e) {
