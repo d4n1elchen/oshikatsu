@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const artists = sqliteTable("artists", {
   id: text("id").primaryKey(),
@@ -30,4 +30,6 @@ export const rawItems = sqliteTable("raw_items", {
   fetchedAt: integer("fetched_at", { mode: "timestamp" }).notNull(),
   status: text("status", { enum: ["new", "processed", "error"] }).notNull().default("new"),
   errorMessage: text("error_message"),
-});
+}, (table) => [
+  uniqueIndex("idx_source_dedup").on(table.sourceName, table.sourceId),
+]);

@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `idx_source_dedup` ON `raw_items` (`source_name`,`source_id`);
