@@ -95,7 +95,7 @@ export class WatchListManager {
         )
       );
 
-    return results.map(r => r.source);
+    return results.map((r: any) => r.source);
   }
 
   /** Get all source entries for an artist. */
