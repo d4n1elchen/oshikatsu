@@ -2,6 +2,7 @@ import { db } from "../db";
 import { rawItems } from "../db/schema";
 import type { NewRawItem, RawItem } from "./types";
 import { eq, and, sql, desc, count } from "drizzle-orm";
+import { randomUUID } from "crypto";
 
 export class RawStorage {
   /**
@@ -9,17 +10,15 @@ export class RawStorage {
    * Handles deduplication via the unique index on (source_name, source_id)
    * and using SQLite's INSERT OR IGNORE behavior.
    */
-  async saveItems(sourceEntryId: string, sourceName: string, items: Array<{ sourceId: string; rawData: any }>): Promise<number> {
-    if (items.length === 0) return 0;
+  async saveItems(items: Omit<NewRawItem, "id" | "fetchedAt" | "status">[], watchTargetId: string): Promise<void> {
+    if (items.length === 0) return;
 
-    const newItems: NewRawItem[] = items.map(item => ({
-      id: `${sourceName}_${item.sourceId}`, // Deterministic ID for deduplication
-      sourceEntryId,
-      sourceName,
-      sourceId: item.sourceId,
-      rawData: item.rawData,
+    const valuesToInsert: NewRawItem[] = items.map(item => ({
+      ...item,
+      id: randomUUID(),
+      watchTargetId,
       fetchedAt: new Date(),
-      status: "new",
+      status: "new" as const
     }));
 
     try {
