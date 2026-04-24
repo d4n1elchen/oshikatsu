@@ -58,10 +58,10 @@ Ingest raw items from external sources (e.g., Twitter/X, Instagram, YouTube).
 
 ### 2. Watch List Manager
 
-Manages the registry of artists and their monitored sources.
+Manages the registry of artists and their monitored watch targets.
 
-- Provides CRUD operations for artists and source entries
-- Supports enable/disable toggles per artist and per individual source entry
+- Provides CRUD operations for artists and watch targets
+- Supports enable/disable toggles per artist and per individual watch target
 - Decouples "what to watch" from "how to fetch"
 
 ### 3. Normalization Engine
@@ -78,7 +78,7 @@ Converts raw source items into the unified internal event schema using LLM-based
 
 Identifies and merges duplicate or overlapping events across sources.
 
-- Goal: consolidate multiple source items referring to the same event into a single normalized record while preserving all provenance in `source_entries`
+- Goal: consolidate multiple source items referring to the same event into a single normalized record while preserving all provenance in `source_references`
 - **Execution**: Runs synchronously as the final step of the ingestion pipeline.
 - **Deduplication Strategy**: Queries the Normalized Database for candidates within a specific time constraint (e.g., +/- 48 hours of `event_time` for the same `artist_id`), then employs heuristic matching (semantic `title` similarity or exact link matching) to identify overlaps.
 
@@ -116,7 +116,7 @@ Detects failures, tracks health metrics, and sends alerts.
 
 Handles persistence of data across the pipeline.
 
-- **Watch List**: Persists the artist registry and source entries with their enabled/disabled states.
+- **Watch List**: Persists the artist registry and watch targets with their enabled/disabled states.
 - **Raw Storage**: Persists raw payloads fetched from sources before normalization, along with metadata (source identifier, fetch timestamps, processing status).
 - **Artist Database**: Reference database of artist profiles and their known sources (e.g., social media accounts, channels). Used for enrichment and linking normalized events to known artists.
 - **Venue Database**: Reference database of venue information, used for enrichment and deduplication of event locations.
@@ -129,8 +129,9 @@ Handles persistence of data across the pipeline.
 ```json
 {
   "id": "internal record identifier",
-  "source_entries": [
+  "source_references": [
     {
+      "raw_item_id": "internal reference to the Raw Storage item",
       "source_id": "original ID from the source",
       "source_name": "source identifier (e.g., 'twitter')",
       "publish_time": "when the source item was published",
@@ -201,7 +202,7 @@ The platform provides both a **TUI (Terminal UI)** and a **Web UI** for manageme
 
 ### Watch List Management
 
-- Add, edit, remove artists and their source entries
+- Add, edit, remove artists and their watch targets
 - Toggle monitoring per artist or per individual source
 - View active vs. disabled sources at a glance
 

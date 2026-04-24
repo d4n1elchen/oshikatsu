@@ -1,8 +1,8 @@
 import { randomUUID } from "crypto";
 import { eq, and } from "drizzle-orm";
 import { db } from "../db";
-import { artists, sourceEntries } from "../db/schema";
-import type { Artist, SourceEntry } from "./types";
+import { artists, watchTargets } from "../db/schema";
+import type { Artist, WatchTarget } from "./types";
 
 export class WatchListManager {
   // --- Artist management ---
@@ -23,9 +23,9 @@ export class WatchListManager {
     return newArtist;
   }
 
-  /** Remove an artist and all their source entries. */
+  /** Remove an artist and all their watch targets. */
   async removeArtist(artistId: string): Promise<void> {
-    // Drizzle schema handles cascading deletes for sourceEntries
+    // Drizzle schema handles cascading deletes for watchTargets
     await db.delete(artists).where(eq(artists.id, artistId));
   }
 
@@ -53,11 +53,11 @@ export class WatchListManager {
     return db.select().from(artists);
   }
 
-  // --- Source entry management ---
+  // --- Watch Target management ---
 
-  /** Add a new source entry for an artist. */
-  async addSource(artistId: string, platform: string, sourceType: string, sourceConfig: Record<string, any>): Promise<SourceEntry> {
-    const newSource = {
+  /** Add a new watch target for an artist. */
+  async addTarget(artistId: string, platform: string, sourceType: string, sourceConfig: Record<string, any>): Promise<WatchTarget> {
+    const newTarget = {
       id: randomUUID(),
       artistId,
       platform,
@@ -68,46 +68,46 @@ export class WatchListManager {
       updatedAt: new Date(),
     };
 
-    await db.insert(sourceEntries).values(newSource);
-    return newSource;
+    await db.insert(watchTargets).values(newTarget);
+    return newTarget;
   }
 
-  /** Remove a source entry. */
-  async removeSource(sourceId: string): Promise<void> {
-    await db.delete(sourceEntries).where(eq(sourceEntries.id, sourceId));
+  /** Remove a watch target. */
+  async removeTarget(targetId: string): Promise<void> {
+    await db.delete(watchTargets).where(eq(watchTargets.id, targetId));
   }
 
-  /** Enable or disable a specific source. */
-  async toggleSource(sourceId: string, enabled: boolean): Promise<void> {
+  /** Enable or disable a specific watch target. */
+  async toggleTarget(targetId: string, enabled: boolean): Promise<void> {
     await db
-      .update(sourceEntries)
+      .update(watchTargets)
       .set({ enabled, updatedAt: new Date() })
-      .where(eq(sourceEntries.id, sourceId));
+      .where(eq(watchTargets.id, targetId));
   }
 
   /** 
-   * Get all active sources for a platform.
-   * Returns sources where both the artist and the source are enabled.
+   * Get all active watch targets for a platform.
+   * Returns targets where both the artist and the target are enabled.
    * Used by the Scheduler to know what to fetch.
    */
-  async getActiveSources(platform: string): Promise<SourceEntry[]> {
+  async getActiveTargets(platform: string): Promise<WatchTarget[]> {
     const results = await db
-      .select({ source: sourceEntries })
-      .from(sourceEntries)
-      .innerJoin(artists, eq(sourceEntries.artistId, artists.id))
+      .select({ target: watchTargets })
+      .from(watchTargets)
+      .innerJoin(artists, eq(watchTargets.artistId, artists.id))
       .where(
         and(
-          eq(sourceEntries.platform, platform),
-          eq(sourceEntries.enabled, true),
+          eq(watchTargets.platform, platform),
+          eq(watchTargets.enabled, true),
           eq(artists.enabled, true)
         )
       );
 
-    return results.map((r: any) => r.source);
+    return results.map((r: any) => r.target);
   }
 
-  /** Get all source entries for an artist. */
-  async getSourcesForArtist(artistId: string): Promise<SourceEntry[]> {
-    return db.select().from(sourceEntries).where(eq(sourceEntries.artistId, artistId));
+  /** Get all watch targets for an artist. */
+  async getTargetsForArtist(artistId: string): Promise<WatchTarget[]> {
+    return db.select().from(watchTargets).where(eq(watchTargets.artistId, artistId));
   }
 }

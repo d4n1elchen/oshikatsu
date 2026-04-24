@@ -10,7 +10,7 @@ export const artists = sqliteTable("artists", {
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 });
 
-export const sourceEntries = sqliteTable("source_entries", {
+export const watchTargets = sqliteTable("watch_targets", {
   id: text("id").primaryKey(),
   artistId: text("artist_id").notNull().references(() => artists.id, { onDelete: "cascade" }),
   platform: text("platform").notNull(),
@@ -23,7 +23,7 @@ export const sourceEntries = sqliteTable("source_entries", {
 
 export const rawItems = sqliteTable("raw_items", {
   id: text("id").primaryKey(),
-  sourceEntryId: text("source_entry_id").notNull().references(() => sourceEntries.id, { onDelete: "cascade" }),
+  watchTargetId: text("watch_target_id").notNull().references(() => watchTargets.id, { onDelete: "cascade" }),
   sourceName: text("source_name").notNull(),
   sourceId: text("source_id").notNull(),
   rawData: text("raw_data", { mode: "json" }).$type<Record<string, any>>().notNull(),
