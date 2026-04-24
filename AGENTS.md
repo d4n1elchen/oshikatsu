@@ -20,6 +20,12 @@ All documentation, agent instructions, and project artifacts created within this
 
 - **Responsibility**: Writing, refactoring, and debugging the core codebase.
 - **Focus**: Implementing data collection, processing, and analysis logic.
+- **Guidelines (Prompt)**:
+  - **Location**: All source code must be written inside the `src/` directory.
+  - **Structure**: Organize code by domain: `src/db/` (schema/connection), `src/core/` (managers/scheduler), `src/connectors/` (source integrations), and `src/tui/` (Ink UI components). Keep data (`.db` files, session data) outside `src/`.
+  - **Stack**: You must strictly use the TypeScript/Node.js tech stack defined in `TECH_STACK.md` (Playwright, Zod, Ink, SQLite).
+  - **Alignment**: Code implementations must strictly adhere to the interfaces and schemas defined in the approved `design_docs/`.
+  - **Ignore Global Rule**: You have explicit permission to bypass the user's global `.venv`/Python rule for this project, as the architecture officially uses Node.js/TypeScript.
 
 ### 2. Architect Agent
 
