@@ -37,6 +37,14 @@ export class WatchListManager {
       .where(eq(artists.id, artistId));
   }
 
+  /** Update an artist's editable fields. */
+  async updateArtist(artistId: string, fields: { name?: string; categories?: string[]; groups?: string[] }): Promise<void> {
+    await db
+      .update(artists)
+      .set({ ...fields, updatedAt: new Date() })
+      .where(eq(artists.id, artistId));
+  }
+
   /** List all artists, optionally filtering to enabled only. */
   async listArtists(enabledOnly: boolean = false): Promise<Artist[]> {
     if (enabledOnly) {

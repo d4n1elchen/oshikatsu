@@ -1,9 +1,28 @@
 import React, { useState } from "react";
-import { Box, Text } from "ink";
+import { Box, Text, useInput } from "ink";
 import WatchList from "./views/WatchList";
+import Monitor from "./views/Monitor";
+
+const TABS = ["watchlist", "monitor"] as const;
+type Tab = typeof TABS[number];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState("watchlist");
+  const [activeTab, setActiveTab] = useState<Tab>("watchlist");
+
+  useInput((input, key) => {
+    // Tab switching with 1/2 keys
+    if (input === "1") setActiveTab("watchlist");
+    if (input === "2") setActiveTab("monitor");
+
+    // Tab key cycles through tabs
+    if (key.tab) {
+      const currentIndex = TABS.indexOf(activeTab);
+      setActiveTab(TABS[(currentIndex + 1) % TABS.length]);
+    }
+
+    // Quit with q or Ctrl+C
+    if (input === "q") process.exit(0);
+  });
 
   return (
     <Box flexDirection="column" padding={1} width="100%">
@@ -11,6 +30,7 @@ export default function App() {
       <Box borderStyle="single" borderColor="cyan" paddingX={2} marginBottom={1}>
         <Text color="cyan" bold>Oshikatsu</Text>
         <Text dimColor> | Terminal UI</Text>
+        <Text dimColor>  (q to quit)</Text>
       </Box>
 
       {/* Navigation Tabs */}
@@ -20,21 +40,21 @@ export default function App() {
           backgroundColor={activeTab === "watchlist" ? "blue" : undefined}
           bold={activeTab === "watchlist"}
         >
-          [ Watch List ]
+          [1] Watch List
         </Text>
         <Text
           color={activeTab === "monitor" ? "white" : "gray"}
           backgroundColor={activeTab === "monitor" ? "blue" : undefined}
           bold={activeTab === "monitor"}
         >
-          [ Monitor (WIP) ]
+          [2] Monitor
         </Text>
       </Box>
 
       {/* Main Content Area */}
       <Box flexGrow={1} borderStyle="round" paddingX={1} paddingY={1}>
         {activeTab === "watchlist" && <WatchList />}
-        {activeTab === "monitor" && <Text>Monitor implementation coming soon...</Text>}
+        {activeTab === "monitor" && <Monitor />}
       </Box>
     </Box>
   );
