@@ -10,11 +10,13 @@ This plan outlines the phased implementation of the Oshikatsu platform, starting
 
 **Deliverables**:
 
+- Watch list for managing artists and their monitored sources
 - Twitter/X source connector that fetches new items
 - Raw storage layer that persists items with source provenance
 - Basic scheduler to run ingestion periodically
+- TUI for watch list management, ingestion monitoring, and data inspection
 
-**Working product**: New tweets from configured Twitter/X sources are fetched, stored, and retrievable.
+**Working product**: New tweets from configured Twitter/X sources are fetched, stored, and retrievable via TUI.
 
 ## Phase 2: Normalization Engine
 
@@ -25,8 +27,9 @@ This plan outlines the phased implementation of the Oshikatsu platform, starting
 - Twitter/X normalizer that maps raw items to the unified schema
 - Field extraction logic (title, description, event_time, venue, artist, type, tags)
 - Storage layer updated to persist normalized records
+- TUI for browsing and inspecting normalized events
 
-**Working product**: Raw Twitter/X items are automatically normalized into the unified event schema and stored.
+**Working product**: Raw Twitter/X items are automatically normalized into the unified event schema, viewable via TUI.
 
 ## Phase 3: Merge/Deduplication
 
@@ -37,6 +40,7 @@ This plan outlines the phased implementation of the Oshikatsu platform, starting
 - Deduplication logic that identifies duplicate events
 - Merge strategy that combines source entries into a single record
 - Update mechanism for rescheduled/cancelled events
+- TUI for viewing merge/dedup status and source provenance
 
 **Working product**: Duplicate events from the same or different sources are automatically merged; event updates are reflected correctly.
 
@@ -49,6 +53,7 @@ This plan outlines the phased implementation of the Oshikatsu platform, starting
 - Export interface for calendar integration
 - Export interface for notification dispatch
 - Configurable export triggers (on new event, on update)
+- TUI for managing export configuration and viewing export status
 
 **Working product**: Normalized events are exported to a calendar and/or notification system.
 
@@ -58,7 +63,6 @@ This plan outlines the phased implementation of the Oshikatsu platform, starting
 
 **Deliverables**:
 
-- Abstract source connector interface
 - Second source connector implementation (e.g., Instagram, YouTube)
 - Cross-source deduplication validation
 
@@ -75,3 +79,17 @@ This plan outlines the phased implementation of the Oshikatsu platform, starting
 - Monitoring and alerting for ingestion failures
 
 **Working product**: Platform supports multiple sources and multiple downstream integrations with reliable operation.
+
+## Phase 7: Web UI
+
+**Goal**: Provide a web-based interface for managing and visualizing the platform.
+
+**Deliverables**:
+
+- Web UI for watch list management (artists, sources, toggles)
+- Artist and venue database management
+- Event dashboard with timeline/list view and filtering
+- Calendar view with export to iCal/Google Calendar
+- Ingestion monitoring dashboard
+
+**Working product**: All platform management and monitoring tasks can be performed through a web browser, replacing the TUI for daily use.

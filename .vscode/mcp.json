@@ -1,0 +1,19 @@
+{
+  "inputs": [
+    {
+      "type": "promptString",
+      "id": "gemini-api-key",
+      "description": "Google AI Studio API key",
+      "password": true
+    }
+  ],
+  "servers": {
+    "gemini-grounding": {
+      "command": "npx",
+      "args": ["-y", "gemini-grounding"],
+      "env": {
+        "GEMINI_API_KEY": "${input:gemini-api-key}"
+      }
+    }
+  }
+}
