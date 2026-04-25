@@ -19,6 +19,7 @@ export default function WatchList() {
   const [loading, setLoading] = useState(true);
   const [cursor, setCursor] = useState(0);
   const [expandedArtistId, setExpandedArtistId] = useState<string | null>(null);
+  const [targetCursor, setTargetCursor] = useState<number | null>(null);
   const [mode, setMode] = useState<Mode>("browse");
   const [form, setForm] = useState<FormState>({ step: 0, name: "", categories: "", platform: "twitter", username: "" });
   const [message, setMessage] = useState<string | null>(null);
@@ -50,17 +51,40 @@ export default function WatchList() {
   useInput(async (input, key) => {
     if (mode !== "browse") return;
 
-    if (key.upArrow && cursor > 0) {
-      setCursor(cursor - 1);
+    const isExpanded = expandedArtistId !== null;
+    const selectedArtist = artists[cursor];
+
+    if (key.upArrow) {
+      if (isExpanded && targetCursor !== null) {
+        if (targetCursor > 0) setTargetCursor(targetCursor - 1);
+        else {
+          setExpandedArtistId(null);
+          setTargetCursor(null);
+        }
+      } else if (cursor > 0) {
+        setCursor(cursor - 1);
+        setExpandedArtistId(null);
+      }
     }
-    if (key.downArrow && cursor < artists.length - 1) {
-      setCursor(cursor + 1);
+    
+    if (key.downArrow) {
+      if (isExpanded && targetCursor !== null && selectedArtist.targets) {
+        if (targetCursor < selectedArtist.targets.length - 1) setTargetCursor(targetCursor + 1);
+      } else if (cursor < artists.length - 1) {
+        setCursor(cursor + 1);
+        setExpandedArtistId(null);
+      }
     }
 
     // Toggle expand/collapse
     if (key.return && artists.length > 0) {
-      const selected = artists[cursor];
-      setExpandedArtistId(expandedArtistId === selected.id ? null : selected.id);
+      if (expandedArtistId === selectedArtist.id) {
+        setExpandedArtistId(null);
+        setTargetCursor(null);
+      } else {
+        setExpandedArtistId(selectedArtist.id);
+        setTargetCursor(selectedArtist.targets && selectedArtist.targets.length > 0 ? 0 : null);
+      }
     }
 
     // Add artist
@@ -79,20 +103,39 @@ export default function WatchList() {
       setForm({ step: 0, name: "", categories: "", platform: "twitter", username: "" });
     }
 
-    // Toggle artist
+    // Toggle artist or target
     if (input === "t" && artists.length > 0) {
-      const selected = artists[cursor];
-      await wlm.toggleArtist(selected.id, !selected.enabled);
-      flash(`${selected.name} ${selected.enabled ? "disabled" : "enabled"}`);
+      if (isExpanded && targetCursor !== null && selectedArtist.targets) {
+        const target = selectedArtist.targets[targetCursor];
+        await wlm.toggleTarget(target.id, !target.enabled);
+        flash(`Target ${target.enabled ? "disabled" : "enabled"}`);
+      } else {
+        await wlm.toggleArtist(selectedArtist.id, !selectedArtist.enabled);
+        flash(`${selectedArtist.name} ${selectedArtist.enabled ? "disabled" : "enabled"}`);
+      }
       await loadData();
     }
 
-    // Delete artist
+    // Delete artist or target
     if (input === "d" && artists.length > 0) {
-      const selected = artists[cursor];
-      await wlm.removeArtist(selected.id);
-      flash(`Deleted ${selected.name}`);
-      if (cursor >= artists.length - 1 && cursor > 0) setCursor(cursor - 1);
+      if (isExpanded && targetCursor !== null && selectedArtist.targets) {
+        const target = selectedArtist.targets[targetCursor];
+        await wlm.removeTarget(target.id);
+        flash(`Deleted target`);
+        
+        // Adjust cursor
+        if (targetCursor >= selectedArtist.targets.length - 1 && targetCursor > 0) {
+          setTargetCursor(targetCursor - 1);
+        } else if (selectedArtist.targets.length === 1) {
+          setTargetCursor(null);
+        }
+      } else {
+        await wlm.removeArtist(selectedArtist.id);
+        flash(`Deleted ${selectedArtist.name}`);
+        if (cursor >= artists.length - 1 && cursor > 0) setCursor(cursor - 1);
+        setExpandedArtistId(null);
+        setTargetCursor(null);
+      }
       await loadData();
     }
   });
@@ -188,9 +231,11 @@ export default function WatchList() {
                   {artist.targets.length === 0 ? (
                     <Text color="yellow" italic>No targets configured.</Text>
                   ) : (
-                    artist.targets.map((target) => (
+                    artist.targets.map((target, targetIdx) => (
                       <Box key={target.id} flexDirection="row" gap={2}>
-                        <Text>└─</Text>
+                        <Text color={targetCursor === targetIdx ? "cyan" : undefined}>
+                          {targetCursor === targetIdx ? "▸" : "└─"}
+                        </Text>
                         <Text color="blue">{target.platform}</Text>
                         <Text color="cyan">{target.sourceConfig.username ? `@${target.sourceConfig.username}` : target.sourceType}</Text>
                         <Text> {target.enabled ? "✅" : "❌"}</Text>
