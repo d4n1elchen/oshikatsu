@@ -4,7 +4,7 @@
 
 Oshikatsu is a platform for tracking updates about favorite artists and converting them into a unified, analyzable data format. The system ingests data from multiple sources, normalizes it into a consistent schema, deduplicates events, and exports to downstream pipelines.
 
-> **Scope of this document.** ARCHITECTURE.md is a high-level, conceptual view of the platform. It describes how components are intended to relate and what shape data conceptually takes — not the current physical schema, the implemented module boundaries, or the present feature set. For the actual DB layout see `src/db/schema.ts`; for the current implementation status see the phase design docs in `design_docs/` and `TECH_DEBTS.md`; for the technology choices see [TECH_STACK.md](./TECH_STACK.md).
+> **Scope of this document.** ARCHITECTURE.md is a high-level, conceptual view of the platform. It describes how components are intended to relate and what shape data conceptually takes. It deliberately does **not** track implementation status, phase progress, or which fields are persisted today — that information lives in the phase design docs under `design_docs/`, in `TECH_DEBTS.md`, and (for the actual DB layout) in `src/db/schema.ts`. For the technology choices see [TECH_STACK.md](./TECH_STACK.md).
 
 ```mermaid
 flowchart LR
@@ -34,8 +34,8 @@ flowchart LR
     MON["Monitoring"]
 
     WLM -- "manage" --> WL
-    SCHED -- "get active sources" --> WLM
-    SCHED -- "trigger with sources" --> SC
+    SCHED -- "get active watch targets" --> WLM
+    SCHED -- "trigger with watch targets" --> SC
     SC -- "fetch" --> TW & IG & YT
 
     SC -- "write (archival)" --> RAW
@@ -58,11 +58,11 @@ Ingest raw items from external sources (e.g., Twitter/X, Instagram, YouTube).
 
 ### 2. Watch List Manager
 
-Manages the registry of artists and their monitored watch targets.
+Owns the **monitoring orchestration** layer: which artists from the Artist Database are actively being watched, and through which watch targets.
 
-- Provides CRUD operations for artists and watch targets
-- Supports enable/disable toggles per artist and per individual watch target
-- Decouples "what to watch" from "how to fetch"
+- Provides CRUD operations for watch targets and the enable/disable toggles that gate them
+- Supports enable/disable toggles per artist (a master switch over all of an artist's watch targets) and per individual watch target
+- Decouples "what to watch" from "how to fetch" — and from "who the artist is," which lives in the Artist Database
 
 ### 3. Normalization Engine
 
@@ -95,15 +95,13 @@ Exposes standardized records to automation workflows.
 Runs ingestion cycles periodically and manages execution state.
 
 - Configurable interval (e.g., every 15 minutes)
-- Reads active sources from the Watch List Manager and dispatches them to the appropriate connectors
+- Reads active watch targets from the Watch List Manager and dispatches them to the appropriate connectors
 - Idempotent: re-running does not create duplicates
 - Graceful shutdown support
 - Tracks execution state (last run, next run, errors, and pagination cursors)
 - Implements rate limiting and exponential backoff to handle platform API limits.
 
 ### 7. Monitoring
-
-> **Status: planned (Phase 6+).** Today the scheduler and normalization engine only emit `console` logs. The capabilities below describe the intended monitoring surface, not what exists in code.
 
 Detects failures, tracks health metrics, and sends alerts.
 
@@ -117,19 +115,19 @@ Detects failures, tracks health metrics, and sends alerts.
 
 ### 8. Storage
 
-Handles persistence of data across the pipeline. The names below describe logical storage roles; multiple roles may share the same physical tables today.
+Handles persistence of data across the pipeline. The names below describe logical storage roles; the physical layout may consolidate or split them.
 
-- **Watch List**: Persists the artist registry and watch targets with their enabled/disabled states.
+- **Watch List**: Persists which artists are actively monitored, the watch targets that describe how each artist is monitored, and the per-artist and per-target enable/disable toggles. References artist identities from the Artist Database rather than holding them.
 - **Raw Storage**: Persists raw payloads fetched from sources before normalization, along with metadata (source identifier, fetch timestamps, processing status).
-- **Artist Database**: Reference data for artist profiles and their known sources (e.g., social media accounts, channels), used for enrichment and for linking normalized events to known artists. *Currently shares the `artists` table with the Watch List; a richer artist profile model is a future expansion.*
-- **Venue Database**: Reference database of physical and virtual venue information and aliases. Normalized events may reference a canonical venue through `venue_id`, which is used as a conservative signal during Phase 3 deduplication.
+- **Artist Database**: Owns the canonical artist identity — display name, categories, groups, known handles and channels. Consumed by the Watch List (to identify which artist a watch target belongs to), by Normalization (to link normalized events to known artists), and by downstream consumers for display and enrichment.
+- **Venue Database**: Reference database of physical and virtual venue information and aliases. Normalized events may reference a canonical venue through `venue_id`, which is used as a conservative signal during merge/deduplication.
 - **Normalized Storage**: Persists unified event records after deduplication, related event links, and source references, and provides query capabilities for downstream consumers.
 
 ## Data Model
 
 ### Unified Event Schema
 
-> **Conceptual schema, not the DB schema.** The shape below describes how the platform reasons about an event end-to-end — the fields downstream consumers should be able to ask for. The physical storage representation may flatten nested objects, split fields across multiple tables, omit fields that aren't yet implemented, or add fields used only for bookkeeping. The source of truth for what is actually persisted is `src/db/schema.ts`. Some fields here (e.g. `start_time`/`end_time`, the nested `artist` object, and the main/sub-event hierarchy) are not yet persisted; their delivery is tracked in the phase plan under `design_docs/2026-04-23-implementation-plan/plan.md`.
+> **Conceptual schema, not the DB schema.** The shape below describes how the platform reasons about an event end-to-end — the fields downstream consumers should be able to ask for. The physical storage representation may flatten nested objects, split fields across multiple tables, or add fields used only for bookkeeping. The source of truth for what is actually persisted is `src/db/schema.ts`.
 
 ```json
 {
@@ -222,14 +220,14 @@ The platform provides both a **TUI (Terminal UI)** and a **Web UI** for manageme
 ### Watch List Management
 
 - Add, edit, remove artists and their watch targets
-- Toggle monitoring per artist or per individual source
-- View active vs. disabled sources at a glance
+- Toggle monitoring per artist or per individual watch target
+- View active vs. disabled watch targets at a glance
 
 ### Artist & Venue Management
 
 - Browse and edit the Artist Database (profiles, known sources, categories, groups)
 - Browse and edit the Venue Database (names, addresses, coordinates)
-- Link new sources to existing artists
+- Link new watch targets to existing artists
 
 ### Event Dashboard
 
@@ -255,10 +253,6 @@ The platform provides both a **TUI (Terminal UI)** and a **Web UI** for manageme
 - **Source-agnostic**: Design allows adding new sources with minimal impact
 - **Provenance preservation**: Preserve source provenance while normalizing records
 - **Incremental growth**: Start with a single source (Twitter/X) and expand to additional sources over time
-
-## Current Data Source
-
-- Twitter/X is the currently implemented source
 
 ## Success Criteria
 

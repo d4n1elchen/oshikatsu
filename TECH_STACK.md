@@ -17,8 +17,8 @@ This document defines the core technology stack for the Oshikatsu project. The p
 
 ### 2. Normalization / LLM Parsing
 - **Local Models:** `ollama` (Official Node.js SDK)
-- **Structured Output:** We use Ollama's native structured output feature combined with `zod-to-json-schema` to guarantee the local model returns valid JSON matching our Zod schemas.
-- **Optional Orchestration:** `instructor-js` (If we need automatic retries and validation loops).
+- **Structured Output:** We use Ollama's native structured output feature combined with Zod 4's built-in `z.toJSONSchema()` to guarantee the local model returns valid JSON matching our Zod schemas. (Earlier drafts of this doc referenced the standalone `zod-to-json-schema` package, which is no longer needed once Zod 4 ships the conversion natively.)
+- **Validation Loop:** Currently a single-pass validation against the Zod schema, with strategy-level fallbacks for malformed output. An `instructor-js`-style retry/repair loop was considered but not adopted; see `TECH_DEBTS.md` for the open follow-up.
 
 ### 3. Storage
 - **Database:** SQLite

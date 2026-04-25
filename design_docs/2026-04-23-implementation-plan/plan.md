@@ -52,7 +52,7 @@ This plan outlines the phased implementation of the Oshikatsu platform, starting
 **Deliverables**:
 
 - Deduplication logic that identifies duplicate events
-- Merge strategy that combines source entries into a single record
+- Merge strategy that combines source references from duplicate events under a single canonical record
 - Update mechanism for rescheduled/cancelled events
 - TUI for viewing merge/dedup status and source provenance
 
