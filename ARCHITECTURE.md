@@ -4,7 +4,7 @@
 
 Oshikatsu is a platform for tracking updates about favorite artists and converting them into a unified, analyzable data format. The system ingests data from multiple sources, normalizes it into a consistent schema, deduplicates events, and exports to downstream pipelines.
 
-> **Note:** The platform is built using TypeScript and Node.js. See [TECH_STACK.md](./TECH_STACK.md) for full details on the technology choices.
+> **Scope of this document.** ARCHITECTURE.md is a high-level, conceptual view of the platform. It describes how components are intended to relate and what shape data conceptually takes — not the current physical schema, the implemented module boundaries, or the present feature set. For the actual DB layout see `src/db/schema.ts`; for the current implementation status see the phase design docs in `design_docs/` and `TECH_DEBTS.md`; for the technology choices see [TECH_STACK.md](./TECH_STACK.md).
 
 ```mermaid
 flowchart LR
@@ -103,6 +103,8 @@ Runs ingestion cycles periodically and manages execution state.
 
 ### 7. Monitoring
 
+> **Status: planned (Phase 6+).** Today the scheduler and normalization engine only emit `console` logs. The capabilities below describe the intended monitoring surface, not what exists in code.
+
 Detects failures, tracks health metrics, and sends alerts.
 
 - **Parser failure detection**: detects when selectors break or DOM changes cause fetch failures
@@ -115,17 +117,19 @@ Detects failures, tracks health metrics, and sends alerts.
 
 ### 8. Storage
 
-Handles persistence of data across the pipeline.
+Handles persistence of data across the pipeline. The names below describe logical storage roles; multiple roles may share the same physical tables today.
 
 - **Watch List**: Persists the artist registry and watch targets with their enabled/disabled states.
 - **Raw Storage**: Persists raw payloads fetched from sources before normalization, along with metadata (source identifier, fetch timestamps, processing status).
-- **Artist Database**: Reference database of artist profiles and their known sources (e.g., social media accounts, channels). Used for enrichment and linking normalized events to known artists.
+- **Artist Database**: Reference data for artist profiles and their known sources (e.g., social media accounts, channels), used for enrichment and for linking normalized events to known artists. *Currently shares the `artists` table with the Watch List; a richer artist profile model is a future expansion.*
 - **Venue Database**: Reference database of physical and virtual venue information and aliases. Normalized events may reference a canonical venue through `venue_id`, which is used as a conservative signal during Phase 3 deduplication.
 - **Normalized Storage**: Persists unified event records after deduplication, related event links, and source references, and provides query capabilities for downstream consumers.
 
 ## Data Model
 
 ### Unified Event Schema
+
+> **Conceptual schema, not the DB schema.** The shape below describes how the platform reasons about an event end-to-end — the fields downstream consumers should be able to ask for. The physical storage representation may flatten nested objects, split fields across multiple tables, omit fields that aren't yet implemented, or add fields used only for bookkeeping. The source of truth for what is actually persisted is `src/db/schema.ts`. Some fields here (e.g. `start_time`/`end_time`, the nested `artist` object, and the main/sub-event hierarchy) are not yet persisted; their delivery is tracked in the phase plan under `design_docs/2026-04-23-implementation-plan/plan.md`.
 
 ```json
 {
@@ -138,6 +142,8 @@ Handles persistence of data across the pipeline.
       "publish_time": "when the source item was published",
       "url": "link to the original source item",
       "author": "who posted it (user ID, username)",
+      "venue_name": "venue text extracted from this source item, if present",
+      "venue_url": "venue URL extracted from this source item, if present",
       "raw_content": "original text/content",
       "fetch_time": "when the item was ingested"
     }

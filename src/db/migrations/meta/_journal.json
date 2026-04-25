@@ -22,6 +22,27 @@
       "when": 1777147290289,
       "tag": "0002_acoustic_jack_flag",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1777151188510,
+      "tag": "0003_sudden_warbird",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1777152022810,
+      "tag": "0004_past_adam_warlock",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1777154366225,
+      "tag": "0005_orange_satana",
+      "breakpoints": true
     }
   ]
 }

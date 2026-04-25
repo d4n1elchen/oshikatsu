@@ -67,9 +67,15 @@ Follow-up:
 
 ## Phase 2.1 Venue Database
 
-### Venue database is designed but not implemented
+### Venue curation workflow is not implemented
 
-The Phase 2.1 design exists in `design_docs/2026-04-25-venue-database/venue-database.md`, but there are no `venues` or `venue_aliases` tables yet.
+The Phase 2.1 venue schema, exact resolver, and auto-discovery flow are implemented. New usable extracted venue names now create `discovered` venues automatically, but there is no workflow yet to review, verify, merge, or ignore discovered venues.
+
+Follow-up:
+
+- Add a venue review or admin workflow for `discovered`, `verified`, and `ignored`.
+- Add a merge workflow for duplicate discovered venues.
+- Treat discovered venues as weaker Phase 3 dedup signals than verified venues.
 
 ### Event-venue link table is deferred
 
@@ -77,19 +83,18 @@ The venue design now uses nullable `venue_id` directly on `normalized_events` fo
 
 An `event_venue_links` table is deferred until we need multiple venues per event, venue match confidence/history, or detailed auditability of venue resolution.
 
-### Venue seed data needs a decision
+### Venue generic/ignored rules need a decision
 
 Open questions:
 
-- Should common virtual platforms such as YouTube be seeded immediately?
-- Should starter venues be stored in migrations or a separate data file?
 - Should venue URL matching include related links or only `venue_url`?
+- Which generic venue names should become `ignored`?
 
 ## Phase 3 Merge / Deduplication
 
 ### Event identity rules are designed but not implemented
 
-The Phase 3 merge/dedup design exists in `design_docs/2026-04-25-phase3-deduplication/deduplication.md`, but implementation should wait until Phase 2.1 venue database work is complete.
+The Phase 3 merge/dedup design exists in `design_docs/2026-04-25-phase3-deduplication/deduplication.md`, but implementation has not started.
 
 ### Merge auditability is undecided
 
@@ -100,6 +105,54 @@ Possible approaches:
 - Store merge decision logs.
 - Store confidence and matched fields.
 - Keep superseded event IDs linked to canonical events.
+
+### Schema gaps to resolve before Phase 3 starts
+
+`ARCHITECTURE.md` describes a unified event schema richer than what `normalized_events` currently stores. These gaps are noted explicitly in the Data Model callout, and Phase 3 will need to make decisions on them before it can express the candidate-selection queries cleanly.
+
+Follow-up:
+
+- **Artist link on `normalized_events`.** Today the only path from an event to an artist is `source_references → raw_items → watch_targets → artists`. Phase 3's "same artist + close time" candidate query is awkward without a direct FK. Decide between adding `artist_id` to `normalized_events`, an `event_artists` join table (for collaborations), or keeping the chained join.
+- **`start_time` / `end_time`.** `ARCHITECTURE.md` lists both; the schema only has `event_time`. Decide whether to add them, treat `event_time` as `start_time`, or leave as future scope.
+- **Event hierarchy.** Tracked as Phase 3.1 in `design_docs/2026-04-23-implementation-plan/plan.md`; no schema work is needed before Phase 3, but the Phase 3 dedup design should not foreclose the parent/sub-event model.
+
+## Scheduler
+
+### Scheduler builds its own dependencies
+
+`IngestionScheduler` constructs `WatchListManager`, `RawStorage`, and `TwitterConnector` internally rather than receiving them via constructor. This makes the class hard to test in isolation and ties the scheduler to a single connector type. The scheduler design doc has been updated to call this out.
+
+Follow-up:
+
+- Refactor to accept `watchlist`, `storage`, and a `connectors: Record<string, BaseConnector>` map via the constructor.
+- Update `daemon.ts` to wire dependencies explicitly.
+
+### Several `SchedulerConfig` fields are not honored
+
+`SchedulerConfig` defines `maxConcurrentJobs`, `retryOnFailure`, and `retryDelayMinutes`, but the implementation only uses `intervalMinutes`. Targets are always processed sequentially with no retry on failure beyond per-target try/catch.
+
+Follow-up:
+
+- Either implement the missing behavior or remove the unused fields from the type.
+
+## Raw Storage
+
+### No retry/backoff for transient SQLite errors
+
+`saveItems` catches errors, logs them, and returns 0. There is no exponential backoff for transient SQLite locking, which the original design called for.
+
+Follow-up:
+
+- Add a retry wrapper for `SQLITE_BUSY` / `SQLITE_LOCKED` with bounded exponential backoff.
+- Decide whether `saveItems` should surface partial-batch failures distinctly from "no new items."
+
+### Optional indexes deferred until needed
+
+The original design proposed `(source_name, status)` and `fetched_at` indexes. Only the unique `(source_name, source_id)` index is in place. `getUnprocessed` currently scans by `status = 'new'` ordered by `fetched_at`.
+
+Follow-up:
+
+- Add the deferred indexes if `getUnprocessed` becomes a hot path or batch sizes grow.
 
 ## Twitter/X Connector
 
@@ -145,3 +198,15 @@ Follow-up:
 
 - At the end of each phase, review `ARCHITECTURE.md`, phase design docs, and this file together.
 - Move resolved debts into a changelog or remove them once addressed.
+
+### Phase 2 normalization doc still describes the older error-only fallback
+
+`design_docs/2026-04-24-phase2-designs/normalization.md` says LLM extraction failures mark the raw item as `error` and skip it. The newer `2026-04-25-normalization-strategy/normalization-strategy.md` and the implementation in `NormalizationEngine` instead fall back to a minimal `announcement` event and only mark `error` when `buildContext` returns null or persistence throws. The two docs now disagree on the contract.
+
+Follow-up:
+
+- Reconcile the Phase 2 doc with the strategy doc, or add a pointer at the top of the Phase 2 doc that the fallback policy was superseded by the strategy design.
+
+### Phase 1 design docs were reconciled to current code on 2026-04-25
+
+Resolved during the Tier 2 doc cleanup pass: `watchlist.md` (SourceEntry → WatchTarget rename, `updateArtist`), `raw-storage.md` (`watch_target_id`, deterministic IDs, bulk `saveItems`, `markNew`, typed `getStats`), `scheduler.md` (drop APScheduler reference, camelCase config, current method names), and `twitter-connector.md` (drop `account` block, document `headless: true` default, reference `npm run login:twitter`). Listed here so the next phase-end review knows these were done deliberately and any further drift is new.

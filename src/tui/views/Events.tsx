@@ -1,11 +1,11 @@
 import React, { useState, useCallback } from "react";
 import { Box, Text, useInput } from "ink";
 import { db } from "../../db";
-import { normalizedEvents, eventRelatedLinks, sourceReferences } from "../../db/schema";
+import { normalizedEvents, eventRelatedLinks, sourceReferences, venues } from "../../db/schema";
 import { desc, eq } from "drizzle-orm";
-import type { EventRelatedLink, NormalizedEvent, SourceReference } from "../../core/types";
+import type { EventRelatedLink, NormalizedEvent, SourceReference, Venue } from "../../core/types";
 
-type EnrichedEvent = NormalizedEvent & { links: EventRelatedLink[]; refs: SourceReference[] };
+type EnrichedEvent = NormalizedEvent & { links: EventRelatedLink[]; refs: SourceReference[]; venue: Venue | null };
 
 export default function Events() {
   const [events, setEvents] = useState<EnrichedEvent[]>([]);
@@ -24,15 +24,18 @@ export default function Events() {
 
     const enriched = await Promise.all(
       recentEvents.map(async (ev) => {
-        const [links, refs] = await Promise.all([
+        const [links, refs, venueRows] = await Promise.all([
           db.select()
             .from(eventRelatedLinks)
             .where(eq(eventRelatedLinks.eventId, ev.id)),
           db.select()
             .from(sourceReferences)
             .where(eq(sourceReferences.eventId, ev.id)),
+          ev.venueId
+            ? db.select().from(venues).where(eq(venues.id, ev.venueId)).limit(1)
+            : Promise.resolve([]),
         ]);
-        return { ...ev, links, refs };
+        return { ...ev, links, refs, venue: venueRows[0] || null };
       })
     );
 
@@ -114,8 +117,17 @@ export default function Events() {
               <Box marginTop={1} flexDirection="column">
                 <Text><Text dimColor>Time:  </Text>{new Date(selectedEvent.eventTime).toLocaleString()}</Text>
                 <Text><Text dimColor>Type:  </Text>{selectedEvent.type}</Text>
-                {selectedEvent.venueName && (
-                  <Text><Text dimColor>Venue: </Text>{selectedEvent.venueName}</Text>
+                {(selectedEvent.venueName || selectedEvent.venue) && (
+                  <Text>
+                    <Text dimColor>Venue: </Text>
+                    {selectedEvent.venueName || selectedEvent.venue?.name}
+                    {selectedEvent.venue && selectedEvent.venue.name !== selectedEvent.venueName && (
+                      <Text dimColor> → {selectedEvent.venue.name}</Text>
+                    )}
+                    {selectedEvent.venue && (
+                      <Text dimColor> [{selectedEvent.venue.kind}, {selectedEvent.venue.status}]</Text>
+                    )}
+                  </Text>
                 )}
                 {selectedEvent.tags && selectedEvent.tags.length > 0 && (
                   <Text><Text dimColor>Tags:  </Text>{selectedEvent.tags.join(", ")}</Text>
@@ -157,6 +169,11 @@ export default function Events() {
                     {isExpanded && (
                       <Box marginLeft={3} marginTop={0} flexDirection="column">
                         <Text dimColor>{ref.url}</Text>
+                        {(ref.venueName || ref.venueUrl) && (
+                          <Text dimColor>
+                            Venue: {ref.venueName || "unknown"}{ref.venueUrl ? ` (${ref.venueUrl})` : ""}
+                          </Text>
+                        )}
                         <Box borderStyle="round" borderColor="gray" paddingX={1} marginTop={0}>
                           <Text>{ref.rawContent}</Text>
                         </Box>

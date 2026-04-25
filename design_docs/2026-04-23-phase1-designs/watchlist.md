@@ -7,8 +7,8 @@ The Watch List Manager is a core component (see [ARCHITECTURE.md](../../ARCHITEC
 ## Concepts
 
 - **Artist**: A person or group being tracked (e.g., a singer, Vtuber, idol).
-- **Source Entry**: A specific feed to monitor for an artist (e.g., a Twitter timeline, a search query, a YouTube channel).
-- **Monitoring Toggle**: Both artists and individual source entries can be independently enabled or disabled.
+- **Watch Target**: A specific feed to monitor for an artist (e.g., a Twitter timeline, a search query, a YouTube channel). Earlier drafts of this doc called this a "Source Entry"; the implementation renamed it to Watch Target and that is the name used in `src/`.
+- **Monitoring Toggle**: Both artists and individual watch targets can be independently enabled or disabled.
 
 ## Data Model
 
@@ -24,18 +24,18 @@ The Watch List Manager is a core component (see [ARCHITECTURE.md](../../ARCHITEC
 | created_at  | datetime | When this artist was added                            |
 | updated_at  | datetime | Last modification time                                |
 
-### Source Entry
+### Watch Target
 
-| Field        | Type     | Description                                          |
-| ------------ | -------- | ---------------------------------------------------- |
-| id           | string   | Unique identifier (auto-generated)                   |
-| artist_id    | string   | Reference to the parent artist                       |
-| platform     | string   | Platform identifier (e.g., "twitter", "youtube")     |
-| source_type  | string   | Type of source (e.g., "user_timeline", "search")     |
-| source_config| dict     | Platform-specific parameters (see below)             |
-| enabled      | boolean  | Toggle for this individual source                    |
-| created_at   | datetime | When this source was added                           |
-| updated_at   | datetime | Last modification time                               |
+| Field         | Type     | Description                                          |
+| ------------- | -------- | ---------------------------------------------------- |
+| id            | string   | Unique identifier (auto-generated UUID)              |
+| artist_id     | string   | Reference to the parent artist                       |
+| platform      | string   | Platform identifier (e.g., "twitter", "youtube")     |
+| source_type   | string   | Type of source (e.g., "user_timeline", "search")     |
+| source_config | json     | Platform-specific parameters (see below)             |
+| enabled       | boolean  | Toggle for this individual watch target              |
+| created_at    | datetime | When this watch target was added                     |
+| updated_at    | datetime | Last modification time                               |
 
 ### Source Config Examples
 
@@ -62,16 +62,18 @@ The Watch List Manager is a core component (see [ARCHITECTURE.md](../../ARCHITEC
 
 The `source_config` is opaque to the watch list — each connector knows how to interpret its own platform's config.
 
-## Active Source Resolution
+## Active Watch Target Resolution
 
-A source is **active** (should be fetched) only when:
+A watch target is **active** (should be fetched) only when:
 
 1. The parent artist's `enabled` is `true`, AND
-2. The source entry's `enabled` is `true`.
+2. The watch target's `enabled` is `true`.
 
-Connectors query the watch list for active sources on their platform before each fetch cycle.
+The Scheduler queries the watch list for active watch targets on each platform before every fetch cycle and dispatches them to the appropriate connector.
 
 ## Interface
+
+Note: Drizzle generates camelCase TypeScript field names from the snake_case columns above (e.g., `artist_id` → `artistId`, `source_config` → `sourceConfig`). Code uses the camelCase names; the table column names remain snake_case.
 
 ```typescript
 export interface Artist {
@@ -80,19 +82,19 @@ export interface Artist {
   categories: string[];
   groups: string[];
   enabled: boolean;
-  created_at: Date;
-  updated_at: Date;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
-export interface SourceEntry {
+export interface WatchTarget {
   id: string;
-  artist_id: string;
+  artistId: string;
   platform: string;
-  source_type: string;
-  source_config: Record<string, any>;
+  sourceType: string;
+  sourceConfig: Record<string, any>;
   enabled: boolean;
-  created_at: Date;
-  updated_at: Date;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface WatchListManager {
@@ -101,51 +103,54 @@ export interface WatchListManager {
   /** Add a new artist to the watch list. */
   addArtist(name: string, categories?: string[], groups?: string[]): Promise<Artist>;
 
-  /** Remove an artist and all their source entries. */
-  removeArtist(artist_id: string): Promise<void>;
+  /** Remove an artist and all their watch targets (cascading). */
+  removeArtist(artistId: string): Promise<void>;
 
   /** Enable or disable all monitoring for an artist. */
-  toggleArtist(artist_id: string, enabled: boolean): Promise<void>;
+  toggleArtist(artistId: string, enabled: boolean): Promise<void>;
+
+  /** Update an artist's editable fields (name, categories, groups). */
+  updateArtist(artistId: string, fields: { name?: string; categories?: string[]; groups?: string[] }): Promise<void>;
 
   /** List all artists, optionally filtering to enabled only. */
   listArtists(enabledOnly?: boolean): Promise<Artist[]>;
 
-  // --- Source entry management ---
+  // --- Watch target management ---
 
-  /** Add a new source entry for an artist. */
-  addSource(artist_id: string, platform: string, source_type: string, source_config: Record<string, any>): Promise<SourceEntry>;
+  /** Add a new watch target for an artist. */
+  addTarget(artistId: string, platform: string, sourceType: string, sourceConfig: Record<string, any>): Promise<WatchTarget>;
 
-  /** Remove a source entry. */
-  removeSource(source_id: string): Promise<void>;
+  /** Remove a watch target. */
+  removeTarget(targetId: string): Promise<void>;
 
-  /** Enable or disable a specific source. */
-  toggleSource(source_id: string, enabled: boolean): Promise<void>;
+  /** Enable or disable a specific watch target. */
+  toggleTarget(targetId: string, enabled: boolean): Promise<void>;
 
-  /** 
-   * Get all active sources for a platform.
-   * Returns sources where both the artist and the source are enabled.
+  /**
+   * Get all active watch targets for a platform.
+   * Returns targets where both the artist and the target are enabled.
    * Used by the Scheduler to know what to fetch.
    */
-  getActiveSources(platform: string): Promise<SourceEntry[]>;
+  getActiveTargets(platform: string): Promise<WatchTarget[]>;
 
-  /** Get all source entries for an artist. */
-  getSourcesForArtist(artist_id: string): Promise<SourceEntry[]>;
+  /** Get all watch targets for an artist. */
+  getTargetsForArtist(artistId: string): Promise<WatchTarget[]>;
 }
 ```
 
 ## Storage
 
-The Watch List Manager persists data to the Watch List storage tables (Artists, Source Entries) in the same database as raw items. See [raw-storage.md](./raw-storage.md) for the shared storage backend.
+The Watch List Manager persists data to the Watch List storage tables (`artists`, `watch_targets`) in the same database as raw items. See [raw-storage.md](./raw-storage.md) for the shared storage backend.
 
 ## Integration with Scheduler and Connectors
 
 The Scheduler orchestrates the fetch cycle using the Watch List Manager:
 
-1. Scheduler calls `watchlist.get_active_sources("twitter")` to get active sources.
-2. Scheduler dispatches each source to the appropriate connector via `connector.fetch_updates(source)`.
-3. Scheduler saves returned raw items to storage via `storage.save()`.
+1. Scheduler calls `watchlist.getActiveTargets("twitter")` to get active watch targets.
+2. Scheduler dispatches each target to the appropriate connector via `connector.fetchUpdates(target)`.
+3. Scheduler bulk-persists returned raw items via `storage.saveItems(targetId, "twitter", items)`.
 
-Connectors do not interact with the Watch List Manager directly — they just receive a `SourceEntry` and fetch data.
+Connectors do not interact with the Watch List Manager directly — they just receive a `WatchTarget` and fetch data.
 
 ## CLI Examples (Future)
 
@@ -153,13 +158,13 @@ Connectors do not interact with the Watch List Manager directly — they just re
 # Add an artist
 oshikatsu artist add "Hoshimachi Suisei" --categories vtuber,singer
 
-# Add a Twitter source for them
-oshikatsu source add <artist_id> twitter user_timeline --username "suaboroshi"
+# Add a Twitter watch target for them
+oshikatsu target add <artist_id> twitter user_timeline --username "suisei_hosimati"
 
 # Toggle monitoring
 oshikatsu artist disable <artist_id>
-oshikatsu source disable <source_id>
+oshikatsu target disable <target_id>
 
-# List active sources
-oshikatsu source list --platform twitter --active
+# List active watch targets
+oshikatsu target list --platform twitter --active
 ```

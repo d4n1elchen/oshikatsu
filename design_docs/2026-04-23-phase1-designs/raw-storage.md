@@ -12,66 +12,89 @@ The raw storage layer persists raw items fetched from sources before they are no
 
 ## Data Model
 
-### RawItem Table
+### `raw_items` Table
 
-| Field        | Type     | Description                                       |
-| ------------ | -------- | ------------------------------------------------- |
-| id            | string   | Internal unique identifier (auto-generated UUID)  |
-| source_entry_id| string  | Reference to the watch list source entry           |
-| source_name   | string   | Source identifier (e.g., "twitter")                |
-| source_id     | string   | Original ID from the source (e.g., tweet ID)      |
-| raw_data      | JSON     | Complete source response payload (shape varies)    |
-| fetched_at    | datetime | Timestamp when fetched                             |
-| status        | string   | "new", "processed", "error"                        |
-| error_message | string   | Error details (null unless status is "error")      |
+| Field           | Type     | Description                                                          |
+| --------------- | -------- | -------------------------------------------------------------------- |
+| id              | string   | Internal unique identifier; deterministic `${source_name}_${source_id}` |
+| watch_target_id | string   | Reference to the watch list `watch_targets` row that produced this item |
+| source_name     | string   | Source identifier (e.g., "twitter")                                  |
+| source_id       | string   | Original ID from the source (e.g., tweet ID)                         |
+| raw_data        | JSON     | Complete source response payload (shape varies)                      |
+| fetched_at      | datetime | Timestamp when fetched                                               |
+| status          | string   | "new", "processed", "error"                                          |
+| error_message   | string   | Error details (null unless status is "error")                        |
 
 **Key design decisions:**
 
-- `id` is an internal auto-generated identifier, separate from `source_id`, to avoid collisions across sources.
-- `source_entry_id` links back to the watch list source entry for traceability (which artist/source produced this item).
-- `source_name` + `source_id` together form a unique constraint for deduplication at ingestion time.
+- `id` is internal but built deterministically as `${source_name}_${source_id}`. This gives ingestion idempotency for free under `INSERT ... ON CONFLICT DO NOTHING` even if the unique index were missing, and makes raw items addressable from logs without an extra lookup. (Earlier drafts proposed a random UUID; the deterministic form was adopted in the implementation.)
+- `watch_target_id` links back to the watch list watch target for traceability (which artist/target produced this item). Earlier drafts called this `source_entry_id`; it was renamed alongside the watch target rename.
+- `source_name` + `source_id` together form a unique constraint (`idx_source_dedup`) for deduplication at ingestion time.
 - `raw_data` stores the complete, unmodified source payload. The storage layer never interprets its contents.
 
 ### Indexes
 
-- `(source_name, source_id)` — unique constraint, prevents duplicate ingestion
-- `(source_name, status)` — for querying unprocessed items per source
-- `fetched_at` — for time-range queries and data retention
+- `idx_source_dedup` on `(source_name, source_id)` — unique constraint, prevents duplicate ingestion.
+- Status filtering uses `WHERE status = 'new'` scans; a `(source_name, status)` index can be added if scans become hot.
+- `fetched_at` ordering is used by `getUnprocessed`; a dedicated index can be added if needed.
 
 ## Interface
+
+Drizzle generates camelCase TypeScript field names from the snake_case columns above (e.g., `watch_target_id` → `watchTargetId`). Code uses the camelCase names.
 
 ```typescript
 export interface RawItem {
   id: string;
-  source_entry_id: string;
-  source_name: string;
-  source_id: string;
-  raw_data: Record<string, any>;
-  fetched_at: Date;
+  watchTargetId: string;
+  sourceName: string;
+  sourceId: string;
+  rawData: Record<string, any>;
+  fetchedAt: Date;
   status: "new" | "processed" | "error";
-  error_message: string | null;
+  errorMessage: string | null;
 }
 
-export interface RawStorageInterface {
-  /** Save a raw item. Throws if (source_name, source_id) already exists. */
-  save(source_entry_id: string, source_name: string, source_id: string, raw_data: Record<string, any>): Promise<RawItem>;
+export class RawStorage {
+  /**
+   * Save a batch of raw items for a single watch target / source.
+   * Uses INSERT ... ON CONFLICT DO NOTHING against the (source_name, source_id)
+   * unique index, so already-known items are silently skipped.
+   * Returns the number of newly inserted items.
+   */
+  async saveItems(
+    watchTargetId: string,
+    sourceName: string,
+    items: Array<{ sourceId: string; rawData: Record<string, any> }>
+  ): Promise<number>;
 
   /** Check if an item from this source already exists. */
-  exists(source_name: string, source_id: string): Promise<boolean>;
+  async exists(sourceName: string, sourceId: string): Promise<boolean>;
 
-  /** Get unprocessed items for a source, ordered by fetched_at. */
-  getUnprocessed(source_name: string, limit?: number): Promise<RawItem[]>;
+  /**
+   * Get unprocessed items, optionally filtered by source name,
+   * ordered by fetchedAt descending.
+   */
+  async getUnprocessed(sourceName?: string, limit?: number): Promise<RawItem[]>;
 
   /** Mark an item as processed. */
-  markProcessed(item_id: string): Promise<void>;
+  async markProcessed(itemId: string): Promise<void>;
 
   /** Mark an item as errored with details. */
-  markError(item_id: string, error_message: string): Promise<void>;
+  async markError(itemId: string, errorMessage: string): Promise<void>;
+
+  /** Re-queue an item for processing (used by the normalize:once retry script). */
+  async markNew(itemId: string): Promise<void>;
 
   /** Return storage statistics, optionally filtered by source. */
-  getStats(source_name?: string): Promise<Record<string, any>>;
+  async getStats(sourceName?: string): Promise<{ total: number; new: number; processed: number; error: number }>;
 }
 ```
+
+Notes on what changed from earlier drafts:
+
+- `save()` (single-item, throws on conflict) was replaced by `saveItems()` (bulk, silently skips conflicts) because the Twitter connector returns batches and we want ingestion to be idempotent rather than throw.
+- `markNew()` was added so the `normalize:once --retry-errors` script can re-queue errored items without manual SQL.
+- `getStats` returns a typed status breakdown rather than an open `Record<string, any>`.
 
 ## Storage Backend
 
@@ -81,6 +104,6 @@ export interface RawStorageInterface {
 
 ## Error Handling
 
-- Duplicate ingestion attempts (same `source_name` + `source_id`) are rejected gracefully — the caller can check with `exists()` first or handle the unique constraint violation.
-- Storage-level errors (e.g., SQLite locking) are retried with exponential backoff.
-- Malformed `raw_data` (not JSON-serializable) is rejected at save time with a clear error.
+- Duplicate ingestion attempts (same `source_name` + `source_id`) are silently skipped via `ON CONFLICT DO NOTHING` against `idx_source_dedup`. `saveItems` returns only the count of newly inserted rows, so callers can detect "no new items" without inspecting per-row errors.
+- Storage-level errors during a `saveItems` call are caught and logged; the call returns 0 rather than throwing. (Retry/backoff for transient SQLite locking is not yet implemented.)
+- Malformed `raw_data` (not JSON-serializable) will fail at the Drizzle JSON serialization step with a clear error.

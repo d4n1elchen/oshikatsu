@@ -55,10 +55,14 @@ The provenance links tying normalized events back to the raw data.
 - `publish_time` (timestamp)
 - `url` (text)
 - `author` (text)
+- `venue_name` (text, optional) — Venue text extracted from this source item
+- `venue_url` (text, optional) — Venue URL extracted from this source item
 - `raw_content` (text)
 - `created_at` (timestamp)
 
 `source_references.url` points to the original source item, such as the tweet URL. If that tweet also mentions a ticket page or stream page, those links belong in `event_related_links`.
+
+`source_references.venue_name` and `source_references.venue_url` preserve the venue extraction from that specific source item. Event-level venue fields can use the best display value, while source references retain the per-source extraction.
 
 ## Link Extraction
 

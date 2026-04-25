@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../db";
 import { normalizedEvents, eventRelatedLinks, sourceReferences } from "../db/schema";
 import { RawStorage } from "./RawStorage";
+import { VenueResolver } from "./VenueResolver";
 import type { LLMProvider } from "./LLMProvider";
 import {
   createDefaultNormalizationStrategies,
@@ -21,10 +22,16 @@ type ProcessBatchResult = {
 export class NormalizationEngine {
   private rawStorage: RawStorage;
   private strategies: NormalizationStrategy[];
+  private venueResolver: VenueResolver;
 
-  constructor(private llm: LLMProvider, strategies: NormalizationStrategy[] = createDefaultNormalizationStrategies()) {
+  constructor(
+    private llm: LLMProvider,
+    strategies: NormalizationStrategy[] = createDefaultNormalizationStrategies(),
+    venueResolver: VenueResolver = new VenueResolver()
+  ) {
     this.rawStorage = new RawStorage();
     this.strategies = strategies;
+    this.venueResolver = venueResolver;
   }
 
   /**
@@ -118,6 +125,10 @@ export class NormalizationEngine {
   private async saveNormalizedEvent(rawItem: any, context: SourceContext, extracted: ExtractedEvent): Promise<void> {
     const eventId = randomUUID();
     const referenceId = randomUUID();
+    const venueResolution = await this.venueResolver.resolve({
+      venueName: extracted.venue_name,
+      venueUrl: extracted.venue_url,
+    });
 
     db.transaction((tx) => {
       // 1. Insert the event
@@ -126,6 +137,7 @@ export class NormalizationEngine {
         title: extracted.title,
         description: extracted.description,
         eventTime: parseDateOrFallback(extracted.event_time, context.publishTime.toISOString()),
+        venueId: venueResolution?.venue.id || null,
         venueName: extracted.venue_name || null,
         venueUrl: extracted.venue_url || null,
         type: extracted.type,
@@ -155,6 +167,8 @@ export class NormalizationEngine {
         publishTime: context.publishTime,
         url: context.url,
         author: context.author,
+        venueName: extracted.venue_name || null,
+        venueUrl: extracted.venue_url || null,
         rawContent: context.rawContent,
         createdAt: new Date(),
       }).run();

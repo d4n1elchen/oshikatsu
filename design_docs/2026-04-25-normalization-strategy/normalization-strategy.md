@@ -25,7 +25,7 @@ If this logic lives directly in `NormalizationEngine`, the engine becomes a coll
 - Keep `NormalizationEngine` responsible for orchestration only.
 - Encapsulate source-specific raw data interpretation behind a stable interface.
 - Support new source normalizers without changing the engine.
-- Preserve source provenance consistently in `source_references`.
+- Preserve source provenance consistently in `source_references`, including venue text extracted from that source item.
 - Extract event-relevant links separately from source provenance.
 - Keep fallback behavior conservative and generic when LLM extraction fails.
 - Avoid hard-coded artist, venue, campaign, or event keyword rules in the core engine.
@@ -100,6 +100,8 @@ Field meanings:
 - `rawContent`: Full context string passed to the LLM and stored as provenance.
 
 The `url` field is provenance. `relatedLinkCandidates` are possible event destinations. Related links should store only URL and title.
+
+Extracted venue fields belong in `source_references` as source-specific provenance. Event-level venue fields may hold the best display value, and `venue_id` may point to a canonical venue when resolved.
 
 ### NormalizationStrategy
 

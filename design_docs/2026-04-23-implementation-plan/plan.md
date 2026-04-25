@@ -58,6 +58,30 @@ This plan outlines the phased implementation of the Oshikatsu platform, starting
 
 **Working product**: Duplicate events from the same or different sources are automatically merged; event updates are reflected correctly.
 
+## Phase 3.1: Event Hierarchy
+
+**Goal**: Model main/sub-event relationships on top of canonical events produced by Phase 3.
+
+**Motivation**: Real-world activities often consist of a main event (e.g., a concert) plus related sub-activities (merch booth, pre-show talk, post-show meet & greet, livestream of the same concert). Today these surface as independent normalized events, which fragments the timeline and downstream calendar/notification output.
+
+**Deliverables**:
+
+- Schema additions to `normalized_events`:
+  - `parent_event_id` (nullable FK to `normalized_events`) — set on sub-events.
+  - One-level-deep constraint: a sub-event cannot itself have sub-events.
+- Conservative rules for promoting a normalized event to a sub-event of an existing canonical event (e.g., shared artist + close time + explicit reference in source text), explicitly separate from Phase 3 dedup signals.
+- Manual override in the TUI to attach/detach a sub-event from a parent.
+- TUI Event detail view shows parent context for a sub-event and a sub-event list for a main event.
+- Query helpers so downstream consumers can fetch a main event with its sub-events in a single call.
+
+**Working product**: Related events can be grouped under a canonical main event, viewable as a parent-with-children unit in the TUI, and Phase 4 export can choose to emit the bundle or the individual records.
+
+**Open questions** (to resolve in a dedicated design doc before implementation):
+
+- Should hierarchy assignment run automatically as part of the dedup pass, or only via manual/TUI action initially?
+- How should sub-events inherit (or override) the parent's venue, tags, and cancellation status?
+- Do we need `event_hierarchy_decisions` analogous to `event_merge_decisions` for auditability?
+
 ## Phase 4: Downstream Export
 
 **Goal**: Expose normalized events to downstream consumers.

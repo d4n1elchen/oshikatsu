@@ -8,25 +8,37 @@ The Twitter/X source connector fetches new tweets from configured sources using 
 
 ## Configuration
 
-Sources to monitor are managed by the [watch list](./watchlist.md), not configured here. This config only covers browser and fetch behavior.
+Watch targets to monitor are managed by the [watch list](./watchlist.md), not configured here. The connector config covers only browser and fetch behavior.
+
+The shipped global `config.yaml` exposes a flattened subset:
 
 ```yaml
 twitter:
-  # Browser settings
-  browser:
-    user_data_dir: "./browser_data"  # Persist login session
-    headless: false                   # Headful for anti-detection
+  maxTweetsPerSource: 50
+  headless: true     # Daemon default. Use `headless: false` for development/debugging.
 
-  # Account (dedicated burner account — NOT your main)
-  account:
-    username: "burner_handle"
-
-  # Fetch behavior
-  fetch:
-    max_tweets_per_source: 50        # Max tweets to scrape per source per cycle
-    scroll_delay_ms: 1500            # Delay between scrolls (human-like timing)
-    page_load_timeout_ms: 15000      # Timeout for page load
+paths:
+  browserData: "./browser_data"   # Shared with login:twitter; persists the X session.
 ```
+
+The connector itself receives a structured config when constructed by the Scheduler:
+
+```yaml
+twitter:
+  browser:
+    userDataDir: "./browser_data"   # Persist login session across runs
+    headless: true                  # See note below
+  fetch:
+    maxTweetsPerSource: 50          # Max tweets per watch target per cycle
+    scrollDelayMs: 1500             # Delay between scrolls (human-like timing)
+    pageLoadTimeoutMs: 15000        # Timeout for page load
+```
+
+### What changed from earlier drafts
+
+- **No `account` block.** Authentication is held entirely by the persistent browser profile in `userDataDir`. A one-time login is performed via `npm run login:twitter` (`src/scripts/twitter_login.ts`), which launches a headful Chromium against `https://x.com/login`, waits up to 3 minutes for manual login + 2FA, and persists cookies into `browserData`. The runtime connector reuses that profile and never re-enters credentials, so a separate `account.username` config field is unnecessary.
+- **`headless` defaults to `true`.** The original anti-detection rationale recommended headful, but a logged-in persistent context is the dominant signal — modern Playwright headless plus `--disable-blink-features=AutomationControlled` has been good enough in practice. Keep `headless: false` during development if you need to watch the page, or if anti-bot pressure increases.
+- **Burner account discipline still applies.** Use a dedicated X account in `browserData`, not your main account. This is a runbook concern rather than a config field.
 
 ## Architecture
 
@@ -54,43 +66,36 @@ The connector uses Playwright with CDP to control a real browser instance:
 ```typescript
 export interface TwitterConnectorConfig {
   browser: {
-    user_data_dir: string;
+    userDataDir: string;
     headless: boolean;
   };
-  account: {
-    username: string;
-  };
   fetch: {
-    max_tweets_per_source: number;
-    scroll_delay_ms: number;
-    page_load_timeout_ms: number;
+    maxTweetsPerSource: number;
+    scrollDelayMs: number;
+    pageLoadTimeoutMs: number;
   };
 }
 
-export class TwitterConnector {
+export class TwitterConnector implements BaseConnector {
   constructor(private config: TwitterConnectorConfig) {}
 
-  /** Launch the browser and restore login session. */
-  async start(): Promise<void> {
-    // implementation
-  }
+  /** Launch the persistent browser context and reopen the X session. */
+  async start(): Promise<void> {}
 
   /**
-   * Fetch new tweets from a single source entry.
-   * Called by the scheduler for each active Twitter source.
+   * Fetch new tweets from a single watch target.
+   * Called by the scheduler for each active Twitter watch target.
    *
-   * @param source A SourceEntry from the watch list.
-   * @returns List of raw tweet payloads (Record<string, any>) with source_name and source_id.
+   * @param target A WatchTarget from the watch list. Expects sourceConfig.username.
+   * @returns List of raw tweet payloads, each shaped as
+   *          { sourceName: "twitter", sourceId: <tweet id>, rawData: <tweet result> }.
    */
-  async fetchUpdates(source: SourceEntry): Promise<Record<string, any>[]> {
-    // implementation
+  async fetchUpdates(target: WatchTarget): Promise<Record<string, any>[]> {
     return [];
   }
 
   /** Close the browser gracefully. */
-  async stop(): Promise<void> {
-    // implementation
-  }
+  async stop(): Promise<void> {}
 }
 ```
 
@@ -124,11 +129,11 @@ Each raw item returned by the connector is the unmodified GraphQL response paylo
 
 ## Anti-Detection Measures
 
-- **Headful browser** with real browser fingerprint (not headless).
-- **Dedicated burner account** — never use your main account.
-- **Human-like behavior**: randomized scroll delays, natural page navigation patterns.
-- **Persistent session**: reuse login cookies from `user_data_dir` to avoid repeated logins.
-- **Single browser instance with tabs** via CDP — more efficient and less suspicious than multiple browser instances.
+- **Persistent logged-in session** as the dominant signal: reuse cookies from `userDataDir` to avoid repeated logins. This is what makes the connector look like a real returning user.
+- **Real-browser fingerprint** even in headless mode: a desktop user-agent, a 1280×800 viewport, `--disable-blink-features=AutomationControlled`, and `ignoreDefaultArgs: ["--enable-automation"]`. `headless` is configurable; flip to `false` if anti-bot pressure increases.
+- **Dedicated burner account** — never use your main account. Enforced operationally via `login:twitter`, not by config.
+- **Human-like behavior**: scroll-and-wait with `scrollDelayMs` between steps, capped by `maxTweetsPerSource`.
+- **Single persistent browser context with one tab** — efficient and less suspicious than spawning instances per fetch.
 
 ## Error Handling
 

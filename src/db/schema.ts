@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const artists = sqliteTable("artists", {
   id: text("id").primaryKey(),
@@ -34,11 +34,45 @@ export const rawItems = sqliteTable("raw_items", {
   uniqueIndex("idx_source_dedup").on(table.sourceName, table.sourceId),
 ]);
 
+export const venues = sqliteTable("venues", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  kind: text("kind", { enum: ["physical", "virtual", "unknown"] }).notNull().default("unknown"),
+  status: text("status", { enum: ["discovered", "verified", "ignored"] }).notNull().default("discovered"),
+  url: text("url"),
+  address: text("address"),
+  city: text("city"),
+  region: text("region"),
+  country: text("country"),
+  latitude: real("latitude"),
+  longitude: real("longitude"),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+}, (table) => [
+  index("idx_venues_name").on(table.name),
+  index("idx_venues_url").on(table.url),
+  index("idx_venues_kind").on(table.kind),
+  index("idx_venues_status").on(table.status),
+]);
+
+export const venueAliases = sqliteTable("venue_aliases", {
+  id: text("id").primaryKey(),
+  venueId: text("venue_id").notNull().references(() => venues.id, { onDelete: "cascade" }),
+  alias: text("alias").notNull(),
+  locale: text("locale"),
+  source: text("source"),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+}, (table) => [
+  uniqueIndex("idx_venue_alias_dedup").on(table.venueId, table.alias),
+  index("idx_venue_alias").on(table.alias),
+]);
+
 export const normalizedEvents = sqliteTable("normalized_events", {
   id: text("id").primaryKey(),
   title: text("title").notNull(),
   description: text("description").notNull(),
   eventTime: integer("event_time", { mode: "timestamp" }).notNull(),
+  venueId: text("venue_id").references(() => venues.id, { onDelete: "set null" }),
   venueName: text("venue_name"),
   venueUrl: text("venue_url"),
   type: text("type").notNull(),
@@ -68,6 +102,8 @@ export const sourceReferences = sqliteTable("source_references", {
   publishTime: integer("publish_time", { mode: "timestamp" }).notNull(),
   url: text("url").notNull(),
   author: text("author").notNull(),
+  venueName: text("venue_name"),
+  venueUrl: text("venue_url"),
   rawContent: text("raw_content").notNull(),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
