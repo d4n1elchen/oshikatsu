@@ -31,6 +31,20 @@ This plan outlines the phased implementation of the Oshikatsu platform, starting
 
 **Working product**: Raw Twitter/X items are automatically normalized into the unified event schema, viewable via TUI.
 
+## Phase 2.1: Venue Database
+
+**Goal**: Add canonical venue records and conservative venue resolution before merge/deduplication.
+
+**Deliverables**:
+
+- Venue database for physical and virtual venues
+- Venue alias table for alternate names/spellings
+- Nullable `venue_id` reference on normalized events
+- Conservative exact URL / exact alias venue resolver
+- TUI visibility for extracted venue and matched canonical venue
+
+**Working product**: Normalized events can be linked to canonical venues when exact venue resolution is possible, while preserving extracted `venue_name` and `venue_url`.
+
 ## Phase 3: Merge/Deduplication
 
 **Goal**: Consolidate multiple source items referring to the same event.

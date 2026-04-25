@@ -80,7 +80,8 @@ Identifies and merges duplicate or overlapping events across sources.
 
 - Goal: consolidate multiple source items referring to the same event into a single normalized record while preserving all provenance in `source_references`
 - **Execution**: Runs synchronously as the final step of the ingestion pipeline.
-- **Deduplication Strategy**: Queries the Normalized Database for candidates within a specific time constraint (e.g., +/- 48 hours of `event_time` for the same `artist_id`), then employs heuristic matching (semantic `title` similarity or exact link matching) to identify overlaps.
+- **Deduplication Strategy**: Queries the Normalized Database for candidates within a specific time constraint (e.g., +/- 48 hours of `event_time`), then uses conservative signals such as exact source references, related link overlap, canonical venue ID, and title similarity to identify overlaps.
+- **Auditability**: Merge decisions should be recorded with matched signals and a human-readable reason so false positives can be inspected.
 
 ### 5. Downstream Integration
 
@@ -119,7 +120,7 @@ Handles persistence of data across the pipeline.
 - **Watch List**: Persists the artist registry and watch targets with their enabled/disabled states.
 - **Raw Storage**: Persists raw payloads fetched from sources before normalization, along with metadata (source identifier, fetch timestamps, processing status).
 - **Artist Database**: Reference database of artist profiles and their known sources (e.g., social media accounts, channels). Used for enrichment and linking normalized events to known artists.
-- **Venue Database**: Reference database of venue information, used for enrichment and deduplication of event locations.
+- **Venue Database**: Reference database of physical and virtual venue information and aliases. Normalized events may reference a canonical venue through `venue_id`, which is used as a conservative signal during Phase 3 deduplication.
 - **Normalized Storage**: Persists unified event records after deduplication, related event links, and source references, and provides query capabilities for downstream consumers.
 
 ## Data Model
@@ -153,6 +154,7 @@ Handles persistence of data across the pipeline.
   "start_time": "event start time",
   "end_time": "event end time",
   "venue": {
+    "id": "canonical venue identifier when resolved (optional)",
     "name": "venue name (e.g., 'Tokyo Dome', 'Twitch')",
     "address": "physical address (for in-person events)",
     "coordinates": "latitude/longitude (optional)",

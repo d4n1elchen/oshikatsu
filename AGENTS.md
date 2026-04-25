@@ -10,6 +10,10 @@ The repository also includes a collaboration folder:
 
 - `design_docs/`: Use for planned design and architecture work. Each design document lives in its own dated folder named `[date] - [design summary]`.
 
+The repository also includes a technical debt tracker:
+
+- `TECH_DEBTS.md`: Use for known shortcuts, deferred decisions, implementation gaps, and follow-up work that should not block the current phase but must not be forgotten.
+
 ## Language Guidelines
 
 All documentation, agent instructions, and project artifacts created within this repository must be written in English.
@@ -51,3 +55,4 @@ All agents must follow the established collaboration and design documentation pr
 3.  **Review**: The user reviews the design doc and approves it before implementation begins.
 4.  **Implementation**: Execute the plan only after the design has been reviewed and approved.
 5.  **Verification**: Ensure the implementation meets the requirements specified in the approved design doc.
+6.  **Debt Tracking**: When taking a pragmatic shortcut, deferring a design decision, discovering a known gap, or choosing not to implement a relevant improvement now, update `TECH_DEBTS.md` with the context and expected follow-up.
