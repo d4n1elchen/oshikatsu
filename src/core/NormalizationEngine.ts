@@ -1,42 +1,51 @@
-import { z } from "zod";
 import { randomUUID } from "crypto";
 import { eq } from "drizzle-orm";
 import { db } from "../db";
-import { normalizedEvents, sourceReferences, rawItems } from "../db/schema";
+import { normalizedEvents, eventRelatedLinks, sourceReferences } from "../db/schema";
 import { RawStorage } from "./RawStorage";
 import type { LLMProvider } from "./LLMProvider";
+import {
+  createDefaultNormalizationStrategies,
+  EventExtractionSchema,
+  type ExtractedEvent,
+  type NormalizationStrategy,
+  type SourceContext,
+  parseDateOrFallback,
+} from "./NormalizationStrategy";
 
-export const EventExtractionSchema = z.object({
-  title: z.string().describe("A short, descriptive title for the event"),
-  description: z.string().describe("A detailed summary of the announcement"),
-  event_time: z.string().describe("ISO 8601 timestamp of when the event actually occurs (NOT when the announcement was posted). If none is found, return the publish time of the post."),
-  venue_name: z.string().optional().describe("Name of the physical venue or virtual platform (e.g., 'YouTube', 'Tokyo Dome')"),
-  venue_url: z.string().optional().describe("URL to the stream or venue website"),
-  type: z.enum(["live_stream", "merchandise", "release", "concert", "broadcast", "collaboration", "side_event", "announcement"]).describe("The category of the event"),
-  tags: z.array(z.string()).describe("List of relevant tags (e.g., fandom, members involved, platform)"),
-});
-
-type ExtractedEvent = z.infer<typeof EventExtractionSchema>;
+type ProcessBatchResult = {
+  processed: number;
+  failed: number;
+};
 
 export class NormalizationEngine {
   private rawStorage: RawStorage;
+  private strategies: NormalizationStrategy[];
 
-  constructor(private llm: LLMProvider) {
+  constructor(private llm: LLMProvider, strategies: NormalizationStrategy[] = createDefaultNormalizationStrategies()) {
     this.rawStorage = new RawStorage();
+    this.strategies = strategies;
   }
 
   /**
    * Process a batch of raw items.
    */
-  async processBatch(limit: number = 20): Promise<void> {
+  async processBatch(limit: number = 20): Promise<ProcessBatchResult> {
     const items = await this.rawStorage.getUnprocessed(undefined, limit);
-    if (items.length === 0) return;
+    const result: ProcessBatchResult = { processed: 0, failed: 0 };
+    if (items.length === 0) return result;
 
     console.log(`[NormalizationEngine] Processing batch of ${items.length} items...`);
 
     for (const item of items) {
-      await this.processItem(item);
+      if (await this.processItem(item)) {
+        result.processed++;
+      } else {
+        result.failed++;
+      }
     }
+
+    return result;
   }
 
   /**
@@ -46,31 +55,24 @@ export class NormalizationEngine {
     try {
       console.log(`[NormalizationEngine] Normalizing item ${item.id} from ${item.sourceName}...`);
       
-      // 1. Extract context text
-      const textContext = this.extractContext(item);
-      if (!textContext) {
+      const strategy = this.getStrategy(item.sourceName);
+      const context = strategy.buildContext(item);
+      if (!context) {
         throw new Error("No usable text context found in raw data");
       }
 
-      // 2. Build system prompt
-      const systemPrompt = `You are an AI assistant designed to parse announcements from Japanese and English social media into structured event records.
-Your task is to extract the details of the event being announced.
+      if (await this.hasSourceReference(item.id)) {
+        await this.rawStorage.markProcessed(item.id);
+        console.log(`[NormalizationEngine] Item ${item.id} already has a normalized source reference; marked processed.`);
+        return true;
+      }
 
-Input text:
-"${textContext}"
+      const systemPrompt = strategy.buildPrompt(context);
 
-Remember:
-- event_time should be the time the actual event/stream happens, converted to ISO8601.
-- If no explicit event time is given, use the post time if applicable.
-- Translate Japanese summaries to English.`;
+      const extracted = await this.extractWithFallback(item, context, strategy, systemPrompt);
 
-      // 3. Extract via LLM
-      const extracted = await this.llm.extract(textContext, EventExtractionSchema, systemPrompt);
+      await this.saveNormalizedEvent(item, context, extracted);
 
-      // 4. Save to NormalizedStorage
-      await this.saveNormalizedEvent(item, extracted);
-
-      // 5. Mark success
       await this.rawStorage.markProcessed(item.id);
       console.log(`[NormalizationEngine] Successfully normalized item ${item.id}`);
       return true;
@@ -82,37 +84,48 @@ Remember:
     }
   }
 
-  /**
-   * Platform-specific heuristics to get the main text payload.
-   */
-  private extractContext(item: any): string | null {
-    if (item.sourceName === "twitter") {
-      const legacy = item.rawData?.legacy;
-      if (!legacy) return null;
-      
-      const fullText = legacy.full_text || "";
-      const createdAt = legacy.created_at || "";
-      return `[Posted at: ${createdAt}]\n\n${fullText}`;
+  private async hasSourceReference(rawItemId: string): Promise<boolean> {
+    const rows = await db.select({ id: sourceReferences.id })
+      .from(sourceReferences)
+      .where(eq(sourceReferences.rawItemId, rawItemId))
+      .limit(1);
+
+    return rows.length > 0;
+  }
+
+  private getStrategy(sourceName: string): NormalizationStrategy {
+    return this.strategies.find((strategy) => strategy.supports(sourceName)) ?? this.strategies[this.strategies.length - 1];
+  }
+
+  private async extractWithFallback(
+    item: any,
+    context: SourceContext,
+    strategy: NormalizationStrategy,
+    systemPrompt: string
+  ): Promise<ExtractedEvent> {
+    try {
+      const extracted = await this.llm.extract(context.rawContent, EventExtractionSchema, systemPrompt);
+      return strategy.sanitize(item, context, extracted);
+    } catch (error) {
+      console.warn(`[NormalizationEngine] LLM extraction failed for ${item.id}; using strategy fallback.`, error);
+      return strategy.fallback(item, context);
     }
-    
-    // Fallback: try to stringify
-    return JSON.stringify(item.rawData);
   }
 
   /**
    * Save the parsed event and its source reference.
    */
-  private async saveNormalizedEvent(rawItem: any, extracted: ExtractedEvent): Promise<void> {
+  private async saveNormalizedEvent(rawItem: any, context: SourceContext, extracted: ExtractedEvent): Promise<void> {
     const eventId = randomUUID();
     const referenceId = randomUUID();
 
-    await db.transaction(async (tx) => {
+    db.transaction((tx) => {
       // 1. Insert the event
-      await tx.insert(normalizedEvents).values({
+      tx.insert(normalizedEvents).values({
         id: eventId,
         title: extracted.title,
         description: extracted.description,
-        eventTime: new Date(extracted.event_time),
+        eventTime: parseDateOrFallback(extracted.event_time, context.publishTime.toISOString()),
         venueName: extracted.venue_name || null,
         venueUrl: extracted.venue_url || null,
         type: extracted.type,
@@ -120,38 +133,31 @@ Remember:
         tags: extracted.tags,
         createdAt: new Date(),
         updatedAt: new Date(),
-      });
+      }).run();
 
-      // 2. Insert the source reference
-      // Try to extract URL and Author for Twitter
-      let url = "";
-      let author = "";
-      let publishTime = new Date();
-
-      if (rawItem.sourceName === "twitter") {
-        const legacy = rawItem.rawData?.legacy;
-        const core = rawItem.rawData?.core?.user_results?.result?.legacy;
-        
-        author = core?.screen_name || "unknown";
-        url = `https://x.com/${author}/status/${rawItem.sourceId}`;
-        
-        if (legacy?.created_at) {
-          publishTime = new Date(legacy.created_at);
-        }
+      for (const link of extracted.related_links) {
+        tx.insert(eventRelatedLinks).values({
+          id: randomUUID(),
+          eventId,
+          rawItemId: rawItem.id,
+          url: link.url,
+          title: link.title || null,
+          createdAt: new Date(),
+        }).onConflictDoNothing().run();
       }
 
-      await tx.insert(sourceReferences).values({
+      tx.insert(sourceReferences).values({
         id: referenceId,
         eventId: eventId,
         rawItemId: rawItem.id,
         sourceName: rawItem.sourceName,
         sourceId: rawItem.sourceId,
-        publishTime,
-        url,
-        author,
-        rawContent: this.extractContext(rawItem) || "",
+        publishTime: context.publishTime,
+        url: context.url,
+        author: context.author,
+        rawContent: context.rawContent,
         createdAt: new Date(),
-      });
+      }).run();
     });
   }
 }

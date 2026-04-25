@@ -120,7 +120,7 @@ Handles persistence of data across the pipeline.
 - **Raw Storage**: Persists raw payloads fetched from sources before normalization, along with metadata (source identifier, fetch timestamps, processing status).
 - **Artist Database**: Reference database of artist profiles and their known sources (e.g., social media accounts, channels). Used for enrichment and linking normalized events to known artists.
 - **Venue Database**: Reference database of venue information, used for enrichment and deduplication of event locations.
-- **Normalized Storage**: Persists unified event records after deduplication, and provides query capabilities for downstream consumers.
+- **Normalized Storage**: Persists unified event records after deduplication, related event links, and source references, and provides query capabilities for downstream consumers.
 
 ## Data Model
 
@@ -139,6 +139,12 @@ Handles persistence of data across the pipeline.
       "author": "who posted it (user ID, username)",
       "raw_content": "original text/content",
       "fetch_time": "when the item was ingested"
+    }
+  ],
+  "related_links": [
+    {
+      "url": "URL mentioned by the source content or extracted as an event-relevant destination",
+      "title": "human-readable title for the link"
     }
   ],
   "title": "canonical event title or announcement summary",
@@ -167,6 +173,11 @@ Handles persistence of data across the pipeline.
   "tags": "normalized labels for event type, platform, fandom, or priority"
 }
 ```
+
+`source_references` and `related_links` serve different purposes:
+
+- `source_references` preserve provenance: where the announcement came from.
+- `related_links` describe destinations relevant to the event itself. Each related link stores only its URL and title.
 
 ### Event Categories
 

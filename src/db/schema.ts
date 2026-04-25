@@ -48,6 +48,17 @@ export const normalizedEvents = sqliteTable("normalized_events", {
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 });
 
+export const eventRelatedLinks = sqliteTable("event_related_links", {
+  id: text("id").primaryKey(),
+  eventId: text("event_id").notNull().references(() => normalizedEvents.id, { onDelete: "cascade" }),
+  rawItemId: text("raw_item_id").references(() => rawItems.id, { onDelete: "set null" }),
+  url: text("url").notNull(),
+  title: text("title"),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+}, (table) => [
+  uniqueIndex("idx_event_related_link_dedup").on(table.eventId, table.url),
+]);
+
 export const sourceReferences = sqliteTable("source_references", {
   id: text("id").primaryKey(),
   eventId: text("event_id").notNull().references(() => normalizedEvents.id, { onDelete: "cascade" }),

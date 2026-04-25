@@ -9,8 +9,8 @@ Since artist announcements are highly unstructured natural language, the Normali
 ## Core Pipeline Flow
 
 1. **Batch Retrieval**: The engine queries `RawStorage` for a batch of items where `status = "new"`.
-2. **Context Assembly**: The engine extracts the text payload (e.g., `full_text` from a tweet) and metadata (publish time, author).
-3. **LLM Extraction**: The text is passed to a local LLM with a strict system prompt and a JSON schema.
+2. **Context Assembly**: The engine extracts the text payload (e.g., `full_text` from a tweet), metadata (publish time, author), and any embedded links available in the raw source payload.
+3. **LLM Extraction**: The text and related link candidates are passed to a local LLM with a strict system prompt and a JSON schema.
 4. **Validation**: The LLM output is validated against our expected TypeScript types using `zod`.
 5. **Persistence**: 
    - On success, the unified record is written to `NormalizedStorage`, and the raw item is marked as `processed`.
@@ -18,7 +18,7 @@ Since artist announcements are highly unstructured natural language, the Normali
 
 ## Data Model (Normalized Storage)
 
-We will introduce two new Drizzle tables.
+We will introduce three new Drizzle tables.
 
 ### 1. `normalized_events`
 The canonical representation of an event.
@@ -34,7 +34,18 @@ The canonical representation of an event.
 - `created_at` (timestamp)
 - `updated_at` (timestamp)
 
-### 2. `source_references`
+### 2. `event_related_links`
+Event-relevant links extracted from the source content or structured source payload.
+- `id` (text, uuid)
+- `event_id` (text, fk to normalized_events)
+- `raw_item_id` (text, fk to raw_items, optional) — The raw item that supplied the link
+- `url` (text)
+- `title` (text, optional) — Human-readable link title
+- `created_at` (timestamp)
+
+`event_related_links` are not provenance records. They represent destinations that are useful to downstream consumers and users. Each related link stores only a URL and title.
+
+### 3. `source_references`
 The provenance links tying normalized events back to the raw data.
 - `id` (text, uuid)
 - `event_id` (text, fk to normalized_events)
@@ -47,6 +58,19 @@ The provenance links tying normalized events back to the raw data.
 - `raw_content` (text)
 - `created_at` (timestamp)
 
+`source_references.url` points to the original source item, such as the tweet URL. If that tweet also mentions a ticket page or stream page, those links belong in `event_related_links`.
+
+## Link Extraction
+
+The normalization pipeline extracts related links from two places:
+
+1. **Source payload links**: URLs exposed by the connector, such as expanded Twitter/X URLs in `rawData.legacy.entities.urls`.
+2. **LLM-titled links**: The LLM may produce a human-readable title for candidate links using surrounding text.
+
+The raw connector should preserve all link metadata available from the source. The normalization strategy should pass candidate links into the prompt so the LLM can decide which links are relevant to the event and title them appropriately.
+
+If link title extraction fails, the engine should still preserve explicit candidate URLs with an empty or source-provided title rather than dropping them.
+
 ## The LLM Interface
 
 We will build an `LLMProvider` interface to decouple the specific model from the business logic.
@@ -55,7 +79,7 @@ We will build an `LLMProvider` interface to decouple the specific model from the
 export interface LLMProvider {
   /**
    * Extract structured data from raw text.
-   * @param text The raw announcement text
+   * @param text The raw announcement text and related link candidates
    * @param schema The Zod schema enforcing the expected JSON output
    */
   extract<T>(text: string, schema: z.ZodSchema<T>): Promise<T>;
@@ -71,5 +95,5 @@ export interface LLMProvider {
 To monitor the normalization pipeline, we will add an **Events** tab to the TUI (accessible via `Tab` or `3`).
 
 - **List View**: Displays successfully normalized events ordered by `event_time`.
-- **Detail View**: Shows the full event details and a nested list of its `source_references`.
+- **Detail View**: Shows the full event details, related links, and a nested list of its `source_references`.
 - **Manual Reprocessing**: A keybind to retry normalization for `error` items in the Monitor tab.

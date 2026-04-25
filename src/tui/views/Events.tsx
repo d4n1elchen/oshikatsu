@@ -1,11 +1,11 @@
 import React, { useState, useCallback } from "react";
 import { Box, Text, useInput } from "ink";
 import { db } from "../../db";
-import { normalizedEvents, sourceReferences } from "../../db/schema";
+import { normalizedEvents, eventRelatedLinks, sourceReferences } from "../../db/schema";
 import { desc, eq } from "drizzle-orm";
-import type { NormalizedEvent, SourceReference } from "../../core/types";
+import type { EventRelatedLink, NormalizedEvent, SourceReference } from "../../core/types";
 
-type EnrichedEvent = NormalizedEvent & { refs: SourceReference[] };
+type EnrichedEvent = NormalizedEvent & { links: EventRelatedLink[]; refs: SourceReference[] };
 
 export default function Events() {
   const [events, setEvents] = useState<EnrichedEvent[]>([]);
@@ -24,10 +24,15 @@ export default function Events() {
 
     const enriched = await Promise.all(
       recentEvents.map(async (ev) => {
-        const refs = await db.select()
-          .from(sourceReferences)
-          .where(eq(sourceReferences.eventId, ev.id));
-        return { ...ev, refs };
+        const [links, refs] = await Promise.all([
+          db.select()
+            .from(eventRelatedLinks)
+            .where(eq(eventRelatedLinks.eventId, ev.id)),
+          db.select()
+            .from(sourceReferences)
+            .where(eq(sourceReferences.eventId, ev.id)),
+        ]);
+        return { ...ev, links, refs };
       })
     );
 
@@ -120,6 +125,25 @@ export default function Events() {
               <Box marginTop={1} borderStyle="single" borderColor="gray" paddingX={1}>
                 <Text>{selectedEvent.description}</Text>
               </Box>
+
+              {selectedEvent.links.length > 0 && (
+                <Box marginTop={1} flexDirection="column">
+                  <Text bold color="green">Related Links ({selectedEvent.links.length})</Text>
+                  {selectedEvent.links.map((link) => (
+                    <Box key={link.id} flexDirection="column" marginTop={1}>
+                      <Text>
+                        <Text dimColor>└─ </Text>
+                        <Text color="green">{link.title || link.url}</Text>
+                      </Text>
+                      {link.title && (
+                        <Box marginLeft={3}>
+                          <Text dimColor>{link.url}</Text>
+                        </Box>
+                      )}
+                    </Box>
+                  ))}
+                </Box>
+              )}
 
               <Box marginTop={1} flexDirection="column">
                 <Text bold color="blue">Source References ({selectedEvent.refs.length})</Text>

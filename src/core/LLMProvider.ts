@@ -1,10 +1,9 @@
 import { Ollama } from "ollama";
-import type { z } from "zod";
-import { zodToJsonSchema as z2j } from "zod-to-json-schema";
+import { z, type ZodType } from "zod";
 import { getConfig } from "../config";
 
 export interface LLMProvider {
-  extract<T>(text: string, schema: z.ZodSchema<T>, systemPrompt: string): Promise<T>;
+  extract<T>(text: string, schema: ZodType<T>, systemPrompt: string): Promise<T>;
 }
 
 export class OllamaProvider implements LLMProvider {
@@ -17,11 +16,15 @@ export class OllamaProvider implements LLMProvider {
     this.model = config.llm.model;
   }
 
-  async extract<T>(text: string, schema: z.ZodSchema<T>, systemPrompt: string): Promise<T> {
+  async extract<T>(text: string, schema: ZodType<T>, systemPrompt: string): Promise<T> {
     const jsonSchema = zodToJsonSchema(schema);
     
     // We append instructions to the system prompt to enforce JSON
-    const fullSystemPrompt = `${systemPrompt}\n\nYou MUST return only valid JSON matching this schema:\n${JSON.stringify(jsonSchema, null, 2)}`;
+    const fullSystemPrompt = `${systemPrompt}
+
+Return exactly one JSON object. Do not wrap it in markdown or add commentary.
+The JSON object must match this schema:
+${JSON.stringify(jsonSchema, null, 2)}`;
 
     try {
       const response = await this.client.chat({
@@ -30,7 +33,7 @@ export class OllamaProvider implements LLMProvider {
           { role: "system", content: fullSystemPrompt },
           { role: "user", content: text }
         ],
-        format: "json", // Ollama native JSON mode
+        format: jsonSchema,
         options: {
           temperature: 0.1, // Low temp for extraction tasks
         }
@@ -49,7 +52,6 @@ export class OllamaProvider implements LLMProvider {
   }
 }
 
-// A simple utility to convert basic Zod schemas to JSON Schema for the LLM prompt.
-function zodToJsonSchema(schema: any): any {
-  return z2j(schema, { target: "jsonSchema7", $refStrategy: "none" });
+function zodToJsonSchema(schema: ZodType): Record<string, unknown> {
+  return z.toJSONSchema(schema) as Record<string, unknown>;
 }

@@ -1,8 +1,7 @@
 import { db } from "../db";
 import { rawItems } from "../db/schema";
 import type { NewRawItem, RawItem } from "./types";
-import { eq, and, sql, desc, count } from "drizzle-orm";
-import { randomUUID } from "crypto";
+import { eq, and, desc, count } from "drizzle-orm";
 
 export class RawStorage {
   /**
@@ -74,6 +73,13 @@ export class RawStorage {
   async markError(itemId: string, errorMessage: string): Promise<void> {
     await db.update(rawItems)
       .set({ status: "error", errorMessage })
+      .where(eq(rawItems.id, itemId));
+  }
+
+  /** Put an item back on the normalization queue. */
+  async markNew(itemId: string): Promise<void> {
+    await db.update(rawItems)
+      .set({ status: "new", errorMessage: null })
       .where(eq(rawItems.id, itemId));
   }
 
