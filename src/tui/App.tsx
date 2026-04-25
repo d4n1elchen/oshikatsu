@@ -2,17 +2,19 @@ import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
 import WatchList from "./views/WatchList";
 import Monitor from "./views/Monitor";
+import Events from "./views/Events";
 
-const TABS = ["watchlist", "monitor"] as const;
+const TABS = ["watchlist", "monitor", "events"] as const;
 type Tab = typeof TABS[number];
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>("watchlist");
 
   useInput((input, key) => {
-    // Tab switching with 1/2 keys
+    // Tab switching with 1/2/3 keys
     if (input === "1") setActiveTab("watchlist");
     if (input === "2") setActiveTab("monitor");
+    if (input === "3") setActiveTab("events");
 
     // Tab key cycles through tabs
     if (key.tab) {
@@ -49,12 +51,20 @@ export default function App() {
         >
           [2] Monitor
         </Text>
+        <Text
+          color={activeTab === "events" ? "white" : "gray"}
+          backgroundColor={activeTab === "events" ? "blue" : undefined}
+          bold={activeTab === "events"}
+        >
+          [3] Events
+        </Text>
       </Box>
 
       {/* Main Content Area */}
       <Box flexGrow={1} borderStyle="round" paddingX={1} paddingY={1}>
         {activeTab === "watchlist" && <WatchList />}
         {activeTab === "monitor" && <Monitor />}
+        {activeTab === "events" && <Events />}
       </Box>
     </Box>
   );

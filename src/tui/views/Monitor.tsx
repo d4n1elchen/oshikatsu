@@ -57,6 +57,26 @@ export default function Monitor() {
     if (key.escape) {
       setExpandedItemId(null);
     }
+
+    // Force retry (mark as new)
+    if (input === "x" && recentItems.length > 0) {
+      const selected = recentItems[cursor];
+      if (selected.status === "error") {
+        // We do a quick raw storage update via the backend logic
+        // But since we are directly in TUI (frontend), we shouldn't directly use db.update here if possible
+        // Let's just use the db instance directly for now
+        import("../../db").then(({ db }) => {
+          import("../../db/schema").then(({ rawItems }) => {
+            import("drizzle-orm").then(({ eq }) => {
+              db.update(rawItems)
+                .set({ status: "new" })
+                .where(eq(rawItems.id, selected.id))
+                .then(() => loadData());
+            });
+          });
+        });
+      }
+    }
   });
 
   if (loading) {
@@ -141,7 +161,7 @@ export default function Monitor() {
       {/* Keybindings */}
       <Box marginTop={1} borderStyle="single" borderColor="gray" paddingX={1}>
         <Text dimColor>
-          ↑↓ Navigate  ⏎ Expand  <Text color="white">r</Text> Refresh
+          ↑↓ Navigate  ⏎ Expand  <Text color="white">r</Text> Refresh  <Text color="white">x</Text> Retry Error
         </Text>
       </Box>
     </Box>

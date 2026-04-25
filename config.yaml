@@ -1,0 +1,19 @@
+# Oshikatsu Configuration File
+# This file overrides the default application settings.
+
+scheduler:
+  ingestionIntervalMinutes: 15
+  normalizationIntervalMinutes: 5
+
+llm:
+  provider: "ollama"
+  host: "http://127.0.0.1:11434"
+  model: "llama3"
+
+twitter:
+  maxTweetsPerSource: 50
+  headless: true
+
+paths:
+  browserData: "./browser_data"
+  database: "./data/oshikatsu.db"

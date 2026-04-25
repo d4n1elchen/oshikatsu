@@ -33,3 +33,30 @@ export const rawItems = sqliteTable("raw_items", {
 }, (table) => [
   uniqueIndex("idx_source_dedup").on(table.sourceName, table.sourceId),
 ]);
+
+export const normalizedEvents = sqliteTable("normalized_events", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  eventTime: integer("event_time", { mode: "timestamp" }).notNull(),
+  venueName: text("venue_name"),
+  venueUrl: text("venue_url"),
+  type: text("type").notNull(),
+  isCancelled: integer("is_cancelled", { mode: "boolean" }).notNull().default(false),
+  tags: text("tags", { mode: "json" }).$type<string[]>().notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+});
+
+export const sourceReferences = sqliteTable("source_references", {
+  id: text("id").primaryKey(),
+  eventId: text("event_id").notNull().references(() => normalizedEvents.id, { onDelete: "cascade" }),
+  rawItemId: text("raw_item_id").notNull().references(() => rawItems.id, { onDelete: "cascade" }),
+  sourceName: text("source_name").notNull(),
+  sourceId: text("source_id").notNull(),
+  publishTime: integer("publish_time", { mode: "timestamp" }).notNull(),
+  url: text("url").notNull(),
+  author: text("author").notNull(),
+  rawContent: text("raw_content").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+});

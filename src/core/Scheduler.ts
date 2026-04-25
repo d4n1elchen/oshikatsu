@@ -1,7 +1,7 @@
 import { WatchListManager } from "./WatchListManager";
 import { RawStorage } from "./RawStorage";
 import { TwitterConnector } from "../connectors/twitter";
-import * as path from "path";
+import { getConfig } from "../config";
 
 export interface SchedulerConfig {
   intervalMinutes: number;
@@ -58,14 +58,16 @@ export class IngestionScheduler {
     console.log(`Found ${activeTwitterTargets.length} active Twitter watch targets.`);
 
     if (activeTwitterTargets.length > 0) {
+      const globalConfig = getConfig();
+      
       // Initialize Twitter Connector
       const twitterConnector = new TwitterConnector({
         browser: {
-          userDataDir: path.resolve(process.cwd(), "browser_data"),
-          headless: true, // Run headless in production/scheduling
+          userDataDir: globalConfig.paths.browserData,
+          headless: globalConfig.twitter.headless,
         },
         fetch: {
-          maxTweetsPerSource: 50,
+          maxTweetsPerSource: globalConfig.twitter.maxTweetsPerSource,
           scrollDelayMs: 1500,
           pageLoadTimeoutMs: 15000,
         },
