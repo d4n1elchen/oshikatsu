@@ -108,3 +108,51 @@ export const extractedEventRelatedLinks = sqliteTable("extracted_event_related_l
 }, (table) => [
   uniqueIndex("idx_extracted_event_related_link_dedup").on(table.extractedEventId, table.url),
 ]);
+
+export const normalizedEvents = sqliteTable("normalized_events", {
+  id: text("id").primaryKey(),
+  parentEventId: text("parent_event_id"),
+  artistId: text("artist_id").references(() => artists.id, { onDelete: "set null" }),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  startTime: integer("start_time", { mode: "timestamp" }),
+  endTime: integer("end_time", { mode: "timestamp" }),
+  venueId: text("venue_id").references(() => venues.id, { onDelete: "set null" }),
+  venueName: text("venue_name"),
+  venueUrl: text("venue_url"),
+  type: text("type").notNull(),
+  isCancelled: integer("is_cancelled", { mode: "boolean" }).notNull().default(false),
+  tags: text("tags", { mode: "json" }).$type<string[]>().notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+}, (table) => [
+  index("idx_normalized_events_artist_start_time").on(table.artistId, table.startTime),
+  index("idx_normalized_events_start_time").on(table.startTime),
+  index("idx_normalized_events_parent").on(table.parentEventId),
+]);
+
+export const normalizedEventSources = sqliteTable("normalized_event_sources", {
+  id: text("id").primaryKey(),
+  normalizedEventId: text("normalized_event_id").notNull().references(() => normalizedEvents.id, { onDelete: "cascade" }),
+  extractedEventId: text("extracted_event_id").notNull().references(() => extractedEvents.id, { onDelete: "cascade" }),
+  role: text("role", { enum: ["primary", "merged", "review_candidate", "ignored"] }).notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+}, (table) => [
+  uniqueIndex("idx_normalized_event_sources_dedup").on(table.normalizedEventId, table.extractedEventId),
+  index("idx_normalized_event_sources_extracted").on(table.extractedEventId),
+]);
+
+export const eventResolutionDecisions = sqliteTable("event_resolution_decisions", {
+  id: text("id").primaryKey(),
+  candidateExtractedEventId: text("candidate_extracted_event_id").notNull().references(() => extractedEvents.id, { onDelete: "cascade" }),
+  matchedNormalizedEventId: text("matched_normalized_event_id").references(() => normalizedEvents.id, { onDelete: "set null" }),
+  decision: text("decision", { enum: ["new", "merged", "linked_as_sub", "needs_review", "no_match", "ignored"] }).notNull(),
+  score: real("score"),
+  signals: text("signals", { mode: "json" }).$type<Record<string, unknown>>().notNull(),
+  reason: text("reason").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+}, (table) => [
+  index("idx_resolution_decisions_extracted").on(table.candidateExtractedEventId),
+  index("idx_resolution_decisions_normalized").on(table.matchedNormalizedEventId),
+  index("idx_resolution_decisions_decision").on(table.decision),
+]);

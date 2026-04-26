@@ -15,7 +15,8 @@
     "reset_db:raw": "tsx src/scripts/reset_db.ts --raw_items",
     "start:backend": "tsx src/daemon.ts",
     "typecheck": "tsc --noEmit",
-    "test": "npm run typecheck"
+    "test:unit": "node --import tsx/esm --test src/core/__tests__/**/*.test.ts",
+    "test": "npm run typecheck && npm run test:unit"
   },
   "keywords": [],
   "author": "",

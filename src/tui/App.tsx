@@ -3,18 +3,20 @@ import { Box, Text, useInput } from "ink";
 import WatchList from "./views/WatchList";
 import RawItems from "./views/RawItems";
 import ExtractedEvents from "./views/ExtractedEvents";
+import NormalizedEvents from "./views/NormalizedEvents";
 
-const TABS = ["watchlist", "rawItems", "extractedEvents"] as const;
+const TABS = ["watchlist", "rawItems", "extractedEvents", "normalizedEvents"] as const;
 type Tab = typeof TABS[number];
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>("watchlist");
 
   useInput((input, key) => {
-    // Tab switching with 1/2/3 keys
+    // Tab switching with 1/2/3/4 keys
     if (input === "1") setActiveTab("watchlist");
     if (input === "2") setActiveTab("rawItems");
     if (input === "3") setActiveTab("extractedEvents");
+    if (input === "4") setActiveTab("normalizedEvents");
 
     // Tab key cycles through tabs
     if (key.tab) {
@@ -58,6 +60,13 @@ export default function App() {
         >
           [3] Extracted Events
         </Text>
+        <Text
+          color={activeTab === "normalizedEvents" ? "white" : "gray"}
+          backgroundColor={activeTab === "normalizedEvents" ? "blue" : undefined}
+          bold={activeTab === "normalizedEvents"}
+        >
+          [4] Normalized Events
+        </Text>
       </Box>
 
       {/* Main Content Area */}
@@ -65,6 +74,7 @@ export default function App() {
         {activeTab === "watchlist" && <WatchList />}
         {activeTab === "rawItems" && <RawItems />}
         {activeTab === "extractedEvents" && <ExtractedEvents />}
+        {activeTab === "normalizedEvents" && <NormalizedEvents />}
       </Box>
     </Box>
   );

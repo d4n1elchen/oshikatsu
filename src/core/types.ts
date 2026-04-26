@@ -1,4 +1,4 @@
-import { artists, watchTargets, rawItems, venues, venueAliases, extractedEvents, extractedEventRelatedLinks } from "../db/schema";
+import { artists, watchTargets, rawItems, venues, venueAliases, extractedEvents, extractedEventRelatedLinks, normalizedEvents, normalizedEventSources, eventResolutionDecisions } from "../db/schema";
 
 // Extract TypeScript types directly from Drizzle schemas
 export type Artist = typeof artists.$inferSelect;
@@ -21,3 +21,26 @@ export type NewExtractedEvent = typeof extractedEvents.$inferInsert;
 
 export type ExtractedEventRelatedLink = typeof extractedEventRelatedLinks.$inferSelect;
 export type NewExtractedEventRelatedLink = typeof extractedEventRelatedLinks.$inferInsert;
+
+export type NormalizedEvent = typeof normalizedEvents.$inferSelect;
+export type NewNormalizedEvent = typeof normalizedEvents.$inferInsert;
+
+export type NormalizedEventSource = typeof normalizedEventSources.$inferSelect;
+export type NewNormalizedEventSource = typeof normalizedEventSources.$inferInsert;
+
+export type EventResolutionDecision = typeof eventResolutionDecisions.$inferSelect;
+export type NewEventResolutionDecision = typeof eventResolutionDecisions.$inferInsert;
+
+export type ResolutionDecisionType = "new" | "merged" | "linked_as_sub" | "needs_review" | "no_match" | "ignored";
+
+export type ResolutionSignals = {
+  time_window?: string;
+  related_link_overlap?: boolean;
+  venue_id_match?: boolean;
+  title_similarity?: number;
+  source_identity_overlap?: boolean;
+  event_scope?: string;
+  parent_event_hint_matched?: boolean;
+  same_source_url?: boolean;
+  same_source_id?: boolean;
+};
