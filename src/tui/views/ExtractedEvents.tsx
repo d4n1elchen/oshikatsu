@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from "react";
 import { Box, Text, useInput } from "ink";
 import { db } from "../../db";
-import { extractedEvents, extractedEventRelatedLinks, rawItems, venues } from "../../db/schema";
+import { artists, extractedEvents, extractedEventRelatedLinks, rawItems, venues } from "../../db/schema";
 import { desc, eq } from "drizzle-orm";
 import type { ExtractedEvent, ExtractedEventRelatedLink, Venue } from "../../core/types";
 
@@ -9,9 +9,10 @@ type EnrichedExtractedEvent = ExtractedEvent & {
   links: ExtractedEventRelatedLink[];
   venue: Venue | null;
   sourceName: string | null;
+  artistName: string | null;
 };
 
-export default function Events() {
+export default function ExtractedEvents() {
   const [events, setEvents] = useState<EnrichedExtractedEvent[]>([]);
   const [cursor, setCursor] = useState(0);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -28,7 +29,7 @@ export default function Events() {
 
     const enriched = await Promise.all(
       recentEvents.map(async (ev) => {
-        const [links, venueRows, rawItemRows] = await Promise.all([
+        const [links, venueRows, rawItemRows, artistRows] = await Promise.all([
           db.select()
             .from(extractedEventRelatedLinks)
             .where(eq(extractedEventRelatedLinks.extractedEventId, ev.id)),
@@ -39,12 +40,19 @@ export default function Events() {
             .from(rawItems)
             .where(eq(rawItems.id, ev.rawItemId))
             .limit(1),
+          ev.artistId
+            ? db.select({ name: artists.name })
+                .from(artists)
+                .where(eq(artists.id, ev.artistId))
+                .limit(1)
+            : Promise.resolve([]),
         ]);
         return {
           ...ev,
           links,
           venue: venueRows[0] || null,
           sourceName: rawItemRows[0]?.sourceName ?? null,
+          artistName: artistRows[0]?.name ?? null,
         };
       })
     );
@@ -108,7 +116,11 @@ export default function Events() {
                 <Text color={isSelected ? "cyan" : "gray"}>
                   {isSelected ? "▶ " : "  "}
                 </Text>
-                <Text color={isSelected ? "white" : "gray"} wrap="truncate">
+                <Text
+                  color={isSelected ? "white" : "gray"}
+                  strikethrough={ev.isCancelled}
+                  wrap="truncate"
+                >
                   [{ev.type}] {ev.title}
                 </Text>
               </Box>
@@ -123,28 +135,43 @@ export default function Events() {
           </Box>
           {selectedEvent ? (
             <Box flexDirection="column">
-              <Text bold>{selectedEvent.title}</Text>
+              <Text>
+                <Text bold strikethrough={selectedEvent.isCancelled}>{selectedEvent.title}</Text>
+                {selectedEvent.isCancelled && <Text color="red" bold> [CANCELLED]</Text>}
+              </Text>
               <Box marginTop={1} flexDirection="column">
-                <Text><Text dimColor>Time:  </Text>{selectedEvent.startTime ? new Date(selectedEvent.startTime).toLocaleString() : "Unknown"}</Text>
-                <Text><Text dimColor>Type:  </Text>{selectedEvent.type}</Text>
-                <Text><Text dimColor>Scope: </Text>{selectedEvent.eventScope}</Text>
+                {selectedEvent.artistName && (
+                  <Text><Text dimColor>Artist: </Text>{selectedEvent.artistName}</Text>
+                )}
+                <Text>
+                  <Text dimColor>Time:   </Text>
+                  {selectedEvent.startTime ? new Date(selectedEvent.startTime).toLocaleString() : "Unknown"}
+                  {selectedEvent.endTime && ` – ${new Date(selectedEvent.endTime).toLocaleString()}`}
+                </Text>
+                <Text><Text dimColor>Type:   </Text>{selectedEvent.type}</Text>
+                <Text><Text dimColor>Scope:  </Text>{selectedEvent.eventScope}</Text>
                 {selectedEvent.parentEventHint && (
                   <Text><Text dimColor>Parent: </Text>{selectedEvent.parentEventHint}</Text>
                 )}
                 {(selectedEvent.venueName || selectedEvent.venue) && (
-                  <Text>
-                    <Text dimColor>Venue: </Text>
-                    {selectedEvent.venueName || selectedEvent.venue?.name}
-                    {selectedEvent.venue && selectedEvent.venue.name !== selectedEvent.venueName && (
-                      <Text dimColor> → {selectedEvent.venue.name}</Text>
+                  <Box flexDirection="column">
+                    <Text>
+                      <Text dimColor>Venue:  </Text>
+                      {selectedEvent.venueName || selectedEvent.venue?.name}
+                      {selectedEvent.venue && selectedEvent.venue.name !== selectedEvent.venueName && (
+                        <Text dimColor> → {selectedEvent.venue.name}</Text>
+                      )}
+                      {selectedEvent.venue && (
+                        <Text dimColor> [{selectedEvent.venue.kind}, {selectedEvent.venue.status}]</Text>
+                      )}
+                    </Text>
+                    {selectedEvent.venueUrl && (
+                      <Text dimColor>        {selectedEvent.venueUrl}</Text>
                     )}
-                    {selectedEvent.venue && (
-                      <Text dimColor> [{selectedEvent.venue.kind}, {selectedEvent.venue.status}]</Text>
-                    )}
-                  </Text>
+                  </Box>
                 )}
                 {selectedEvent.tags && selectedEvent.tags.length > 0 && (
-                  <Text><Text dimColor>Tags:  </Text>{selectedEvent.tags.join(", ")}</Text>
+                  <Text><Text dimColor>Tags:   </Text>{selectedEvent.tags.join(", ")}</Text>
                 )}
               </Box>
 
@@ -178,6 +205,10 @@ export default function Events() {
                     <Text dimColor>└─ </Text>
                     <Text color="blue">{selectedEvent.sourceName ?? "unknown"}</Text>
                     <Text dimColor> (@{selectedEvent.author})</Text>
+                  </Text>
+                  <Text>
+                    <Text dimColor>   Posted: </Text>
+                    {new Date(selectedEvent.publishTime).toLocaleString()}
                   </Text>
                   {isExpanded && (
                     <Box marginLeft={3} marginTop={0} flexDirection="column">

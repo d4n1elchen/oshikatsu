@@ -217,7 +217,7 @@ export default function WatchList() {
                 </Text>
                 <Text dimColor> [{artist.categories.join(", ") || "no tags"}]</Text>
                 {artist.groups && artist.groups.length > 0 && (
-                  <Text dimColor> &lt{artist.groups.join(", ")}&gt;</Text>
+                  <Text dimColor> {`<${artist.groups.join(", ")}>`}</Text>
                 )}
                 <Text> {artist.enabled ? "✅" : "❌"}</Text>
                 {artist.targets && artist.targets.length > 0 && (

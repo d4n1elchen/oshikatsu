@@ -85,6 +85,13 @@
       "when": 1777170283557,
       "tag": "0011_grey_lionheart",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1777176493656,
+      "tag": "0012_tidy_madrox",
+      "breakpoints": true
     }
   ]
 }

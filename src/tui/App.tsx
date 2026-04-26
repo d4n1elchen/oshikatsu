@@ -1,10 +1,10 @@
 import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
 import WatchList from "./views/WatchList";
-import Monitor from "./views/Monitor";
-import Events from "./views/Events";
+import RawItems from "./views/RawItems";
+import ExtractedEvents from "./views/ExtractedEvents";
 
-const TABS = ["watchlist", "monitor", "events"] as const;
+const TABS = ["watchlist", "rawItems", "extractedEvents"] as const;
 type Tab = typeof TABS[number];
 
 export default function App() {
@@ -13,8 +13,8 @@ export default function App() {
   useInput((input, key) => {
     // Tab switching with 1/2/3 keys
     if (input === "1") setActiveTab("watchlist");
-    if (input === "2") setActiveTab("monitor");
-    if (input === "3") setActiveTab("events");
+    if (input === "2") setActiveTab("rawItems");
+    if (input === "3") setActiveTab("extractedEvents");
 
     // Tab key cycles through tabs
     if (key.tab) {
@@ -45,26 +45,26 @@ export default function App() {
           [1] Watch List
         </Text>
         <Text
-          color={activeTab === "monitor" ? "white" : "gray"}
-          backgroundColor={activeTab === "monitor" ? "blue" : undefined}
-          bold={activeTab === "monitor"}
+          color={activeTab === "rawItems" ? "white" : "gray"}
+          backgroundColor={activeTab === "rawItems" ? "blue" : undefined}
+          bold={activeTab === "rawItems"}
         >
-          [2] Monitor
+          [2] Raw Items
         </Text>
         <Text
-          color={activeTab === "events" ? "white" : "gray"}
-          backgroundColor={activeTab === "events" ? "blue" : undefined}
-          bold={activeTab === "events"}
+          color={activeTab === "extractedEvents" ? "white" : "gray"}
+          backgroundColor={activeTab === "extractedEvents" ? "blue" : undefined}
+          bold={activeTab === "extractedEvents"}
         >
-          [3] Events
+          [3] Extracted Events
         </Text>
       </Box>
 
       {/* Main Content Area */}
       <Box flexGrow={1} borderStyle="round" paddingX={1} paddingY={1}>
         {activeTab === "watchlist" && <WatchList />}
-        {activeTab === "monitor" && <Monitor />}
-        {activeTab === "events" && <Events />}
+        {activeTab === "rawItems" && <RawItems />}
+        {activeTab === "extractedEvents" && <ExtractedEvents />}
       </Box>
     </Box>
   );

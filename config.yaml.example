@@ -2,7 +2,7 @@
 # This file overrides the default application settings.
 
 scheduler:
-  ingestionIntervalMinutes: 15
+  ingestionIntervalMinutes: 60
   extractionIntervalMinutes: 5
 
 llm:

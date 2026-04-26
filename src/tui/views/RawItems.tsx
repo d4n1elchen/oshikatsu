@@ -3,7 +3,7 @@ import { Box, Text, useInput } from "ink";
 import { RawStorage } from "../../core/RawStorage";
 import type { RawItem } from "../../core/types";
 
-export default function Monitor() {
+export default function RawItems() {
   const [stats, setStats] = useState<{ total: number; new: number; processed: number; error: number } | null>(null);
   const [recentItems, setRecentItems] = useState<RawItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -73,7 +73,7 @@ export default function Monitor() {
 
   return (
     <Box flexDirection="column">
-      <Text bold color="magenta" underline>Ingestion Monitor</Text>
+      <Text bold color="magenta" underline>Raw Items</Text>
 
       {/* Stats Dashboard */}
       {stats && (
