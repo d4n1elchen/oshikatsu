@@ -7,6 +7,8 @@ Phase 3 consolidates multiple normalized records that refer to the same real-wor
 Phase 3 builds on:
 
 - Phase 2 normalized events
+- Direct `normalized_events.artist_id` links populated during normalization when a raw item came from a watch target
+- `normalized_events.start_time` / `end_time`
 - Phase 2.1 venue database and `normalized_events.venue_id`
 - `source_references`
 - `event_related_links`
@@ -58,6 +60,16 @@ A merge decision records the signals and reasoning that caused one event to be l
 ## Data Model
 
 ### `normalized_events` additions
+
+Phase 3 depends on the following identity and time fields, resolved before dedup implementation:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `artist_id` | text fk nullable | Direct link to the primary artist for candidate selection. This intentionally does not model collaborations yet; collaboration support can add `event_artists` later. |
+| `start_time` | timestamp nullable | Preferred event start time. New code should use this for time-window queries. |
+| `end_time` | timestamp nullable | Optional event end time. |
+
+`event_time` is removed from the active schema. Historical migrations may create it before a later migration drops it, but Phase 3 code should use `start_time`.
 
 Add canonical linkage fields:
 
@@ -113,7 +125,7 @@ The dedup engine should avoid comparing every event against every other event.
 For each new or unmerged event, select candidates using:
 
 - Event time window: initially +/- 48 hours.
-- Same artist/watch target when available.
+- Same `artist_id` when available.
 - Same or overlapping related links.
 - Same `venue_id`, if present.
 - Same source URL or source ID.

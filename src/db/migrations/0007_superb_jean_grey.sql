@@ -1,0 +1,1 @@
+ALTER TABLE `normalized_events` DROP COLUMN `event_time`;

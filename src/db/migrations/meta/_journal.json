@@ -43,6 +43,20 @@
       "when": 1777154366225,
       "tag": "0005_orange_satana",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1777165185211,
+      "tag": "0006_chunky_switch",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1777165583786,
+      "tag": "0007_superb_jean_grey",
+      "breakpoints": true
     }
   ]
 }

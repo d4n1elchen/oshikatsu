@@ -16,10 +16,10 @@ export default function Events() {
   const loadEvents = useCallback(async () => {
     setLoading(true);
     
-    // Fetch events ordered by event_time
+    // Fetch events ordered by start_time.
     const recentEvents = await db.select()
       .from(normalizedEvents)
-      .orderBy(desc(normalizedEvents.eventTime))
+      .orderBy(desc(normalizedEvents.startTime))
       .limit(50);
 
     const enriched = await Promise.all(
@@ -115,7 +115,7 @@ export default function Events() {
             <Box flexDirection="column">
               <Text bold>{selectedEvent.title}</Text>
               <Box marginTop={1} flexDirection="column">
-                <Text><Text dimColor>Time:  </Text>{new Date(selectedEvent.eventTime).toLocaleString()}</Text>
+                <Text><Text dimColor>Time:  </Text>{selectedEvent.startTime ? new Date(selectedEvent.startTime).toLocaleString() : "Unknown"}</Text>
                 <Text><Text dimColor>Type:  </Text>{selectedEvent.type}</Text>
                 {(selectedEvent.venueName || selectedEvent.venue) && (
                   <Text>

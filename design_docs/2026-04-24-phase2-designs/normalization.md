@@ -12,9 +12,9 @@ Since artist announcements are highly unstructured natural language, the Normali
 2. **Context Assembly**: The engine extracts the text payload (e.g., `full_text` from a tweet), metadata (publish time, author), and any embedded links available in the raw source payload.
 3. **LLM Extraction**: The text and related link candidates are passed to a local LLM with a strict system prompt and a JSON schema.
 4. **Validation**: The LLM output is validated against our expected TypeScript types using `zod`.
-5. **Persistence**: 
-   - On success, the unified record is written to `NormalizedStorage`, and the raw item is marked as `processed`.
-   - On failure (parse error, missing required fields), the raw item is marked as `error` and skipped. *(TODO: Implement an automated retry mechanism with exponential backoff for intermittent LLM failures or prompt tweaks in future phases).*
+5. **Persistence**:
+   - On successful LLM extraction, the unified record is written to `NormalizedStorage`, and the raw item is marked as `processed`.
+   - If LLM extraction or validation fails, the newer normalization strategy contract supersedes this document's original error-only behavior: the strategy writes a conservative fallback `announcement` event, preserves source provenance and explicit related links, and marks the raw item as `processed`. The raw item is marked as `error` only when the engine cannot build usable source context or persistence fails. *(TODO: Implement an automated retry/repair mechanism for malformed LLM output or prompt tweaks in future phases).*
 
 ## Data Model (Normalized Storage)
 
@@ -23,9 +23,11 @@ We will introduce three new Drizzle tables.
 ### 1. `normalized_events`
 The canonical representation of an event.
 - `id` (text, uuid)
+- `artist_id` (text, optional fk to artists) — Direct artist link for Phase 3 candidate selection; nullable for historical rows and future non-watchlist imports
 - `title` (text)
 - `description` (text)
-- `event_time` (timestamp) — The actual time the event occurs (not the publish time)
+- `start_time` (timestamp, optional) — Event start time
+- `end_time` (timestamp, optional)
 - `venue_name` (text, optional)
 - `venue_url` (text, optional)
 - `type` (text) — e.g., 'live_stream', 'merchandise', 'concert'
@@ -98,6 +100,6 @@ export interface LLMProvider {
 
 To monitor the normalization pipeline, we will add an **Events** tab to the TUI (accessible via `Tab` or `3`).
 
-- **List View**: Displays successfully normalized events ordered by `event_time`.
+- **List View**: Displays successfully normalized events ordered by `start_time`.
 - **Detail View**: Shows the full event details, related links, and a nested list of its `source_references`.
 - **Manual Reprocessing**: A keybind to retry normalization for `error` items in the Monitor tab.

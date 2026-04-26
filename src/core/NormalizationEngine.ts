@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { eq } from "drizzle-orm";
 import { db } from "../db";
-import { normalizedEvents, eventRelatedLinks, sourceReferences } from "../db/schema";
+import { normalizedEvents, eventRelatedLinks, sourceReferences, watchTargets } from "../db/schema";
 import { RawStorage } from "./RawStorage";
 import { VenueResolver } from "./VenueResolver";
 import type { LLMProvider } from "./LLMProvider";
@@ -125,6 +125,9 @@ export class NormalizationEngine {
   private async saveNormalizedEvent(rawItem: any, context: SourceContext, extracted: ExtractedEvent): Promise<void> {
     const eventId = randomUUID();
     const referenceId = randomUUID();
+    const artistId = await this.getArtistIdForRawItem(rawItem);
+    const startTime = parseDateOrFallback(extracted.start_time, context.publishTime.toISOString());
+    const endTime = extracted.end_time ? parseDateOrFallback(extracted.end_time, startTime.toISOString()) : null;
     const venueResolution = await this.venueResolver.resolve({
       venueName: extracted.venue_name,
       venueUrl: extracted.venue_url,
@@ -134,9 +137,11 @@ export class NormalizationEngine {
       // 1. Insert the event
       tx.insert(normalizedEvents).values({
         id: eventId,
+        artistId,
         title: extracted.title,
         description: extracted.description,
-        eventTime: parseDateOrFallback(extracted.event_time, context.publishTime.toISOString()),
+        startTime,
+        endTime,
         venueId: venueResolution?.venue.id || null,
         venueName: extracted.venue_name || null,
         venueUrl: extracted.venue_url || null,
@@ -173,5 +178,16 @@ export class NormalizationEngine {
         createdAt: new Date(),
       }).run();
     });
+  }
+
+  private async getArtistIdForRawItem(rawItem: any): Promise<string | null> {
+    if (!rawItem.watchTargetId) return null;
+
+    const rows = await db.select({ artistId: watchTargets.artistId })
+      .from(watchTargets)
+      .where(eq(watchTargets.id, rawItem.watchTargetId))
+      .limit(1);
+
+    return rows[0]?.artistId ?? null;
   }
 }

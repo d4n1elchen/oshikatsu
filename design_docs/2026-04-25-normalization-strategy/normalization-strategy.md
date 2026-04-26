@@ -164,7 +164,8 @@ Strategies share the same event extraction schema:
 export const EventExtractionSchema = z.object({
   title: z.string().min(1),
   description: z.string().min(1),
-  event_time: z.string(),
+  start_time: z.string(),
+  end_time: z.string().optional(),
   venue_name: z.string().optional(),
   venue_url: z.string().optional(),
   related_links: z.array(z.object({
@@ -224,7 +225,7 @@ Allowed fallback behavior:
 - Create a minimal `announcement` record.
 - Use the first non-empty line as the title.
 - Use the source text as the description.
-- Use source publish time as `event_time`.
+- Use source publish time as `start_time`.
 - Preserve source URL, author, and raw content in `source_references`.
 - Preserve explicit related link candidates with URL and title only.
 - Extract explicit hashtags as tags.

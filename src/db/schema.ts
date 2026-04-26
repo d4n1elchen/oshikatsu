@@ -69,9 +69,11 @@ export const venueAliases = sqliteTable("venue_aliases", {
 
 export const normalizedEvents = sqliteTable("normalized_events", {
   id: text("id").primaryKey(),
+  artistId: text("artist_id").references(() => artists.id, { onDelete: "set null" }),
   title: text("title").notNull(),
   description: text("description").notNull(),
-  eventTime: integer("event_time", { mode: "timestamp" }).notNull(),
+  startTime: integer("start_time", { mode: "timestamp" }),
+  endTime: integer("end_time", { mode: "timestamp" }),
   venueId: text("venue_id").references(() => venues.id, { onDelete: "set null" }),
   venueName: text("venue_name"),
   venueUrl: text("venue_url"),
@@ -80,7 +82,10 @@ export const normalizedEvents = sqliteTable("normalized_events", {
   tags: text("tags", { mode: "json" }).$type<string[]>().notNull(),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
-});
+}, (table) => [
+  index("idx_normalized_events_artist_start_time").on(table.artistId, table.startTime),
+  index("idx_normalized_events_start_time").on(table.startTime),
+]);
 
 export const eventRelatedLinks = sqliteTable("event_related_links", {
   id: text("id").primaryKey(),

@@ -25,7 +25,7 @@ This plan outlines the phased implementation of the Oshikatsu platform, starting
 **Deliverables**:
 
 - Twitter/X normalizer that maps raw items to the unified schema
-- Field extraction logic (title, description, event_time, venue, artist, type, tags)
+- Field extraction logic (title, description, start_time, end_time, venue, artist, type, tags)
 - Storage layer updated to persist normalized records
 - TUI for browsing and inspecting normalized events
 

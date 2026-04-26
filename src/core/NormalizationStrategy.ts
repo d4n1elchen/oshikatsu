@@ -5,7 +5,8 @@ export const EVENT_TYPES = ["live_stream", "merchandise", "release", "concert", 
 export const EventExtractionSchema = z.object({
   title: z.string().min(1).describe("A short, descriptive title for the event. Preserve proper nouns and official titles in their original written form."),
   description: z.string().min(1).describe("A detailed English summary of the announcement. Preserve proper nouns and official titles in their original written form."),
-  event_time: z.string().describe("ISO 8601 timestamp of when the event actually occurs. If none is found, return the publish time of the source item."),
+  start_time: z.string().describe("ISO 8601 timestamp of when the event actually starts. If none is found, return the publish time of the source item."),
+  end_time: z.string().optional().describe("ISO 8601 timestamp of when the event ends, if explicitly available."),
   venue_name: z.string().optional().describe("Name of the physical venue or virtual platform"),
   venue_url: z.string().optional().describe("URL to the stream, venue, or relevant event page"),
   related_links: z.array(z.object({
@@ -76,8 +77,9 @@ Language rules:
 - If a title combines an English summary with an official name, keep the official name in its original written form.
 
 Extraction rules:
-- event_time must be an ISO 8601 timestamp for when the actual event, stream, sale, broadcast, release, or announcement happens.
+- start_time must be an ISO 8601 timestamp for when the actual event, stream, sale, broadcast, release, or announcement happens.
 - If no explicit event time is present, use this publish time: ${context.publishTime.toISOString()}.
+- end_time should only be set when an explicit end time is available.
 - related_links must contain only event-relevant candidate URLs and optional human-readable titles.
 - type must be one of: ${EVENT_TYPES.join(", ")}.
 - tags should be short labels such as artist names, group names, platforms, product names, or campaign names.
@@ -95,12 +97,14 @@ Venue rules:
 
   sanitize(_rawItem: any, context: SourceContext, extracted: ExtractedEvent): ExtractedEvent {
     const fallback = this.fallback(_rawItem, context);
-    const eventTime = parseDateOrFallback(extracted.event_time, fallback.event_time);
+    const startTime = parseDateOrFallback(extracted.start_time, fallback.start_time);
+    const endTime = extracted.end_time ? parseDateOrFallback(extracted.end_time, startTime.toISOString()) : undefined;
 
     return {
       title: extracted.title?.trim() || fallback.title,
       description: extracted.description?.trim() || fallback.description,
-      event_time: eventTime.toISOString(),
+      start_time: startTime.toISOString(),
+      end_time: endTime?.toISOString(),
       venue_name: extracted.venue_name?.trim() || undefined,
       venue_url: extracted.venue_url?.trim() || fallback.venue_url,
       related_links: mergeRelatedLinks(extracted.related_links, context.relatedLinkCandidates),
@@ -115,7 +119,7 @@ Venue rules:
     return {
       title,
       description: context.text.trim() || title,
-      event_time: context.publishTime.toISOString(),
+      start_time: context.publishTime.toISOString(),
       venue_url: extractFirstUrl(context.text),
       related_links: mergeRelatedLinks([], context.relatedLinkCandidates),
       type: "announcement",

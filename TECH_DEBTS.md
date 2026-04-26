@@ -111,6 +111,15 @@ Follow-up:
 
 The virtual-venue-granularity design lists six focused resolver tests (null on virtual-without-URL, distinct venues for distinct channel URLs, alias addition on subsequent matches, regression guard for physical auto-discovery). These cannot land until the project has a test runner — currently `npm test` only typechecks. Tracked here so the tests aren't lost when test infrastructure is set up (see "Test coverage is still too thin" under Phase 2 Normalization).
 
+### Existing normalized event venue FK uses NO ACTION in local migrations
+
+`src/db/schema.ts` declares `normalized_events.venue_id` with `onDelete: "set null"`, but migration `0003_sudden_warbird.sql` added the SQLite foreign key with default `NO ACTION`. Existing migrated databases therefore do not match the schema metadata and may block venue delete/merge workflows until the table is rebuilt or a corrective migration is added.
+
+Follow-up:
+
+- Add a migration that recreates `normalized_events` with `venue_id ON DELETE SET NULL`.
+- Verify `PRAGMA foreign_key_list(normalized_events)` after migration.
+
 ## Phase 3 Merge / Deduplication
 
 ### Event identity rules are designed but not implemented
@@ -131,10 +140,10 @@ Possible approaches:
 
 `ARCHITECTURE.md` describes a unified event schema richer than what `normalized_events` currently stores. These gaps are noted explicitly in the Data Model callout, and Phase 3 will need to make decisions on them before it can express the candidate-selection queries cleanly.
 
-Follow-up:
+Decision:
 
-- **Artist link on `normalized_events`.** Today the only path from an event to an artist is `source_references → raw_items → watch_targets → artists`. Phase 3's "same artist + close time" candidate query is awkward without a direct FK. Decide between adding `artist_id` to `normalized_events`, an `event_artists` join table (for collaborations), or keeping the chained join.
-- **`start_time` / `end_time`.** `ARCHITECTURE.md` lists both; the schema only has `event_time`. Decide whether to add them, treat `event_time` as `start_time`, or leave as future scope.
+- **Artist link on `normalized_events`.** Add nullable `artist_id` directly to `normalized_events` for the Phase 3 candidate query. This is the simplest primary-artist model; collaborations and guest appearances can add an `event_artists` join table later if needed.
+- **`start_time` / `end_time`.** Add nullable `start_time` and `end_time`; remove `event_time` from the active schema and code.
 - **Event hierarchy.** Tracked as Phase 3.1 in `design_docs/2026-04-23-implementation-plan/plan.md`; no schema work is needed before Phase 3, but the Phase 3 dedup design should not foreclose the parent/sub-event model.
 
 ## Scheduler
@@ -187,6 +196,15 @@ Follow-up:
 - Add sample payload fixtures.
 - Detect login wall / anti-bot / empty timeline states explicitly.
 
+### Fetch failures currently look like empty successful fetches
+
+`TwitterConnector.fetchUpdates` catches navigation and scraping failures, logs them, and returns the collected items, often an empty array. The scheduler only treats a target as failed when `fetchUpdates` throws, so timeouts, login walls, or broken page loads can be recorded as clean zero-item fetches.
+
+Follow-up:
+
+- Re-throw hard navigation/scraping failures or return a structured fetch result with status and error details.
+- Add explicit detection for login walls, anti-bot pages, and unexpected empty timelines.
+
 ### Source URL handling needs continued attention
 
 `source_references.url` should always point to the source item, such as the tweet URL. Links mentioned inside the source content belong in `event_related_links`.
@@ -200,6 +218,15 @@ The TUI currently queries storage directly in places. This is acceptable for the
 Follow-up:
 
 - Introduce read/query services for Events and Monitor views.
+
+### Monitor retry action cannot reach errored rows
+
+The Monitor view advertises `x` to retry errored raw items, but it loads its selectable list through `RawStorage.getUnprocessed`, which filters to `status = "new"`. Errored rows appear only in the stats count, so the retry key path is currently unreachable.
+
+Follow-up:
+
+- Add a raw-item query that can include `error` rows, or add a dedicated error queue view.
+- Keep retry behavior explicit so processed rows are not accidentally requeued.
 
 ### One-shot scripts are useful but informal
 
@@ -220,13 +247,9 @@ Follow-up:
 - At the end of each phase, review `ARCHITECTURE.md`, phase design docs, and this file together.
 - Move resolved debts into a changelog or remove them once addressed.
 
-### Phase 2 normalization doc still describes the older error-only fallback
+### Phase 2 normalization fallback docs were reconciled on 2026-04-26
 
-`design_docs/2026-04-24-phase2-designs/normalization.md` says LLM extraction failures mark the raw item as `error` and skip it. The newer `2026-04-25-normalization-strategy/normalization-strategy.md` and the implementation in `NormalizationEngine` instead fall back to a minimal `announcement` event and only mark `error` when `buildContext` returns null or persistence throws. The two docs now disagree on the contract.
-
-Follow-up:
-
-- Reconcile the Phase 2 doc with the strategy doc, or add a pointer at the top of the Phase 2 doc that the fallback policy was superseded by the strategy design.
+Resolved during the Phase 3 preparation pass: `design_docs/2026-04-24-phase2-designs/normalization.md` now points to the newer strategy contract where LLM extraction failures produce a conservative fallback `announcement` event, and raw items are marked `error` only when context assembly or persistence fails.
 
 ### Phase 1 design docs were reconciled to current code on 2026-04-25
 

@@ -80,7 +80,7 @@ Identifies and merges duplicate or overlapping events across sources.
 
 - Goal: consolidate multiple source items referring to the same event into a single normalized record while preserving all provenance in `source_references`
 - **Execution**: Runs synchronously as the final step of the ingestion pipeline.
-- **Deduplication Strategy**: Queries the Normalized Database for candidates within a specific time constraint (e.g., +/- 48 hours of `event_time`), then uses conservative signals such as exact source references, related link overlap, canonical venue ID, and title similarity to identify overlaps.
+- **Deduplication Strategy**: Queries the Normalized Database for candidates within a specific time constraint (e.g., +/- 48 hours of `start_time`), then uses conservative signals such as exact source references, related link overlap, canonical venue ID, and title similarity to identify overlaps.
 - **Auditability**: Merge decisions should be recorded with matched signals and a human-readable reason so false positives can be inspected.
 
 ### 5. Downstream Integration
@@ -154,7 +154,6 @@ Handles persistence of data across the pipeline. The names below describe logica
   ],
   "title": "canonical event title or announcement summary",
   "description": "normalized content summary",
-  "event_time": "actual event or activity time",
   "start_time": "event start time",
   "end_time": "event end time",
   "venue": {
