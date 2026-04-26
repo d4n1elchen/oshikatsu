@@ -1,6 +1,6 @@
 import { db } from "../db";
 import { rawItems } from "../db/schema";
-import { PreprocessingEngine } from "../core/PreprocessingEngine";
+import { ExtractionEngine } from "../core/ExtractionEngine";
 import { OllamaProvider } from "../core/LLMProvider";
 import { RawStorage } from "../core/RawStorage";
 import { eq } from "drizzle-orm";
@@ -27,10 +27,10 @@ async function main() {
     console.log(`Queued ${errored.length} errored raw item(s) for retry.`);
   }
 
-  const engine = new PreprocessingEngine(new OllamaProvider());
+  const engine = new ExtractionEngine(new OllamaProvider());
   const result = await engine.processBatch(args.limit);
 
-  console.log(`Preprocessing complete. Processed: ${result.processed}, failed: ${result.failed}.`);
+  console.log(`Extraction complete. Processed: ${result.processed}, failed: ${result.failed}.`);
 }
 
 main().catch((error) => {

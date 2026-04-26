@@ -5,7 +5,7 @@ import { parse } from "yaml";
 export interface OshikatsuConfig {
   scheduler: {
     ingestionIntervalMinutes: number;
-    preprocessingIntervalMinutes: number;
+    extractionIntervalMinutes: number;
   };
   llm: {
     provider: "ollama" | string;
@@ -25,7 +25,7 @@ export interface OshikatsuConfig {
 const DEFAULT_CONFIG: OshikatsuConfig = {
   scheduler: {
     ingestionIntervalMinutes: 15,
-    preprocessingIntervalMinutes: 5,
+    extractionIntervalMinutes: 5,
   },
   llm: {
     provider: "ollama",
@@ -46,6 +46,7 @@ let cachedConfig: OshikatsuConfig | null = null;
 
 type RawConfig = Partial<Omit<OshikatsuConfig, "scheduler">> & {
   scheduler?: Partial<OshikatsuConfig["scheduler"]> & {
+    preprocessingIntervalMinutes?: number;
     normalizationIntervalMinutes?: number;
   };
 };
@@ -65,13 +66,13 @@ export function getConfig(): OshikatsuConfig {
     console.warn("[Config] Failed to load config.yaml, using defaults.", e);
   }
 
-  const { normalizationIntervalMinutes, ...schedulerOverrides } = userConfig.scheduler ?? {};
+  const { preprocessingIntervalMinutes, normalizationIntervalMinutes, ...schedulerOverrides } = userConfig.scheduler ?? {};
   const schedulerConfig = {
     ...DEFAULT_CONFIG.scheduler,
     ...schedulerOverrides,
   };
-  if (schedulerOverrides.preprocessingIntervalMinutes === undefined && normalizationIntervalMinutes !== undefined) {
-    schedulerConfig.preprocessingIntervalMinutes = normalizationIntervalMinutes;
+  if (schedulerOverrides.extractionIntervalMinutes === undefined) {
+    schedulerConfig.extractionIntervalMinutes = preprocessingIntervalMinutes ?? normalizationIntervalMinutes ?? schedulerConfig.extractionIntervalMinutes;
   }
 
   // Deep merge userConfig into DEFAULT_CONFIG

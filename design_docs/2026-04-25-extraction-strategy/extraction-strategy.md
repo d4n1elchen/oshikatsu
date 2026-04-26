@@ -1,14 +1,14 @@
-# Preprocessing Strategy Design
+# Extraction Strategy Design
 
 ## Overview
 
-The preprocessing strategy layer keeps the Phase 2 extraction engine source-agnostic by moving source-specific extraction, prompt construction, provenance mapping, and sanitization into strategy classes.
+The extraction strategy layer keeps the Phase 2 extraction engine source-agnostic by moving source-specific extraction, prompt construction, provenance mapping, and sanitization into strategy classes.
 
-This design extends the Phase 2 preprocessing design in `design_docs/2026-04-24-phase2-designs/preprocessing.md`.
+This design extends the Phase 2 extraction design in `design_docs/2026-04-24-phase2-designs/extraction.md`.
 
 ## Problem
 
-The preprocessing pipeline needs different handling for each source. Twitter/X raw data, YouTube video data, Instagram posts, and future sources will all expose different shapes for:
+The extraction pipeline needs different handling for each source. Twitter/X raw data, YouTube video data, Instagram posts, and future sources will all expose different shapes for:
 
 - Main text content
 - Publish time
@@ -24,7 +24,7 @@ If this logic lives directly in the engine, the engine becomes a collection of s
 
 - Keep the engine responsible for orchestration only.
 - Encapsulate source-specific raw data interpretation behind a stable interface.
-- Support new source preprocessors without changing the engine.
+- Support new source extractors without changing the engine.
 - Preserve source provenance consistently in `source_references`, including venue text extracted from that source item.
 - Extract event-relevant links separately from source provenance.
 - Mark raw items as `error` when LLM extraction, validation, or sanitization fails.
@@ -42,20 +42,20 @@ If this logic lives directly in the engine, the engine becomes a collection of s
 
 ```mermaid
 flowchart TD
-    RAW["RawItem"] --> ENGINE["Preprocessing Engine"]
-    ENGINE --> SELECT["Select Preprocessing Strategy"]
+    RAW["RawItem"] --> ENGINE["Extraction Engine"]
+    ENGINE --> SELECT["Select Extraction Strategy"]
     SELECT --> CTX["Build SourceContext"]
     CTX --> PROMPT["Build LLM Prompt"]
     PROMPT --> LLM["LLMProvider.extract"]
     LLM --> SANITIZE["Strategy.sanitize"]
-    SANITIZE --> SAVE["Save preprocessed event + event_related_links + source_references"]
+    SANITIZE --> SAVE["Save extracted event + extracted_event_related_links + source_references"]
     LLM -. "failure" .-> ERROR["Mark raw item error"]
     SANITIZE -. "failure" .-> ERROR
 ```
 
 ## Core Concepts
 
-### Preprocessing Engine
+### Extraction Engine
 
 The engine owns the workflow:
 
@@ -64,7 +64,7 @@ The engine owns the workflow:
 3. Ask the strategy to build a normalized source context.
 4. Ask the LLM provider to extract structured event fields.
 5. Ask the strategy to sanitize the LLM result.
-6. Persist the preprocessed event and source reference in one transaction.
+6. Persist the extracted event and source reference in one transaction.
 7. Mark the raw item as processed.
 8. If context assembly, LLM extraction, schema validation, sanitization, or persistence fails, mark the raw item as `error`.
 
@@ -101,18 +101,18 @@ Field meanings:
 
 The `url` field is provenance. `relatedLinkCandidates` are possible event destinations. Related links should store only URL and title.
 
-Extracted venue fields belong in `source_references` as source-specific provenance. Preprocessed event-level venue fields may hold the best extracted display value, and `venue_id` may point to a canonical venue when resolved.
+Extracted venue fields belong in `source_references` as source-specific provenance. Extracted event-level venue fields may hold the best extracted display value, and `venue_id` may point to a canonical venue when resolved.
 
-### Preprocessing Strategy
+### Extraction Strategy
 
 Each strategy implements the source-specific behavior needed by the engine.
 
 ```typescript
-export interface NormalizationStrategy {
+export interface ExtractionStrategy {
   supports(sourceName: string): boolean;
   buildContext(rawItem: RawItem): SourceContext | null;
   buildPrompt(context: SourceContext): string;
-  sanitize(rawItem: RawItem, context: SourceContext, extracted: ExtractedEvent): ExtractedEvent;
+  sanitize(rawItem: RawItem, context: SourceContext, extracted: EventExtractionResult): EventExtractionResult;
 }
 ```
 
@@ -125,7 +125,7 @@ Method responsibilities:
 
 ## Built-In Strategies
 
-### DefaultNormalizationStrategy
+### DefaultExtractionStrategy
 
 The default strategy provides generic context and prompt behavior for unknown sources.
 
@@ -137,7 +137,7 @@ Behavior:
 - Does not infer event type from keywords.
 - Does not infer venue, artist, or campaign.
 
-### TwitterNormalizationStrategy
+### TwitterExtractionStrategy
 
 The Twitter/X strategy handles raw tweet payloads produced by the Twitter connector.
 
@@ -181,7 +181,7 @@ export const EventExtractionSchema = z.object({
 });
 ```
 
-The fixed event type enum is part of the preprocessed event schema contract. It is not considered hard-coded inference behavior. General announcements are not an event type, but informational posts can still announce real events. Classification should follow the underlying activity being announced, updated, scheduled, cancelled, or linked: for example, a post announcing a scheduled concert is `concert`, and a post announcing a merch sale is `merchandise`. A post must describe one of the allowed event-like categories and provide an actual event time to become a preprocessed event candidate. The source publish time must not be used as `start_time`.
+The fixed event type enum is part of the extracted event schema contract. It is not considered hard-coded inference behavior. General announcements are not an event type, but informational posts can still announce real events. Classification should follow the underlying activity being announced, updated, scheduled, cancelled, or linked: for example, a post announcing a scheduled concert is `concert`, and a post announcing a merch sale is `merchandise`. A post must describe one of the allowed event-like categories and provide an actual event time to become an extracted event candidate. The source publish time must not be used as `start_time`.
 
 ## Related Link Handling
 
@@ -195,7 +195,7 @@ Related links are saved as event content, not as provenance. The original source
 
 ## Language Policy
 
-Preprocessing may summarize explanatory prose in English, but it must preserve official names and titles in their original written form.
+Extraction may summarize explanatory prose in English, but it must preserve official names and titles in their original written form.
 
 Do not translate, romanize, or rewrite:
 
@@ -213,7 +213,7 @@ For example, if the source text says `花譜` or `宿声`, the normalized title 
 
 ## Failure Policy
 
-The engine does not create fallback preprocessed events. If the LLM call fails, returns malformed JSON, fails schema validation, or produces values that fail strategy sanitization, the raw item is marked as `error` and no preprocessed event, `event_related_links`, or `source_references` rows are created for that attempt.
+The engine does not create fallback extracted events. If the LLM call fails, returns malformed JSON, fails schema validation, or produces values that fail strategy sanitization, the raw item is marked as `error` and no extracted event, `extracted_event_related_links`, or `source_references` rows are created for that attempt.
 
 Allowed deterministic sanitization:
 
@@ -234,20 +234,20 @@ Disallowed fallback behavior:
 
 To add a new source, for example YouTube:
 
-1. Implement `YouTubeNormalizationStrategy`.
+1. Implement `YouTubeExtractionStrategy`.
 2. Return `true` from `supports("youtube")`.
 3. Convert YouTube raw payloads into `SourceContext`.
-4. Add the strategy to `createDefaultNormalizationStrategies()`.
+4. Add the strategy to `createDefaultExtractionStrategies()`.
 5. Add focused tests or fixtures for representative raw items.
 
-The `NormalizationEngine` should not need changes.
+The `ExtractionEngine` should not need changes.
 
 ## Error Handling
 
 - If `buildContext` returns `null`, the raw item is marked as `error`.
 - If LLM extraction, validation, or sanitization fails, the raw item is marked as `error`.
 - If persistence fails, the raw item is marked as `error`.
-- If a raw item already has a `source_references` row, the engine marks it as processed and does not create duplicate preprocessed events.
+- If a raw item already has a `source_references` row, the engine marks it as processed and does not create duplicate extracted events.
 
 ## Testing Strategy
 
@@ -258,22 +258,22 @@ Recommended tests:
 - Raw item is marked `error` when the LLM provider throws.
 - Raw item is marked `error` when the LLM provider returns invalid timestamps or empty required fields.
 - Engine idempotency when a raw item already has a source reference.
-- Persistence verifies matching preprocessed event, `event_related_links`, and `source_references` counts.
+- Persistence verifies matching extracted event, `extracted_event_related_links`, and `source_references` counts.
 
 ## Current Implementation Status
 
 Implemented files:
 
-- `src/core/NormalizationStrategy.ts`
-- `src/core/NormalizationEngine.ts`
+- `src/core/ExtractionStrategy.ts`
+- `src/core/ExtractionEngine.ts`
 - `src/db/schema.ts`
 - `src/tui/views/Events.tsx`
 
 Current built-in strategies:
 
-- `DefaultNormalizationStrategy`
-- `TwitterNormalizationStrategy`
+- `DefaultExtractionStrategy`
+- `TwitterExtractionStrategy`
 
 The engine has been refactored to use strategies and no longer contains source-specific fallback keyword rules or LLM-failure fallback event creation.
 
-Related link extraction and persistence are implemented with `event_related_links`. Related links store only `url` and optional `title`.
+Related link extraction and persistence are implemented with `extracted_event_related_links`. Related links store only `url` and optional `title`.

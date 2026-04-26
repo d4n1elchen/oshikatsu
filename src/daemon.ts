@@ -1,5 +1,5 @@
 import { IngestionScheduler } from "./core/Scheduler";
-import { PreprocessingEngine } from "./core/PreprocessingEngine";
+import { ExtractionEngine } from "./core/ExtractionEngine";
 import { OllamaProvider } from "./core/LLMProvider";
 import { getConfig } from "./config";
 
@@ -14,34 +14,34 @@ async function main() {
   });
 
   const llm = new OllamaProvider();
-  const preprocessor = new PreprocessingEngine(llm);
+  const extractor = new ExtractionEngine(llm);
 
   console.log("Starting backend daemon...");
   
   // Start the ingestion scheduler (it handles its own interval loop)
   await scheduler.start();
   
-  // We'll run the preprocessor on the configured loop
-  const preprocessingIntervalMs = config.scheduler.preprocessingIntervalMinutes * 60 * 1000;
+  // We'll run the extractor on the configured loop
+  const extractionIntervalMs = config.scheduler.extractionIntervalMinutes * 60 * 1000;
   
-  async function runPreprocessing() {
+  async function runExtraction() {
     try {
-      await preprocessor.processBatch(20);
+      await extractor.processBatch(20);
     } catch (e) {
-      console.error("Preprocessing loop error:", e);
+      console.error("Extraction loop error:", e);
     }
   }
 
-  // Run preprocessor immediately
-  await runPreprocessing();
+  // Run extractor immediately
+  await runExtraction();
   
-  // Schedule preprocessor
-  const preprocessTimer = setInterval(runPreprocessing, preprocessingIntervalMs);
+  // Schedule extractor
+  const extractTimer = setInterval(runExtraction, extractionIntervalMs);
   
   // Keep the process alive
   process.on('SIGINT', async () => {
     console.log("\nShutting down gracefully...");
-    clearInterval(preprocessTimer);
+    clearInterval(extractTimer);
     await scheduler.stop();
     process.exit(0);
   });

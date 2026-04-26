@@ -1,31 +1,31 @@
 import { randomUUID } from "crypto";
 import { eq } from "drizzle-orm";
 import { db } from "../db";
-import { preprocessedEvents, preprocessedEventRelatedLinks, sourceReferences, watchTargets } from "../db/schema";
+import { extractedEvents, extractedEventRelatedLinks, sourceReferences, watchTargets } from "../db/schema";
 import { RawStorage } from "./RawStorage";
 import { VenueResolver } from "./VenueResolver";
 import type { LLMProvider } from "./LLMProvider";
 import {
-  createDefaultPreprocessingStrategies,
+  createDefaultExtractionStrategies,
   EventExtractionSchema,
-  type ExtractedEvent,
-  type PreprocessingStrategy,
+  type EventExtractionResult,
+  type ExtractionStrategy,
   type SourceContext,
-} from "./PreprocessingStrategy";
+} from "./ExtractionStrategy";
 
 type ProcessBatchResult = {
   processed: number;
   failed: number;
 };
 
-export class PreprocessingEngine {
+export class ExtractionEngine {
   private rawStorage: RawStorage;
-  private strategies: PreprocessingStrategy[];
+  private strategies: ExtractionStrategy[];
   private venueResolver: VenueResolver;
 
   constructor(
     private llm: LLMProvider,
-    strategies: PreprocessingStrategy[] = createDefaultPreprocessingStrategies(),
+    strategies: ExtractionStrategy[] = createDefaultExtractionStrategies(),
     venueResolver: VenueResolver = new VenueResolver()
   ) {
     this.rawStorage = new RawStorage();
@@ -41,7 +41,7 @@ export class PreprocessingEngine {
     const result: ProcessBatchResult = { processed: 0, failed: 0 };
     if (items.length === 0) return result;
 
-    console.log(`[PreprocessingEngine] Processing batch of ${items.length} items...`);
+    console.log(`[ExtractionEngine] Processing batch of ${items.length} items...`);
 
     for (const item of items) {
       if (await this.processItem(item)) {
@@ -59,7 +59,7 @@ export class PreprocessingEngine {
    */
   async processItem(item: any): Promise<boolean> {
     try {
-      console.log(`[PreprocessingEngine] Preprocessing item ${item.id} from ${item.sourceName}...`);
+      console.log(`[ExtractionEngine] Extracting item ${item.id} from ${item.sourceName}...`);
       
       const strategy = this.getStrategy(item.sourceName);
       const context = strategy.buildContext(item);
@@ -69,7 +69,7 @@ export class PreprocessingEngine {
 
       if (await this.hasSourceReference(item.id)) {
         await this.rawStorage.markProcessed(item.id);
-        console.log(`[PreprocessingEngine] Item ${item.id} already has a preprocessed source reference; marked processed.`);
+        console.log(`[ExtractionEngine] Item ${item.id} already has an extracted source reference; marked processed.`);
         return true;
       }
 
@@ -77,14 +77,14 @@ export class PreprocessingEngine {
 
       const extracted = await this.extractAndSanitize(item, context, strategy, systemPrompt);
 
-      await this.savePreprocessedEvent(item, context, extracted);
+      await this.saveExtractedEvent(item, context, extracted);
 
       await this.rawStorage.markProcessed(item.id);
-      console.log(`[PreprocessingEngine] Successfully preprocessed item ${item.id}`);
+      console.log(`[ExtractionEngine] Successfully extracted item ${item.id}`);
       return true;
 
     } catch (e: any) {
-      console.error(`[PreprocessingEngine] Failed to preprocess item ${item.id}:`, e);
+      console.error(`[ExtractionEngine] Failed to extract item ${item.id}:`, e);
       await this.rawStorage.markError(item.id, e.message || "Unknown LLM extraction error");
       return false;
     }
@@ -99,16 +99,16 @@ export class PreprocessingEngine {
     return rows.length > 0;
   }
 
-  private getStrategy(sourceName: string): PreprocessingStrategy {
+  private getStrategy(sourceName: string): ExtractionStrategy {
     return this.strategies.find((strategy) => strategy.supports(sourceName)) ?? this.strategies[this.strategies.length - 1];
   }
 
   private async extractAndSanitize(
     item: any,
     context: SourceContext,
-    strategy: PreprocessingStrategy,
+    strategy: ExtractionStrategy,
     systemPrompt: string
-  ): Promise<ExtractedEvent> {
+  ): Promise<EventExtractionResult> {
     try {
       const extracted = await this.llm.extract(context.rawContent, EventExtractionSchema, systemPrompt);
       return strategy.sanitize(item, context, extracted);
@@ -121,8 +121,8 @@ export class PreprocessingEngine {
   /**
    * Save the parsed event and its source reference.
    */
-  private async savePreprocessedEvent(rawItem: any, context: SourceContext, extracted: ExtractedEvent): Promise<void> {
-    const preprocessedEventId = randomUUID();
+  private async saveExtractedEvent(rawItem: any, context: SourceContext, extracted: EventExtractionResult): Promise<void> {
+    const extractedEventId = randomUUID();
     const referenceId = randomUUID();
     const artistId = await this.getArtistIdForRawItem(rawItem);
     const startTime = parsePersistedDate(extracted.start_time, "start_time");
@@ -133,9 +133,9 @@ export class PreprocessingEngine {
     });
 
     db.transaction((tx) => {
-      // 1. Insert the event
-      tx.insert(preprocessedEvents).values({
-        id: preprocessedEventId,
+      // 1. Insert the extracted event
+      tx.insert(extractedEvents).values({
+        id: extractedEventId,
         artistId,
         title: extracted.title,
         description: extracted.description,
@@ -152,9 +152,9 @@ export class PreprocessingEngine {
       }).run();
 
       for (const link of extracted.related_links) {
-        tx.insert(preprocessedEventRelatedLinks).values({
+        tx.insert(extractedEventRelatedLinks).values({
           id: randomUUID(),
-          preprocessedEventId,
+          extractedEventId,
           rawItemId: rawItem.id,
           url: link.url,
           title: link.title || null,
@@ -164,7 +164,7 @@ export class PreprocessingEngine {
 
       tx.insert(sourceReferences).values({
         id: referenceId,
-        preprocessedEventId,
+        extractedEventId,
         rawItemId: rawItem.id,
         sourceName: rawItem.sourceName,
         sourceId: rawItem.sourceId,

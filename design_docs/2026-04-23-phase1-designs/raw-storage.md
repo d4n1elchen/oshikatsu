@@ -2,12 +2,12 @@
 
 ## Overview
 
-The raw storage layer persists raw items fetched from sources before they are normalized. It is source-agnostic — it stores whatever the source returns without interpretation.
+The raw storage layer persists raw items fetched from sources before event extraction. It is source-agnostic — it stores whatever the source returns without interpretation.
 
 ## Purpose
 
 - Store the raw response from each source exactly as-is, without interpretation.
-- Track processing status so the preprocessing pipeline knows which items still need processing.
+- Track processing status so the extraction pipeline knows which items still need processing.
 - Preserve full provenance for debugging and reprocessing.
 
 ## Data Model
@@ -82,7 +82,7 @@ export class RawStorage {
   /** Mark an item as errored with details. */
   async markError(itemId: string, errorMessage: string): Promise<void>;
 
-  /** Re-queue an item for processing (used by the normalize:once retry script). */
+  /** Re-queue an item for processing (used by the extract:once retry script). */
   async markNew(itemId: string): Promise<void>;
 
   /** Return storage statistics, optionally filtered by source. */
@@ -93,7 +93,7 @@ export class RawStorage {
 Notes on what changed from earlier drafts:
 
 - `save()` (single-item, throws on conflict) was replaced by `saveItems()` (bulk, silently skips conflicts) because the Twitter connector returns batches and we want ingestion to be idempotent rather than throw.
-- `markNew()` was added so the `normalize:once --retry-errors` script can re-queue errored items without manual SQL.
+- `markNew()` was added so the `extract:once --retry-errors` script can re-queue errored items without manual SQL.
 - `getStats` returns a typed status breakdown rather than an open `Record<string, any>`.
 
 ## Storage Backend

@@ -18,18 +18,18 @@ This plan outlines the phased implementation of the Oshikatsu platform, starting
 
 **Working product**: New tweets from configured Twitter/X sources are fetched, stored, and retrievable via TUI.
 
-## Phase 2: Preprocessing / Extraction Engine
+## Phase 2: Event Extraction Engine
 
-**Goal**: Transform each raw source item into one source-derived preprocessed event candidate.
+**Goal**: Transform each raw source item into one source-derived extracted event candidate.
 
 **Deliverables**:
 
-- Twitter/X preprocessing strategy that maps raw items to the preprocessed event schema
+- Twitter/X extraction strategy that maps raw items to the extracted event schema
 - Field extraction logic (title, description, start_time, end_time, venue, artist, type, tags)
-- Storage layer updated to persist preprocessed event records
-- TUI for browsing and inspecting preprocessed events
+- Storage layer updated to persist extracted event records
+- TUI for browsing and inspecting extracted events
 
-**Working product**: Raw Twitter/X items are automatically extracted into preprocessed event candidates, viewable via TUI. These are not canonical events until Phase 3 dedup/merge runs.
+**Working product**: Raw Twitter/X items are automatically extracted into extracted event candidates, viewable via TUI. These are not canonical events until Phase 3 dedup/merge runs.
 
 ## Phase 2.1: Venue Database
 
@@ -39,30 +39,30 @@ This plan outlines the phased implementation of the Oshikatsu platform, starting
 
 - Venue database for physical and virtual venues
 - Venue alias table for alternate names/spellings
-- Nullable `venue_id` reference on preprocessed events
+- Nullable `venue_id` reference on extracted events
 - Conservative exact URL / exact alias venue resolver
 - TUI visibility for extracted venue and matched canonical venue
 
-**Working product**: Preprocessed events can be linked to canonical venues when exact venue resolution is possible, while preserving extracted `venue_name` and `venue_url`.
+**Working product**: Extracted events can be linked to canonical venues when exact venue resolution is possible, while preserving extracted `venue_name` and `venue_url`.
 
 ## Phase 3: Merge/Deduplication
 
-**Goal**: Consolidate multiple preprocessed event candidates referring to the same real-world event into canonical normalized events.
+**Goal**: Consolidate multiple extracted event candidates referring to the same real-world event into canonical normalized events.
 
 **Deliverables**:
 
-- Deduplication logic that identifies duplicate or overlapping preprocessed events
-- Merge strategy that creates/updates canonical normalized events while preserving links to source preprocessed events
+- Deduplication logic that identifies duplicate or overlapping extracted events
+- Merge strategy that creates/updates canonical normalized events while preserving links to source extracted events
 - Update mechanism for rescheduled/cancelled events
 - TUI for viewing merge/dedup status and source provenance
 
-**Working product**: Duplicate preprocessed events from the same or different sources are automatically merged into canonical normalized events; event updates are reflected correctly.
+**Working product**: Duplicate extracted events from the same or different sources are automatically merged into canonical normalized events; event updates are reflected correctly.
 
 ## Phase 3.1: Event Hierarchy
 
 **Goal**: Model main/sub-event relationships on top of canonical events produced by Phase 3.
 
-**Motivation**: Real-world activities often consist of a main event (e.g., a concert) plus related sub-activities (merch booth, pre-show talk, post-show meet & greet, livestream of the same concert). Before Phase 3, these surface as independent preprocessed events; after Phase 3, they may still surface as separate canonical normalized events that need hierarchy assignment.
+**Motivation**: Real-world activities often consist of a main event (e.g., a concert) plus related sub-activities (merch booth, pre-show talk, post-show meet & greet, livestream of the same concert). Before Phase 3, these surface as independent extracted events; after Phase 3, they may still surface as separate canonical normalized events that need hierarchy assignment.
 
 **Deliverables**:
 

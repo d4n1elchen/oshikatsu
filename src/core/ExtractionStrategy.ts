@@ -18,7 +18,7 @@ export const EventExtractionSchema = z.object({
 });
 
 export type EventType = typeof EVENT_TYPES[number];
-export type ExtractedEvent = z.infer<typeof EventExtractionSchema>;
+export type EventExtractionResult = z.infer<typeof EventExtractionSchema>;
 
 export interface SourceContext {
   text: string;
@@ -34,14 +34,14 @@ export interface RelatedLinkCandidate {
   title?: string;
 }
 
-export interface PreprocessingStrategy {
+export interface ExtractionStrategy {
   supports(sourceName: string): boolean;
   buildContext(rawItem: any): SourceContext | null;
   buildPrompt(context: SourceContext): string;
-  sanitize(rawItem: any, context: SourceContext, extracted: ExtractedEvent): ExtractedEvent;
+  sanitize(rawItem: any, context: SourceContext, extracted: EventExtractionResult): EventExtractionResult;
 }
 
-export class DefaultPreprocessingStrategy implements PreprocessingStrategy {
+export class DefaultExtractionStrategy implements ExtractionStrategy {
   supports(_sourceName: string): boolean {
     return true;
   }
@@ -95,7 +95,7 @@ Venue rules:
   - Never set venue_name to a bare platform name like "YouTube" without an accompanying venue_url. If no URL is available, leave both venue_name and venue_url unset.`;
   }
 
-  sanitize(_rawItem: any, _context: SourceContext, extracted: ExtractedEvent): ExtractedEvent {
+  sanitize(_rawItem: any, _context: SourceContext, extracted: EventExtractionResult): EventExtractionResult {
     const title = requireNonEmpty(extracted.title, "title");
     const description = requireNonEmpty(extracted.description, "description");
     const startTime = parseDateOrThrow(extracted.start_time, "start_time");
@@ -115,7 +115,7 @@ Venue rules:
   }
 }
 
-export class TwitterPreprocessingStrategy extends DefaultPreprocessingStrategy {
+export class TwitterExtractionStrategy extends DefaultExtractionStrategy {
   supports(sourceName: string): boolean {
     return sourceName === "twitter";
   }
@@ -142,10 +142,10 @@ export class TwitterPreprocessingStrategy extends DefaultPreprocessingStrategy {
   }
 }
 
-export function createDefaultPreprocessingStrategies(): PreprocessingStrategy[] {
+export function createDefaultExtractionStrategies(): ExtractionStrategy[] {
   return [
-    new TwitterPreprocessingStrategy(),
-    new DefaultPreprocessingStrategy(),
+    new TwitterExtractionStrategy(),
+    new DefaultExtractionStrategy(),
   ];
 }
 

@@ -67,7 +67,7 @@ export const venueAliases = sqliteTable("venue_aliases", {
   index("idx_venue_alias").on(table.alias),
 ]);
 
-export const preprocessedEvents = sqliteTable("preprocessed_events", {
+export const extractedEvents = sqliteTable("extracted_events", {
   id: text("id").primaryKey(),
   artistId: text("artist_id").references(() => artists.id, { onDelete: "set null" }),
   title: text("title").notNull(),
@@ -83,24 +83,24 @@ export const preprocessedEvents = sqliteTable("preprocessed_events", {
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 }, (table) => [
-  index("idx_preprocessed_events_artist_start_time").on(table.artistId, table.startTime),
-  index("idx_preprocessed_events_start_time").on(table.startTime),
+  index("idx_extracted_events_artist_start_time").on(table.artistId, table.startTime),
+  index("idx_extracted_events_start_time").on(table.startTime),
 ]);
 
-export const preprocessedEventRelatedLinks = sqliteTable("preprocessed_event_related_links", {
+export const extractedEventRelatedLinks = sqliteTable("extracted_event_related_links", {
   id: text("id").primaryKey(),
-  preprocessedEventId: text("preprocessed_event_id").notNull().references(() => preprocessedEvents.id, { onDelete: "cascade" }),
+  extractedEventId: text("extracted_event_id").notNull().references(() => extractedEvents.id, { onDelete: "cascade" }),
   rawItemId: text("raw_item_id").references(() => rawItems.id, { onDelete: "set null" }),
   url: text("url").notNull(),
   title: text("title"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 }, (table) => [
-  uniqueIndex("idx_preprocessed_event_related_link_dedup").on(table.preprocessedEventId, table.url),
+  uniqueIndex("idx_extracted_event_related_link_dedup").on(table.extractedEventId, table.url),
 ]);
 
 export const sourceReferences = sqliteTable("source_references", {
   id: text("id").primaryKey(),
-  preprocessedEventId: text("preprocessed_event_id").notNull().references(() => preprocessedEvents.id, { onDelete: "cascade" }),
+  extractedEventId: text("extracted_event_id").notNull().references(() => extractedEvents.id, { onDelete: "cascade" }),
   rawItemId: text("raw_item_id").notNull().references(() => rawItems.id, { onDelete: "cascade" }),
   sourceName: text("source_name").notNull(),
   sourceId: text("source_id").notNull(),

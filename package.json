@@ -8,8 +8,8 @@
     "db:migrate": "drizzle-kit migrate",
     "start:tui": "tsx src/index.tsx",
     "login:twitter": "tsx src/scripts/twitter_login.ts",
-    "preprocess:once": "tsx src/scripts/preprocess_once.ts",
-    "reset:preprocessed": "tsx src/scripts/reset_preprocessed.ts",
+    "extract:once": "tsx src/scripts/extract_once.ts",
+    "reset:extracted": "tsx src/scripts/reset_extracted.ts",
     "start:backend": "tsx src/daemon.ts",
     "typecheck": "tsc --noEmit",
     "test": "npm run typecheck"

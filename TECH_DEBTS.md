@@ -2,7 +2,7 @@
 
 This document tracks known technical debts, follow-up decisions, and intentionally deferred work. It should be updated whenever we choose a pragmatic shortcut so the project does not lose the context.
 
-## Phase 2 Preprocessing / Extraction
+## Phase 2 Event Extraction
 
 ### Test coverage is still too thin
 
@@ -14,28 +14,28 @@ Needed tests:
 - Related link extraction and persistence
 - LLM failure marks raw items as `error`
 - Idempotency when a raw item already has a source reference
-- Database persistence consistency between preprocessed event rows, `source_references`, and `event_related_links`
+- Database persistence consistency between extracted event rows, `source_references`, and `extracted_event_related_links`
 
-### Existing preprocessed data may need reprocessing
+### Existing extracted data may need reprocessing
 
-Some local preprocessed event rows were created before the prompt rule that preserves official names and titles. These rows may contain translated or romanized artist names, concert names, or song titles.
+Some local extracted event rows were created before the prompt rule that preserves official names and titles. These rows may contain translated or romanized artist names, concert names, or song titles.
 
 Follow-up:
 
 - Add a controlled reprocess command for selected raw items/events.
-- Decide whether reprocessing should replace existing preprocessed rows or create revised rows.
+- Decide whether reprocessing should replace existing extracted rows or create revised rows.
 
 ### LLM retry and repair loop is not implemented
 
-The preprocessor currently relies on schema-constrained output and marks raw items as `error` when LLM extraction, validation, or sanitization fails. It does not yet implement an automated retry/repair loop for malformed LLM output.
+The extractor currently relies on schema-constrained output and marks raw items as `error` when LLM extraction, validation, or sanitization fails. It does not yet implement an automated retry/repair loop for malformed LLM output.
 
 Follow-up:
 
 - Add limited retries with a stricter repair prompt.
-- Track retry count and last normalization error.
+- Track retry count and last extraction error.
 - Avoid infinite retry loops for persistent prompt/model failures.
 
-### Preprocessing strategy is intentionally minimal
+### Extraction strategy is intentionally minimal
 
 The strategy layer exists, but source-specific behavior is conservative. It does not yet include richer source-specific rules, fixture-driven prompts, or configurable extraction policies.
 
@@ -59,7 +59,7 @@ Possible future additions, only if needed:
 
 ### Related links are not backfilled
 
-Only newly preprocessed items populate `event_related_links`. Existing preprocessed event rows may not have related links even if their source items contain URLs.
+Only newly extracted items populate `extracted_event_related_links`. Existing extracted event rows may not have related links even if their source items contain URLs.
 
 Follow-up:
 
@@ -79,7 +79,7 @@ Follow-up:
 
 ### Event-venue link table is deferred
 
-The venue design now uses nullable `venue_id` directly on the Phase 2 preprocessed event table, currently still named `normalized_events` in code.
+The venue design now uses nullable `venue_id` directly on the Phase 2 `extracted_events` table.
 
 An `event_venue_links` table is deferred until we need multiple venues per event, venue match confidence/history, or detailed auditability of venue resolution.
 
@@ -109,16 +109,7 @@ Follow-up:
 
 ### Resolver tests for virtual-venue rules are pending a test framework
 
-The virtual-venue-granularity design lists six focused resolver tests (null on virtual-without-URL, distinct venues for distinct channel URLs, alias addition on subsequent matches, regression guard for physical auto-discovery). These cannot land until the project has a test runner — currently `npm test` only typechecks. Tracked here so the tests aren't lost when test infrastructure is set up (see "Test coverage is still too thin" under Phase 2 Normalization).
-
-### Existing preprocessed event venue FK uses NO ACTION in local migrations
-
-`src/db/schema.ts` declares `normalized_events.venue_id` with `onDelete: "set null"` for the current Phase 2 preprocessed event table, but migration `0003_sudden_warbird.sql` added the SQLite foreign key with default `NO ACTION`. Existing migrated databases therefore do not match the schema metadata and may block venue delete/merge workflows until the table is rebuilt or a corrective migration is added.
-
-Follow-up:
-
-- Add a migration that recreates `normalized_events` with `venue_id ON DELETE SET NULL`.
-- Verify `PRAGMA foreign_key_list(normalized_events)` after migration.
+The virtual-venue-granularity design lists six focused resolver tests (null on virtual-without-URL, distinct venues for distinct channel URLs, alias addition on subsequent matches, regression guard for physical auto-discovery). These cannot land until the project has a test runner — currently `npm test` only typechecks. Tracked here so the tests aren't lost when test infrastructure is set up (see "Test coverage is still too thin" under Phase 2 Event Extraction).
 
 ## Phase 3 Merge / Deduplication
 
@@ -126,21 +117,15 @@ Follow-up:
 
 The Phase 3 merge/dedup design exists in `design_docs/2026-04-25-phase3-deduplication/deduplication.md`, but implementation has not started.
 
-### Current `normalized_events` table is actually preprocessed event storage
+### Canonical normalized event storage is not implemented
 
-The refined event-layer model is:
+The refined event-layer model is now reflected in Phase 2 code:
 
 - `raw_items`: fetched source payloads.
-- `preprocessed_events`: one source-derived event candidate per raw item.
+- `extracted_events`: one source-derived event candidate per raw item.
 - `normalized_events`: canonical events after deduplication and merging.
 
-The current code still uses `normalized_events` for Phase 2 preprocessed rows. This naming will confuse Phase 3 unless it is fixed before implementing dedup.
-
-Follow-up:
-
-- Rename the current `normalized_events` table/type/TUI labels to `preprocessed_events`.
-- Decide whether current `event_related_links` and `source_references.event_id` should be renamed to `preprocessed_event_id`.
-- Add true canonical `normalized_events` and a `normalized_event_sources` link table during Phase 3.
+Phase 3 still needs to add true canonical `normalized_events` storage and a `normalized_event_sources` link table. Until then, downstream views should treat `extracted_events` as source-derived candidates rather than canonical events.
 
 ### Merge auditability is undecided
 
@@ -150,16 +135,16 @@ Possible approaches:
 
 - Store merge decision logs.
 - Store confidence and matched fields.
-- Keep links between preprocessed candidate IDs and canonical normalized event IDs.
+- Keep links between extracted event IDs and canonical normalized event IDs.
 
 ### Schema gaps to resolve before Phase 3 starts
 
-`ARCHITECTURE.md` describes a normalized canonical event schema richer than what the current Phase 2 preprocessed event table stores. These gaps are noted explicitly in the Data Model callout, and Phase 3 will need to make decisions on them before it can express the candidate-selection queries cleanly.
+`ARCHITECTURE.md` describes a normalized canonical event schema richer than what the current Phase 2 extracted event table stores. These gaps are noted explicitly in the Data Model callout, and Phase 3 will need to make decisions on them before it can express the candidate-selection queries cleanly.
 
 Decision:
 
-- **Artist link on preprocessed events.** Add nullable `artist_id` directly to the Phase 2 preprocessed event table for the Phase 3 candidate query. This is the simplest primary-artist model; collaborations and guest appearances can add an `event_artists` join table later if needed.
-- **`start_time` / `end_time`.** Add nullable `start_time` and `end_time` to preprocessed events and later carry selected canonical values into normalized events; remove `event_time` from the active schema and code.
+- **Artist link on extracted events.** Add nullable `artist_id` directly to the Phase 2 extracted event table for the Phase 3 candidate query. This is the simplest primary-artist model; collaborations and guest appearances can add an `event_artists` join table later if needed.
+- **`start_time` / `end_time`.** Add nullable `start_time` and `end_time` to extracted events and later carry selected canonical values into normalized events; remove `event_time` from the active schema and code.
 - **Event hierarchy.** Tracked as Phase 3.1 in `design_docs/2026-04-23-implementation-plan/plan.md`; no schema work is needed before Phase 3, but the Phase 3 dedup design should not foreclose the parent/sub-event model.
 
 ## Scheduler
@@ -223,7 +208,7 @@ Follow-up:
 
 ### Source URL handling needs continued attention
 
-`source_references.url` should always point to the source item, such as the tweet URL. Links mentioned inside the source content belong in `event_related_links`.
+`source_references.url` should always point to the source item, such as the tweet URL. Links mentioned inside the source content belong in `extracted_event_related_links`.
 
 ## TUI / Developer Workflow
 
@@ -246,11 +231,11 @@ Follow-up:
 
 ### One-shot scripts are useful but informal
 
-`normalize:once` is useful for development and repair, but it is not yet a polished admin command.
+`extract:once` is useful for development and repair, but it is not yet a polished admin command.
 
 Follow-up:
 
-- Add options for source filter, raw item ID, retry errors, dry run, and reprocess existing preprocessed rows.
+- Add options for source filter, raw item ID, retry errors, dry run, and reprocess existing extracted rows.
 
 ## Documentation Hygiene
 
@@ -263,9 +248,9 @@ Follow-up:
 - At the end of each phase, review `ARCHITECTURE.md`, phase design docs, and this file together.
 - Move resolved debts into a changelog or remove them once addressed.
 
-### Phase 2 preprocessing failure policy was updated on 2026-04-26
+### Phase 2 extraction failure policy was updated on 2026-04-26
 
-Resolved during the Phase 3 preparation pass, then revised after deciding low-confidence fallback events should not be created: `design_docs/2026-04-24-phase2-designs/preprocessing.md` and `design_docs/2026-04-25-preprocessing-strategy/preprocessing-strategy.md` now state that LLM extraction, validation, and sanitization failures mark the raw item as `error`.
+Resolved during the Phase 3 preparation pass, then revised after deciding low-confidence fallback events should not be created: `design_docs/2026-04-24-phase2-designs/extraction.md` and `design_docs/2026-04-25-extraction-strategy/extraction-strategy.md` now state that LLM extraction, validation, and sanitization failures mark the raw item as `error`.
 
 ### Phase 1 design docs were reconciled to current code on 2026-04-25
 

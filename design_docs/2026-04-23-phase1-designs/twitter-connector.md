@@ -125,7 +125,7 @@ Each raw item returned by the connector is the unmodified GraphQL response paylo
 }
 ```
 
-> **Note:** The `raw_data` shape is not guaranteed to be stable. The storage layer persists it as-is. Normalization (Phase 2) will handle extracting structured fields.
+> **Note:** The `raw_data` shape is not guaranteed to be stable. The storage layer persists it as-is. Event extraction (Phase 2) will handle extracting structured fields.
 
 ## Anti-Detection Measures
 

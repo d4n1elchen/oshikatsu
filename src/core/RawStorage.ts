@@ -76,7 +76,7 @@ export class RawStorage {
       .where(eq(rawItems.id, itemId));
   }
 
-  /** Put an item back on the preprocessing queue. */
+  /** Put an item back on the extraction queue. */
   async markNew(itemId: string): Promise<void> {
     await db.update(rawItems)
       .set({ status: "new", errorMessage: null })
