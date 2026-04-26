@@ -4,9 +4,9 @@ This document tracks known technical debts, follow-up decisions, and intentional
 
 ## Phase 2 Event Extraction
 
-### Test coverage is still too thin
+### Test coverage outside event resolution is still thin
 
-Current `npm test` only runs TypeScript typecheck.
+`npm test` now runs typecheck + a real `node:test` suite (22 tests covering `EventResolver` and `titleSimilarity`). The extraction and connector layers still have no tests.
 
 Needed tests:
 
@@ -107,45 +107,28 @@ Follow-up:
 
 - Add a small canonicalizer for known platforms (YouTube, Twitch, NicoNico) that maps recognized URL forms to a canonical channel/profile URL before lookup and storage.
 
-### Resolver tests for virtual-venue rules are pending a test framework
+### Resolver tests for virtual-venue rules are still missing
 
-The virtual-venue-granularity design lists six focused resolver tests (null on virtual-without-URL, distinct venues for distinct channel URLs, alias addition on subsequent matches, regression guard for physical auto-discovery). These cannot land until the project has a test runner — currently `npm test` only typechecks. Tracked here so the tests aren't lost when test infrastructure is set up (see "Test coverage is still too thin" under Phase 2 Event Extraction).
+The virtual-venue-granularity design lists six focused resolver tests (null on virtual-without-URL, distinct venues for distinct channel URLs, alias addition on subsequent matches, regression guard for physical auto-discovery). The test runner now exists (`node:test`), so these can land at any time.
 
 ## Phase 3 Event Resolution
 
-### Event resolution rules are designed but not implemented
+### Title similarity is deterministic only
 
-The Phase 3 event resolution design exists in `design_docs/2026-04-25-phase3-event-resolution/event-resolution.md`, but implementation has not started. Phase 3 covers identity resolution (new vs. existing), record consolidation (merge / dedup), and hierarchy resolution (sub-event linking) — not deduplication alone.
+The current `titleSimilarity` uses Jaccard token overlap + substring containment, CJK-safe. Per the design doc, semantic vector similarity was deferred. If false-merges or missed-merges become a recurring pattern in the review queue, revisit.
 
-### Canonical normalized event storage is not implemented
+Follow-up:
 
-The refined event-layer model is now reflected in Phase 2 code:
+- Inspect the review queue periodically to see whether semantic matching would actually move the needle.
+- Document and add semantic matching as a layered pass (not a replacement) if needed.
 
-- `raw_items`: fetched source payloads.
-- `extracted_events`: one source-derived event candidate per raw item.
-- `normalized_events`: canonical events after event resolution.
+### Sub-event hint matching only checks normalized titles, not aliases
 
-Phase 3 still needs to add true canonical `normalized_events` storage and a `normalized_event_sources` link table. Until then, downstream views should treat `extracted_events` as source-derived candidates rather than canonical events.
+`tryHierarchyResolution` matches `parent_event_hint` against the canonical main event's title. The design doc says it should also match against aliases — but events don't have an alias model yet (only venues do).
 
-### Resolution auditability is undecided
+Follow-up:
 
-We need to decide how to record why each resolution decision (merge, sub-event link, new, needs-review) was made.
-
-Possible approaches:
-
-- Store resolution decision logs (`event_resolution_decisions`).
-- Store confidence and matched signals.
-- Keep links between extracted event IDs and canonical normalized event IDs.
-
-### Schema gaps to resolve before Phase 3 starts
-
-`ARCHITECTURE.md` describes a normalized canonical event schema richer than what the current Phase 2 extracted event table stores. These gaps are noted explicitly in the Data Model callout, and Phase 3 will need to make decisions on them before it can express the candidate-selection queries cleanly.
-
-Decision:
-
-- **Artist link on extracted events.** Add nullable `artist_id` directly to the Phase 2 extracted event table for the Phase 3 candidate query. This is the simplest primary-artist model; collaborations and guest appearances can add an `event_artists` join table later if needed.
-- **`start_time` / `end_time`.** Add nullable `start_time` and `end_time` to extracted events and later carry selected canonical values into normalized events; remove `event_time` from the active schema and code.
-- **Event hierarchy.** Extracted events now carry source-derived `event_scope` and `parent_event_hint`. Phase 3.0 treats these as evidence carried into the resolution decision; Phase 3.1 acts on them by writing canonical parent/sub-event links via `normalized_events.parent_event_id`.
+- If hint matching misses obvious parents (visible in the review queue), add an event-alias table or use the union of merged extracted-event titles as informal aliases.
 
 ## Scheduler
 
@@ -255,6 +238,10 @@ Resolved during the Phase 3 preparation pass, then revised after deciding low-co
 ### `source_references` table folded into `extracted_events` on 2026-04-26
 
 Resolved during the Phase 3 prep work. Because the unique index on `extracted_events.raw_item_id` already enforces a 1:1 relationship between extracted events and raw items, the dedicated `source_references` table was always-joined and added no information. Its provenance columns (`publish_time`, `author`, `source_url`, `raw_content`) now live inline on `extracted_events`. `source_name` and `source_id` were not duplicated since they remain on `raw_items` reachable via the `raw_item_id` join. `venue_name` and `venue_url` were already on the extracted event and stay there. The conceptual `source_references` array on the normalized event schema in ARCHITECTURE.md remains valid because Phase 3 event resolution will aggregate multiple extracted events under a single normalized event, each contributing its provenance.
+
+### Phase 3 Event Resolution Engine landed on 2026-04-26
+
+Resolved during the Phase 3.0 + 3.1 implementation pass. `normalized_events`, `normalized_event_sources`, and `event_resolution_decisions` tables are in place; `EventResolver` performs identity/merge resolution (3.0) and sub-event linking (3.1) with conservative rule-based scoring; thresholds are configurable via `config.yaml` `resolution.*`. The `[5] Review Queue` TUI tab surfaces ambiguous decisions for manual override (`m` to merge, `n` to mark as new). 22 fixture tests cover the resolution rules. Removed four entries from this file (event resolution rules, canonical normalized event storage, resolution auditability, schema gaps before Phase 3) since each is now implemented as designed.
 
 ### Phase 1 design docs were reconciled to current code on 2026-04-25
 
