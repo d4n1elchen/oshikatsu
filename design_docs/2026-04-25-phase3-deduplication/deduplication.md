@@ -231,7 +231,7 @@ Recommended rules:
 
 - Keep the earliest high-quality title unless the new title is clearly more specific.
 - Prefer non-empty description, but avoid overwriting with shorter reminders.
-- Prefer explicit event time over publish-time fallback.
+- Prefer explicit event time over publish-time defaults.
 - Preserve `is_cancelled = true` if any source indicates cancellation.
 - Union tags.
 - Union related links by URL.

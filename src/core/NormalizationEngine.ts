@@ -11,7 +11,6 @@ import {
   type ExtractedEvent,
   type NormalizationStrategy,
   type SourceContext,
-  parseDateOrFallback,
 } from "./NormalizationStrategy";
 
 type ProcessBatchResult = {
@@ -76,7 +75,7 @@ export class NormalizationEngine {
 
       const systemPrompt = strategy.buildPrompt(context);
 
-      const extracted = await this.extractWithFallback(item, context, strategy, systemPrompt);
+      const extracted = await this.extractAndSanitize(item, context, strategy, systemPrompt);
 
       await this.saveNormalizedEvent(item, context, extracted);
 
@@ -104,7 +103,7 @@ export class NormalizationEngine {
     return this.strategies.find((strategy) => strategy.supports(sourceName)) ?? this.strategies[this.strategies.length - 1];
   }
 
-  private async extractWithFallback(
+  private async extractAndSanitize(
     item: any,
     context: SourceContext,
     strategy: NormalizationStrategy,
@@ -114,8 +113,8 @@ export class NormalizationEngine {
       const extracted = await this.llm.extract(context.rawContent, EventExtractionSchema, systemPrompt);
       return strategy.sanitize(item, context, extracted);
     } catch (error) {
-      console.warn(`[NormalizationEngine] LLM extraction failed for ${item.id}; using strategy fallback.`, error);
-      return strategy.fallback(item, context);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`LLM extraction or sanitization failed: ${message}`);
     }
   }
 
@@ -126,8 +125,8 @@ export class NormalizationEngine {
     const eventId = randomUUID();
     const referenceId = randomUUID();
     const artistId = await this.getArtistIdForRawItem(rawItem);
-    const startTime = parseDateOrFallback(extracted.start_time, context.publishTime.toISOString());
-    const endTime = extracted.end_time ? parseDateOrFallback(extracted.end_time, startTime.toISOString()) : null;
+    const startTime = parsePersistedDate(extracted.start_time, "start_time");
+    const endTime = extracted.end_time ? parsePersistedDate(extracted.end_time, "end_time") : null;
     const venueResolution = await this.venueResolver.resolve({
       venueName: extracted.venue_name,
       venueUrl: extracted.venue_url,
@@ -190,4 +189,12 @@ export class NormalizationEngine {
 
     return rows[0]?.artistId ?? null;
   }
+}
+
+function parsePersistedDate(value: string, fieldName: string): Date {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`Invalid ${fieldName}: ${value}`);
+  }
+  return parsed;
 }

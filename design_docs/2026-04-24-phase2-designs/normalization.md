@@ -14,7 +14,7 @@ Since artist announcements are highly unstructured natural language, the Normali
 4. **Validation**: The LLM output is validated against our expected TypeScript types using `zod`.
 5. **Persistence**:
    - On successful LLM extraction, the unified record is written to `NormalizedStorage`, and the raw item is marked as `processed`.
-   - If LLM extraction or validation fails, the newer normalization strategy contract supersedes this document's original error-only behavior: the strategy writes a conservative fallback `announcement` event, preserves source provenance and explicit related links, and marks the raw item as `processed`. The raw item is marked as `error` only when the engine cannot build usable source context or persistence fails. *(TODO: Implement an automated retry/repair mechanism for malformed LLM output or prompt tweaks in future phases).*
+   - If LLM extraction, schema validation, strategy sanitization, context assembly, or persistence fails, the raw item is marked as `error` and no normalized event is created. This intentionally avoids low-confidence fallback events. *(TODO: Implement an automated retry/repair mechanism for malformed LLM output or prompt tweaks in future phases).*
 
 ## Data Model (Normalized Storage)
 

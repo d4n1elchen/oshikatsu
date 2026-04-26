@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Normalization Strategy layer keeps the `NormalizationEngine` source-agnostic by moving source-specific extraction, prompt construction, provenance mapping, and fallback behavior into strategy classes.
+The Normalization Strategy layer keeps the `NormalizationEngine` source-agnostic by moving source-specific extraction, prompt construction, provenance mapping, and sanitization into strategy classes.
 
 This design extends the Phase 2 normalization design in `design_docs/2026-04-24-phase2-designs/normalization.md`.
 
@@ -27,7 +27,7 @@ If this logic lives directly in `NormalizationEngine`, the engine becomes a coll
 - Support new source normalizers without changing the engine.
 - Preserve source provenance consistently in `source_references`, including venue text extracted from that source item.
 - Extract event-relevant links separately from source provenance.
-- Keep fallback behavior conservative and generic when LLM extraction fails.
+- Mark raw items as `error` when LLM extraction, validation, or sanitization fails.
 - Avoid hard-coded artist, venue, campaign, or event keyword rules in the core engine.
 
 ## Non-Goals
@@ -48,9 +48,9 @@ flowchart TD
     CTX --> PROMPT["Build LLM Prompt"]
     PROMPT --> LLM["LLMProvider.extract"]
     LLM --> SANITIZE["Strategy.sanitize"]
-    LLM -. "failure" .-> FALLBACK["Strategy.fallback"]
     SANITIZE --> SAVE["Save normalized_events + event_related_links + source_references"]
-    FALLBACK --> SAVE
+    LLM -. "failure" .-> ERROR["Mark raw item error"]
+    SANITIZE -. "failure" .-> ERROR
 ```
 
 ## Core Concepts
@@ -64,9 +64,9 @@ The engine owns the workflow:
 3. Ask the strategy to build a normalized source context.
 4. Ask the LLM provider to extract structured event fields.
 5. Ask the strategy to sanitize the LLM result.
-6. If LLM extraction fails, ask the strategy for a conservative fallback event.
-7. Persist the normalized event and source reference in one transaction.
-8. Mark the raw item as processed or error.
+6. Persist the normalized event and source reference in one transaction.
+7. Mark the raw item as processed.
+8. If context assembly, LLM extraction, schema validation, sanitization, or persistence fails, mark the raw item as `error`.
 
 The engine must not contain source-specific parsing logic.
 
@@ -113,7 +113,6 @@ export interface NormalizationStrategy {
   buildContext(rawItem: RawItem): SourceContext | null;
   buildPrompt(context: SourceContext): string;
   sanitize(rawItem: RawItem, context: SourceContext, extracted: ExtractedEvent): ExtractedEvent;
-  fallback(rawItem: RawItem, context: SourceContext): ExtractedEvent;
 }
 ```
 
@@ -122,22 +121,19 @@ Method responsibilities:
 - `supports`: Declares whether this strategy handles a source.
 - `buildContext`: Converts raw source payloads into `SourceContext`.
 - `buildPrompt`: Creates source-aware extraction instructions for the LLM.
-- `sanitize`: Cleans valid LLM output and fills missing safe defaults.
-- `fallback`: Creates a minimal event if LLM extraction fails.
+- `sanitize`: Cleans valid LLM output and throws when required fields are empty or invalid.
 
 ## Built-In Strategies
 
 ### DefaultNormalizationStrategy
 
-The default strategy is a conservative fallback for unknown sources.
+The default strategy provides generic context and prompt behavior for unknown sources.
 
 Behavior:
 
 - Uses serialized raw JSON as the source text.
 - Uses the current time if no publish time is available.
 - Uses `unknown` as the author.
-- Produces a generic `announcement` fallback.
-- Extracts hashtags only as generic tags.
 - Does not infer event type from keywords.
 - Does not infer venue, artist, or campaign.
 
@@ -152,7 +148,7 @@ Behavior:
 - Extracts author from `rawData.core.user_results.result.legacy.screen_name`.
 - Builds a canonical X status URL from author and tweet ID.
 - Preserves the post timestamp and full tweet text in `rawContent`.
-- Reuses default prompt, sanitize, and fallback behavior unless source-specific improvements are needed later.
+- Reuses default prompt and sanitize behavior unless source-specific improvements are needed later.
 
 The Twitter strategy should not contain artist-specific or campaign-specific business rules.
 
@@ -216,28 +212,24 @@ Do not translate, romanize, or rewrite:
 
 For example, if the source text says `花譜` or `宿声`, the normalized title and description should keep those strings rather than changing them to a translation or romanization.
 
-## Fallback Policy
+## Failure Policy
 
-Fallback events are intentionally conservative.
+The engine does not create fallback normalized events. If the LLM call fails, returns malformed JSON, fails schema validation, or produces values that fail strategy sanitization, the raw item is marked as `error` and no `normalized_events`, `event_related_links`, or `source_references` rows are created for that attempt.
 
-Allowed fallback behavior:
+Allowed deterministic sanitization:
 
-- Create a minimal `announcement` record.
-- Use the first non-empty line as the title.
-- Use the source text as the description.
-- Use source publish time as `start_time`.
-- Preserve source URL, author, and raw content in `source_references`.
-- Preserve explicit related link candidates with URL and title only.
-- Extract explicit hashtags as tags.
+- Trim required strings and reject them if empty.
+- Parse `start_time` and `end_time`, rejecting invalid timestamps.
+- Preserve explicit related link candidates with URL and title only when the LLM extraction succeeds.
+- Deduplicate related links by normalized URL.
 
 Disallowed fallback behavior:
 
-- Inferring event type from keywords.
-- Inferring venue from keywords.
+- Creating a minimal `announcement` record after LLM failure.
+- Inferring event type from keywords after LLM failure.
+- Inferring venue from keywords after LLM failure.
 - Inferring artist, group, campaign, or location names from hard-coded lists.
 - Adding special handling for a specific artist or fandom in the engine.
-
-More sophisticated inference should come from the LLM, a configurable rules layer, or a later reviewed design.
 
 ## Adding a New Source Strategy
 
@@ -254,7 +246,7 @@ The `NormalizationEngine` should not need changes.
 ## Error Handling
 
 - If `buildContext` returns `null`, the raw item is marked as `error`.
-- If LLM extraction fails, the strategy fallback is used.
+- If LLM extraction, validation, or sanitization fails, the raw item is marked as `error`.
 - If persistence fails, the raw item is marked as `error`.
 - If a raw item already has a `source_references` row, the engine marks it as processed and does not create duplicate normalized events.
 
@@ -264,10 +256,9 @@ Recommended tests:
 
 - Strategy context extraction from representative raw Twitter payloads.
 - Related link candidate extraction from representative raw Twitter payloads.
-- Related link preservation when the LLM provider throws.
-- Default strategy fallback for unknown raw items.
+- Raw item is marked `error` when the LLM provider throws.
+- Raw item is marked `error` when the LLM provider returns invalid timestamps or empty required fields.
 - Engine idempotency when a raw item already has a source reference.
-- Engine fallback path when the LLM provider throws.
 - Persistence verifies matching `normalized_events`, `event_related_links`, and `source_references` counts.
 
 ## Current Implementation Status
@@ -284,6 +275,6 @@ Current built-in strategies:
 - `DefaultNormalizationStrategy`
 - `TwitterNormalizationStrategy`
 
-The engine has been refactored to use strategies and no longer contains source-specific fallback keyword rules.
+The engine has been refactored to use strategies and no longer contains source-specific fallback keyword rules or LLM-failure fallback event creation.
 
 Related link extraction and persistence are implemented with `event_related_links`. Related links store only `url` and optional `title`.

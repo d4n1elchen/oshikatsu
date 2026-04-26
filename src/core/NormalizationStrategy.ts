@@ -39,7 +39,6 @@ export interface NormalizationStrategy {
   buildContext(rawItem: any): SourceContext | null;
   buildPrompt(context: SourceContext): string;
   sanitize(rawItem: any, context: SourceContext, extracted: ExtractedEvent): ExtractedEvent;
-  fallback(rawItem: any, context: SourceContext): ExtractedEvent;
 }
 
 export class DefaultNormalizationStrategy implements NormalizationStrategy {
@@ -95,35 +94,22 @@ Venue rules:
   - Never set venue_name to a bare platform name like "YouTube" without an accompanying venue_url. If no URL is available, leave both venue_name and venue_url unset.`;
   }
 
-  sanitize(_rawItem: any, context: SourceContext, extracted: ExtractedEvent): ExtractedEvent {
-    const fallback = this.fallback(_rawItem, context);
-    const startTime = parseDateOrFallback(extracted.start_time, fallback.start_time);
-    const endTime = extracted.end_time ? parseDateOrFallback(extracted.end_time, startTime.toISOString()) : undefined;
-
-    return {
-      title: extracted.title?.trim() || fallback.title,
-      description: extracted.description?.trim() || fallback.description,
-      start_time: startTime.toISOString(),
-      end_time: endTime?.toISOString(),
-      venue_name: extracted.venue_name?.trim() || undefined,
-      venue_url: extracted.venue_url?.trim() || fallback.venue_url,
-      related_links: mergeRelatedLinks(extracted.related_links, context.relatedLinkCandidates),
-      type: EVENT_TYPES.includes(extracted.type) ? extracted.type : fallback.type,
-      tags: Array.isArray(extracted.tags) ? extracted.tags.map((tag) => tag.trim()).filter(Boolean) : fallback.tags,
-    };
-  }
-
-  fallback(_rawItem: any, context: SourceContext): ExtractedEvent {
-    const title = buildFallbackTitle(context.text);
+  sanitize(_rawItem: any, _context: SourceContext, extracted: ExtractedEvent): ExtractedEvent {
+    const title = requireNonEmpty(extracted.title, "title");
+    const description = requireNonEmpty(extracted.description, "description");
+    const startTime = parseDateOrThrow(extracted.start_time, "start_time");
+    const endTime = extracted.end_time ? parseDateOrThrow(extracted.end_time, "end_time") : undefined;
 
     return {
       title,
-      description: context.text.trim() || title,
-      start_time: context.publishTime.toISOString(),
-      venue_url: extractFirstUrl(context.text),
-      related_links: mergeRelatedLinks([], context.relatedLinkCandidates),
-      type: "announcement",
-      tags: extractHashTags(context.text),
+      description,
+      start_time: startTime.toISOString(),
+      end_time: endTime?.toISOString(),
+      venue_name: extracted.venue_name?.trim() || undefined,
+      venue_url: extracted.venue_url?.trim() || undefined,
+      related_links: mergeRelatedLinks(extracted.related_links, _context.relatedLinkCandidates),
+      type: extracted.type,
+      tags: Array.isArray(extracted.tags) ? extracted.tags.map((tag) => tag.trim()).filter(Boolean) : [],
     };
   }
 }
@@ -141,7 +127,7 @@ export class TwitterNormalizationStrategy extends DefaultNormalizationStrategy {
     if (!text.trim()) return null;
 
     const author = rawItem.rawData?.core?.user_results?.result?.legacy?.screen_name || "unknown";
-    const publishTime = parseDateOrFallback(legacy.created_at, new Date().toISOString());
+    const publishTime = parseDateOrDefault(legacy.created_at, new Date().toISOString());
     const relatedLinkCandidates = extractTwitterLinkCandidates(rawItem);
 
     return {
@@ -162,26 +148,28 @@ export function createDefaultNormalizationStrategies(): NormalizationStrategy[] 
   ];
 }
 
-export function parseDateOrFallback(value: string | undefined, fallbackIso: string): Date {
-  const parsed = value ? new Date(value) : new Date(fallbackIso);
+export function parseDateOrDefault(value: string | undefined, defaultIso: string): Date {
+  const parsed = value ? new Date(value) : new Date(defaultIso);
   if (!Number.isNaN(parsed.getTime())) return parsed;
 
-  const fallback = new Date(fallbackIso);
-  return Number.isNaN(fallback.getTime()) ? new Date() : fallback;
+  const defaultDate = new Date(defaultIso);
+  return Number.isNaN(defaultDate.getTime()) ? new Date() : defaultDate;
 }
 
-function buildFallbackTitle(text: string): string {
-  const firstLine = text.split("\n").map((line) => line.trim()).find(Boolean);
-  if (!firstLine) return "Untitled announcement";
-  return firstLine.length > 80 ? `${firstLine.slice(0, 77)}...` : firstLine;
+function parseDateOrThrow(value: string, fieldName: string): Date {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`Invalid ${fieldName}: ${value}`);
+  }
+  return parsed;
 }
 
-function extractHashTags(text: string): string[] {
-  return [...new Set([...text.matchAll(/#([\p{L}\p{N}_]+)/gu)].map((match) => match[1]))];
-}
-
-function extractFirstUrl(text: string): string | undefined {
-  return text.match(/https?:\/\/\S+/)?.[0];
+function requireNonEmpty(value: string, fieldName: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new Error(`Missing ${fieldName}`);
+  }
+  return trimmed;
 }
 
 function extractLinkCandidatesFromText(text: string): RelatedLinkCandidate[] {

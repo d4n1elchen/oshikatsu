@@ -12,7 +12,7 @@ Needed tests:
 
 - Twitter strategy context extraction from fixture raw items
 - Related link extraction and persistence
-- LLM failure fallback
+- LLM failure marks raw items as `error`
 - Idempotency when a raw item already has a source reference
 - Database persistence consistency between `normalized_events`, `source_references`, and `event_related_links`
 
@@ -27,7 +27,7 @@ Follow-up:
 
 ### LLM retry and repair loop is not implemented
 
-The normalizer currently relies on schema-constrained output and fallback behavior. It does not yet implement an automated retry/repair loop for malformed LLM output.
+The normalizer currently relies on schema-constrained output and marks raw items as `error` when LLM extraction, validation, or sanitization fails. It does not yet implement an automated retry/repair loop for malformed LLM output.
 
 Follow-up:
 
@@ -247,9 +247,9 @@ Follow-up:
 - At the end of each phase, review `ARCHITECTURE.md`, phase design docs, and this file together.
 - Move resolved debts into a changelog or remove them once addressed.
 
-### Phase 2 normalization fallback docs were reconciled on 2026-04-26
+### Phase 2 normalization failure policy was updated on 2026-04-26
 
-Resolved during the Phase 3 preparation pass: `design_docs/2026-04-24-phase2-designs/normalization.md` now points to the newer strategy contract where LLM extraction failures produce a conservative fallback `announcement` event, and raw items are marked `error` only when context assembly or persistence fails.
+Resolved during the Phase 3 preparation pass, then revised after deciding low-confidence fallback events should not be created: `design_docs/2026-04-24-phase2-designs/normalization.md` and `design_docs/2026-04-25-normalization-strategy/normalization-strategy.md` now state that LLM extraction, validation, and sanitization failures mark the raw item as `error`.
 
 ### Phase 1 design docs were reconciled to current code on 2026-04-25
 

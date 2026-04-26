@@ -87,7 +87,7 @@ Add one rule to the venue-extraction guidance in `NormalizationStrategy`:
 > - Put the specific stream URL (e.g., `https://youtube.com/watch?v=...`) into `related_links` instead.
 > - If only a stream URL is available and no channel URL can be inferred, you may use the stream URL as `venue_url` — but never use a bare platform name like "YouTube" as `venue_name` without an accompanying URL.
 
-The strategy fallback path (used when the LLM call fails) should not invent a venue URL; it leaves `venue_url` unset, which under the new resolver rule means no virtual venue gets auto-created.
+If the LLM call fails, the raw item is marked as `error` and no normalized event or venue resolution is attempted. If the LLM succeeds but leaves `venue_url` unset, the resolver rule means no generic virtual venue gets auto-created.
 
 ## Rollout
 
@@ -116,7 +116,7 @@ Add focused resolver tests:
 
 ## Open Questions
 
-1. **Stream-URL fallback policy.** When the LLM provides a stream URL but no channel URL, we accept the stream URL as `venue_url` (Decision 4). Over time this creates per-stream venue rows that should arguably be merged under their channel. Options for follow-up: (a) curated merge during venue review, (b) LLM-assisted post-pass to extract channel URL from a stream URL, (c) a small URL canonicalizer that maps known stream-URL patterns to channel-URL patterns when possible. Tracked under TECH_DEBTS Phase 2.1.
+1. **Stream-URL venue policy.** When the LLM provides a stream URL but no channel URL, we accept the stream URL as `venue_url` (Decision 4). Over time this creates per-stream venue rows that should arguably be merged under their channel. Options for follow-up: (a) curated merge during venue review, (b) LLM-assisted post-pass to extract channel URL from a stream URL, (c) a small URL canonicalizer that maps known stream-URL patterns to channel-URL patterns when possible. Tracked under TECH_DEBTS Phase 2.1.
 
 2. **Should `inferVenueKind` get smarter about distinguishing channel URLs from stream URLs?** Not required for this design — `kind = "virtual"` is already correct for both. Worth revisiting only if a future feature needs the distinction.
 
@@ -124,7 +124,7 @@ Add focused resolver tests:
 
 After implementation, update `TECH_DEBTS.md` under Phase 2.1:
 
-- Stream-URL fallback creates per-stream venue rows that may later need merging under channel-level venues (open question 1).
+- Stream-URL venue policy creates per-stream venue rows that may later need merging under channel-level venues (open question 1).
 - No URL canonicalization across YouTube URL forms (`youtu.be/x`, `youtube.com/watch?v=x`, `youtube.com/@channel`, `youtube.com/channel/UCxxxx`); same channel referenced via different URL forms creates separate venues.
 
 ## Cross-References
