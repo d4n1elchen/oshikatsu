@@ -1,6 +1,7 @@
 import { chromium, type BrowserContext, type Page } from "playwright";
 import type { BaseConnector } from "../types";
 import type { WatchTarget } from "../../core/types";
+import { log } from "../../core/logger";
 
 export interface TwitterConnectorConfig {
   browser: {
@@ -21,7 +22,7 @@ export class TwitterConnector implements BaseConnector {
   constructor(private config: TwitterConnectorConfig) {}
 
   async start(): Promise<void> {
-    console.log(`Launching persistent browser context at: ${this.config.browser.userDataDir}`);
+    log.info(`Launching persistent browser context at: ${this.config.browser.userDataDir}`);
     this.context = await chromium.launchPersistentContext(this.config.browser.userDataDir, {
       headless: this.config.browser.headless,
       // Useful for reducing anti-bot detections
@@ -41,7 +42,7 @@ export class TwitterConnector implements BaseConnector {
     if (!username) throw new Error("Invalid source config: missing username");
 
     const targetUrl = `https://x.com/${username}`;
-    console.log(`Navigating to ${targetUrl}...`);
+    log.info(`Navigating to ${targetUrl}...`);
 
     const rawItems: Record<string, any>[] = [];
 
@@ -96,13 +97,13 @@ export class TwitterConnector implements BaseConnector {
       const maxScrolls = Math.ceil(this.config.fetch.maxTweetsPerSource / 10); // Rough estimate
 
       while (scrolls < maxScrolls && rawItems.length < this.config.fetch.maxTweetsPerSource) {
-        console.log(`Scrolling... (collected ${rawItems.length} items so far)`);
+        log.info(`Scrolling... (collected ${rawItems.length} items so far)`);
         await this.page.evaluate(() => window.scrollBy(0, 1000));
         await this.page.waitForTimeout(this.config.fetch.scrollDelayMs);
         scrolls++;
       }
     } catch (e) {
-      console.error(`Error fetching updates for ${username}:`, e);
+      log.error(`Error fetching updates for ${username}:`, e);
     } finally {
       // Clean up the listener so it doesn't duplicate on the next fetch
       this.page.removeListener("response", responseHandler);

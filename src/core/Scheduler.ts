@@ -2,6 +2,7 @@ import { WatchListManager } from "./WatchListManager";
 import { RawStorage } from "./RawStorage";
 import { TwitterConnector } from "../connectors/twitter";
 import { getConfig } from "../config";
+import { log } from "./logger";
 
 export interface SchedulerConfig {
   intervalMinutes: number;
@@ -26,7 +27,7 @@ export class IngestionScheduler {
     if (this.isRunning) return;
     this.isRunning = true;
 
-    console.log(`Scheduler started. Interval: ${this.config.intervalMinutes} minutes.`);
+    log.info(`Scheduler started. Interval: ${this.config.intervalMinutes} minutes.`);
     
     // Run immediately on start
     await this.runOnce();
@@ -46,16 +47,16 @@ export class IngestionScheduler {
       clearInterval(this.timer);
       this.timer = null;
     }
-    console.log("Scheduler stopped.");
+    log.info("Scheduler stopped.");
   }
 
   /** Execute one full ingestion cycle across all active targets. */
   async runOnce(): Promise<void> {
-    console.log(`\n--- Starting ingestion cycle: ${new Date().toISOString()} ---`);
+    log.info(`\n--- Starting ingestion cycle: ${new Date().toISOString()} ---`);
     
     // 1. Fetch active Twitter targets
     const activeTwitterTargets = await this.wlm.getActiveTargets("twitter");
-    console.log(`Found ${activeTwitterTargets.length} active Twitter watch targets.`);
+    log.info(`Found ${activeTwitterTargets.length} active Twitter watch targets.`);
 
     if (activeTwitterTargets.length > 0) {
       const globalConfig = getConfig();
@@ -78,10 +79,10 @@ export class IngestionScheduler {
 
         // Process each target sequentially for safety (anti-bot)
         for (const target of activeTwitterTargets) {
-          console.log(`Fetching updates for ${target.sourceConfig.username}...`);
+          log.info(`Fetching updates for ${target.sourceConfig.username}...`);
           try {
             const items = await twitterConnector.fetchUpdates(target);
-            console.log(`Fetched ${items.length} total items from ${target.sourceConfig.username}`);
+            log.info(`Fetched ${items.length} total items from ${target.sourceConfig.username}`);
             
             if (items.length > 0) {
               const newItemsCount = await this.storage.saveItems(
@@ -89,19 +90,19 @@ export class IngestionScheduler {
                 "twitter",
                 items.map(i => ({ sourceId: i.sourceId, rawData: i.rawData }))
               );
-              console.log(`Saved ${newItemsCount} NEW items to Raw Storage.`);
+              log.info(`Saved ${newItemsCount} NEW items to Raw Storage.`);
             }
           } catch (e) {
-            console.error(`Failed to fetch/save for watch target ${target.id}:`, e);
+            log.error(`Failed to fetch/save for watch target ${target.id}:`, e);
           }
         }
       } catch (e) {
-        console.error("Failed to start Twitter Connector:", e);
+        log.error("Failed to start Twitter Connector:", e);
       } finally {
         await twitterConnector.stop();
       }
     }
 
-    console.log("--- Ingestion cycle complete ---\n");
+    log.info("--- Ingestion cycle complete ---\n");
   }
 }

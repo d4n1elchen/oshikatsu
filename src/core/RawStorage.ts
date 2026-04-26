@@ -2,6 +2,7 @@ import { db } from "../db";
 import { rawItems } from "../db/schema";
 import type { NewRawItem, RawItem } from "./types";
 import { eq, and, desc, count } from "drizzle-orm";
+import { log } from "./logger";
 
 export class RawStorage {
   /**
@@ -30,7 +31,7 @@ export class RawStorage {
 
       return result.length;
     } catch (e) {
-      console.error(`Error saving raw items for watchTarget ${watchTargetId}:`, e);
+      log.error(`Error saving raw items for watchTarget ${watchTargetId}:`, e);
       return 0;
     }
   }
