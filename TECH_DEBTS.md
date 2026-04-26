@@ -140,6 +140,39 @@ Follow-up:
 
 - When adding a second connector, accept `connectors: Record<string, BaseConnector>` as a parameter to `runIngestionCycle` and iterate platforms.
 
+### No per-cycle metrics or run history
+
+The scheduler emits start/complete log lines but doesn't capture cycle duration, items fetched per target per cycle, failure counts per cycle, or time-since-last-success per target. The future Monitoring component (Component 7 in `ARCHITECTURE.md`) will need this; without it, "is the daemon healthy?" can only be answered by tailing logs.
+
+Follow-up:
+
+- Track per-cycle stats in the `Scheduler` and emit a structured summary log line at the end of each tick.
+- Optionally persist to a `scheduler_runs` table (run_id, task_name, started_at, finished_at, status, item_counts) for the TUI Monitor view to query.
+
+### No abort signal for graceful shutdown
+
+`Scheduler.stop()` cancels pending timers and awaits in-flight runs to finish, but it has no way to *interrupt* an in-flight run. A long browser navigation (e.g., a target that times out at the 15s `pageLoadTimeoutMs`) can block SIGINT for up to that timeout. As more connectors are added the worst-case shutdown time grows linearly.
+
+Follow-up:
+
+- Thread an `AbortSignal` through `ScheduledTask.run` and into `TwitterConnector.fetchUpdates` / `page.goto` so a stopped scheduler can interrupt long ops.
+
+### No inter-target pacing in ingestion
+
+`runIngestionCycle` processes Twitter targets back-to-back with no delay between them. Adding even a small randomized pause would reduce login-wall risk on the Twitter side.
+
+Follow-up:
+
+- Add an optional `interTargetDelayMs` (or jittered range) between successive `fetchUpdates` calls.
+
+### Browser context is recreated every ingestion cycle
+
+Every cycle does `launchPersistentContext` → process all targets → `close`. Each cycle pays a ~5–10s cold-start cost. Acceptable at the default 15-minute interval, expensive if shortened. Reusing the context across cycles is doable but trades simplicity for a moving piece (a stuck/zombie context between cycles is harder to detect than one that's clearly torn down each time).
+
+Follow-up:
+
+- Defer until ingestion intervals get tightened or browser cold-start becomes a measurable bottleneck. Then weigh the recovery cost.
+
 ## Raw Storage
 
 ### No retry/backoff for transient SQLite errors
@@ -193,15 +226,6 @@ The TUI currently queries storage directly in places. This is acceptable for the
 Follow-up:
 
 - Introduce read/query services for Events and Monitor views.
-
-### Monitor retry action cannot reach errored rows
-
-The Monitor view advertises `x` to retry errored raw items, but it loads its selectable list through `RawStorage.getUnprocessed`, which filters to `status = "new"`. Errored rows appear only in the stats count, so the retry key path is currently unreachable.
-
-Follow-up:
-
-- Add a raw-item query that can include `error` rows, or add a dedicated error queue view.
-- Keep retry behavior explicit so processed rows are not accidentally requeued.
 
 ### One-shot scripts are useful but informal
 

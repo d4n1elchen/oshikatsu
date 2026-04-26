@@ -17,7 +17,9 @@ export default function RawItems() {
     setLoading(true);
     const [s, items] = await Promise.all([
       storage.getStats(),
-      storage.getUnprocessed(undefined, 100), // Fetch up to 100 items
+      // Include error items so the [x] retry keybinding has reachable targets;
+      // otherwise the only way to clear failures was the extract:once script.
+      storage.getQueueAndErrors(undefined, 100),
     ]);
     setStats(s);
     setRecentItems(items);
@@ -99,9 +101,9 @@ export default function RawItems() {
 
       {/* Recent Items */}
       <Box marginTop={1} flexDirection="column">
-        <Text bold>Recent Unprocessed Items</Text>
+        <Text bold>Pending &amp; Errored Items</Text>
         {recentItems.length === 0 ? (
-          <Text color="yellow" italic>No unprocessed items.</Text>
+          <Text color="yellow" italic>No pending or errored items.</Text>
         ) : (
           <Box flexDirection="column" marginTop={1}>
             {recentItems.slice(windowStart, windowStart + 10).map((item, index) => {
@@ -127,9 +129,17 @@ export default function RawItems() {
 
                   {/* Expanded JSON View */}
                   {isExpanded && (
-                    <Box marginLeft={4} marginTop={1} marginBottom={1} borderStyle="single" padding={1} width="95%">
-                      <Text>{JSON.stringify(item.rawData, null, 2).split("\n").slice(0, 30).join("\n")}</Text>
-                      <Text dimColor italic>... (truncated for preview)</Text>
+                    <Box marginLeft={4} marginTop={1} marginBottom={1} flexDirection="column" gap={1}>
+                      {item.status === "error" && item.errorMessage && (
+                        <Box borderStyle="single" borderColor="red" padding={1} width="95%" flexDirection="column">
+                          <Text color="red" bold>Error</Text>
+                          <Text>{item.errorMessage}</Text>
+                        </Box>
+                      )}
+                      <Box borderStyle="single" padding={1} width="95%" flexDirection="column">
+                        <Text>{JSON.stringify(item.rawData, null, 2).split("\n").slice(0, 30).join("\n")}</Text>
+                        <Text dimColor italic>... (truncated for preview)</Text>
+                      </Box>
                     </Box>
                   )}
                 </Box>

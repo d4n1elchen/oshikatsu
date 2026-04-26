@@ -1,7 +1,7 @@
 import { db } from "../db";
 import { rawItems } from "../db/schema";
 import type { NewRawItem, RawItem } from "./types";
-import { eq, and, desc, count } from "drizzle-orm";
+import { eq, and, desc, count, inArray } from "drizzle-orm";
 import { tagged } from "./logger";
 
 const log = tagged("RawStorage");
@@ -54,6 +54,24 @@ export class RawStorage {
   /** Get unprocessed items, optionally filtered by source, ordered by fetchedAt descending. */
   async getUnprocessed(sourceName?: string, limit: number = 100): Promise<RawItem[]> {
     const conditions = [eq(rawItems.status, "new")];
+    if (sourceName) {
+      conditions.push(eq(rawItems.sourceName, sourceName));
+    }
+
+    return db.select()
+      .from(rawItems)
+      .where(and(...conditions))
+      .orderBy(desc(rawItems.fetchedAt))
+      .limit(limit);
+  }
+
+  /**
+   * Get items from the extraction queue plus any in error state, so the
+   * Monitor view can surface failures that need manual retry. Ordered by
+   * fetchedAt descending.
+   */
+  async getQueueAndErrors(sourceName?: string, limit: number = 100): Promise<RawItem[]> {
+    const conditions = [inArray(rawItems.status, ["new", "error"])];
     if (sourceName) {
       conditions.push(eq(rawItems.sourceName, sourceName));
     }
