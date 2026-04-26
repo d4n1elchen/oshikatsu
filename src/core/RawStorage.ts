@@ -2,15 +2,17 @@ import { db } from "../db";
 import { rawItems } from "../db/schema";
 import type { NewRawItem, RawItem } from "./types";
 import { eq, and, desc, count, inArray } from "drizzle-orm";
-import { tagged } from "./logger";
-
-const log = tagged("RawStorage");
 
 export class RawStorage {
   /**
    * Saves an array of raw items to the database.
    * Handles deduplication via the unique index on (source_name, source_id)
    * and using SQLite's INSERT OR IGNORE behavior.
+   *
+   * Errors propagate to the caller. The scheduler's per-target catch
+   * then logs the failure as such rather than letting fetched data
+   * silently disappear (the previous behavior swallowed the error and
+   * returned 0, indistinguishable from "no new items").
    */
   async saveItems(watchTargetId: string, sourceName: string, items: Array<{ sourceId: string; rawData: any }>): Promise<number> {
     if (items.length === 0) return 0;
@@ -25,17 +27,12 @@ export class RawStorage {
       status: "new",
     }));
 
-    try {
-      const result = await db.insert(rawItems)
-        .values(newItems)
-        .onConflictDoNothing()
-        .returning({ id: rawItems.id });
+    const result = await db.insert(rawItems)
+      .values(newItems)
+      .onConflictDoNothing()
+      .returning({ id: rawItems.id });
 
-      return result.length;
-    } catch (e) {
-      log.error(`Failed to save raw items for watch target ${watchTargetId}:`, e);
-      return 0;
-    }
+    return result.length;
   }
 
   /** Check if a raw item from this source already exists. */

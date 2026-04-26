@@ -175,14 +175,13 @@ Follow-up:
 
 ## Raw Storage
 
-### No retry/backoff for transient SQLite errors
+### No error classification on persistent storage failures
 
-`saveItems` catches errors, logs them, and returns 0. There is no exponential backoff for transient SQLite locking, which the original design called for.
+`RawStorage` write paths now propagate errors to the scheduler's per-target catch, which logs and continues to the next target. This is correct for transient/per-target issues, but a catastrophic failure (`SQLITE_CORRUPT`, `SQLITE_READONLY`, `SQLITE_FULL`) currently produces an endless stream of `Failed to fetch/save` log lines while the daemon keeps running. We deliberately do not crash on these — daemons that quit on a transient disk hiccup cause more pages than they prevent.
 
 Follow-up:
 
-- Add a retry wrapper for `SQLITE_BUSY` / `SQLITE_LOCKED` with bounded exponential backoff.
-- Decide whether `saveItems` should surface partial-batch failures distinctly from "no new items."
+- Surface persistent storage failures to the future Monitoring component (Component 7 in `ARCHITECTURE.md`) rather than killing the daemon. Track a per-target consecutive-failure counter; mark a target unhealthy after N failures; trigger an alert; let the operator decide whether to intervene.
 
 ### Optional indexes deferred until needed
 
@@ -213,10 +212,6 @@ Follow-up:
 - Add explicit detection for login walls and anti-bot pages (e.g., look for known DOM markers or absence of expected timeline GraphQL responses) and throw a typed error when detected.
 - Distinguish "the GraphQL handler never fired" from "the handler fired and the timeline really was empty" — the former is a likely shape change, the latter is a quiet day.
 
-### Source URL handling needs continued attention
-
-`extracted_events.source_url` should always point to the source item, such as the tweet URL. Links mentioned inside the source content belong in `extracted_event_related_links`.
-
 ## TUI / Developer Workflow
 
 ### TUI directly uses DB access
@@ -243,21 +238,4 @@ Several docs are now evolving quickly during Phase 2/3 planning.
 
 Follow-up:
 
-- At the end of each phase, review `ARCHITECTURE.md`, phase design docs, and this file together.
-- Move resolved debts into a changelog or remove them once addressed.
-
-### Phase 2 extraction failure policy was updated on 2026-04-26
-
-Resolved during the Phase 3 preparation pass, then revised after deciding low-confidence fallback events should not be created: `design_docs/2026-04-24-phase2-designs/extraction.md` and `design_docs/2026-04-25-extraction-strategy/extraction-strategy.md` now state that LLM extraction, validation, and sanitization failures mark the raw item as `error`.
-
-### `source_references` table folded into `extracted_events` on 2026-04-26
-
-Resolved during the Phase 3 prep work. Because the unique index on `extracted_events.raw_item_id` already enforces a 1:1 relationship between extracted events and raw items, the dedicated `source_references` table was always-joined and added no information. Its provenance columns (`publish_time`, `author`, `source_url`, `raw_content`) now live inline on `extracted_events`. `source_name` and `source_id` were not duplicated since they remain on `raw_items` reachable via the `raw_item_id` join. `venue_name` and `venue_url` were already on the extracted event and stay there. The conceptual `source_references` array on the normalized event schema in ARCHITECTURE.md remains valid because Phase 3 event resolution will aggregate multiple extracted events under a single normalized event, each contributing its provenance.
-
-### Phase 3 Event Resolution Engine landed on 2026-04-26
-
-Resolved during the Phase 3.0 + 3.1 implementation pass. `normalized_events`, `normalized_event_sources`, and `event_resolution_decisions` tables are in place; `EventResolver` performs identity/merge resolution (3.0) and sub-event linking (3.1) with conservative rule-based scoring; thresholds are configurable via `config.yaml` `resolution.*`. The `[5] Review Queue` TUI tab surfaces ambiguous decisions for manual override (`m` to merge, `n` to mark as new). 22 fixture tests cover the resolution rules. Removed four entries from this file (event resolution rules, canonical normalized event storage, resolution auditability, schema gaps before Phase 3) since each is now implemented as designed.
-
-### Phase 1 design docs were reconciled to current code on 2026-04-25
-
-Resolved during the Tier 2 doc cleanup pass: `watchlist.md` (SourceEntry → WatchTarget rename, `updateArtist`), `raw-storage.md` (`watch_target_id`, deterministic IDs, bulk `saveItems`, `markNew`, typed `getStats`), `scheduler.md` (drop APScheduler reference, camelCase config, current method names), and `twitter-connector.md` (drop `account` block, document `headless: true` default, reference `npm run login:twitter`). Listed here so the next phase-end review knows these were done deliberately and any further drift is new.
+- At the end of each phase, review `ARCHITECTURE.md`, phase design docs, and this file together. Remove resolved items rather than keeping them as historical entries — `git log` is the changelog.
