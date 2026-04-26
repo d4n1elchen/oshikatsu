@@ -1,4 +1,4 @@
-import { artists, watchTargets, rawItems, venues, venueAliases, extractedEvents, extractedEventRelatedLinks, sourceReferences } from "../db/schema";
+import { artists, watchTargets, rawItems, venues, venueAliases, extractedEvents, extractedEventRelatedLinks } from "../db/schema";
 
 // Extract TypeScript types directly from Drizzle schemas
 export type Artist = typeof artists.$inferSelect;
@@ -21,6 +21,3 @@ export type NewExtractedEvent = typeof extractedEvents.$inferInsert;
 
 export type ExtractedEventRelatedLink = typeof extractedEventRelatedLinks.$inferSelect;
 export type NewExtractedEventRelatedLink = typeof extractedEventRelatedLinks.$inferInsert;
-
-export type SourceReference = typeof sourceReferences.$inferSelect;
-export type NewSourceReference = typeof sourceReferences.$inferInsert;

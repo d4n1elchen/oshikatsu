@@ -1,11 +1,12 @@
 import { z } from "zod";
 
 export const EVENT_TYPES = ["live_stream", "merchandise", "release", "concert", "broadcast", "collaboration", "side_event"] as const;
+export const EVENT_SCOPES = ["main", "sub", "unknown"] as const;
 
 export const EventExtractionSchema = z.object({
   title: z.string().min(1).describe("A short, descriptive title for the event. Preserve proper nouns and official titles in their original written form."),
   description: z.string().min(1).describe("A detailed English summary of the announcement. Preserve proper nouns and official titles in their original written form."),
-  start_time: z.string().describe("ISO 8601 timestamp of when the event actually starts. Must come from an explicit event, stream, sale, broadcast, release, or side-event time in the source."),
+  start_time: z.string().optional().describe("ISO 8601 timestamp of when the extracted event actually starts, if explicitly available or safely inferable from the source."),
   end_time: z.string().optional().describe("ISO 8601 timestamp of when the event ends, if explicitly available."),
   venue_name: z.string().optional().describe("Name of the physical venue or virtual platform"),
   venue_url: z.string().optional().describe("URL to the stream, venue, or relevant event page"),
@@ -14,10 +15,13 @@ export const EventExtractionSchema = z.object({
     title: z.string().optional(),
   })).default([]).describe("Event-relevant links with URL and optional human-readable title"),
   type: z.enum(EVENT_TYPES).describe("The category of the event"),
+  event_scope: z.enum(EVENT_SCOPES).default("unknown").describe("Whether this is the main event, a sub-event related to a larger event, or unclear."),
+  parent_event_hint: z.string().optional().describe("Best-effort name of the larger/main event if this is a sub-event and the source gives enough evidence."),
   tags: z.array(z.string()).default([]).describe("List of relevant tags"),
 });
 
 export type EventType = typeof EVENT_TYPES[number];
+export type EventScope = typeof EVENT_SCOPES[number];
 export type EventExtractionResult = z.infer<typeof EventExtractionSchema>;
 
 export interface SourceContext {
@@ -76,13 +80,17 @@ Language rules:
 - If a title combines an English summary with an official name, keep the official name in its original written form.
 
 Extraction rules:
-- start_time must be an ISO 8601 timestamp for when the actual event, stream, sale, broadcast, release, or side event happens.
-- Do not use the source publish time as start_time. If no actual event time is present, do not create an event.
+- Extract the specific activity described by the source post. A post may announce a main event, or it may announce a sub-event such as a merch sale, ticket lottery, meet-and-greet, pre-show, after-show, campaign, booth, or stream related to a larger main event.
+- start_time should be an ISO 8601 timestamp for when the extracted activity happens, if the source gives an explicit time or enough context to infer it safely.
+- Leave start_time unset when the source announces a real activity but does not provide the activity's own time. Do not use the source publish time as start_time.
 - end_time should only be set when an explicit end time is available.
 - related_links must contain only event-relevant candidate URLs and optional human-readable titles.
 - type must be one of: ${EVENT_TYPES.join(", ")}.
+- event_scope must be "main" for a standalone/main event, "sub" for an activity that belongs under a larger event, or "unknown" when the relationship is unclear.
+- parent_event_hint should be set only when event_scope is "sub" and the source names or clearly implies the larger/main event. Use the official title exactly as written. If the main event is not named, leave parent_event_hint unset.
 - tags should be short labels such as artist names, group names, platforms, product names, or campaign names.
 - Classify the underlying activity being announced, not the wording of the post. For example, an informational post announcing a scheduled concert is type "concert"; a post announcing a merch sale is type "merchandise".
+- Do not invent a main event that is not named or clearly implied by the source. It is okay to extract a sub-event with parent_event_hint unset.
 - Do not use a generic "announcement" category. If the post does not announce, update, schedule, cancel, or link to a specific activity in one of the allowed event types, return an empty JSON object so validation fails.
 
 Venue rules:
@@ -98,18 +106,21 @@ Venue rules:
   sanitize(_rawItem: any, _context: SourceContext, extracted: EventExtractionResult): EventExtractionResult {
     const title = requireNonEmpty(extracted.title, "title");
     const description = requireNonEmpty(extracted.description, "description");
-    const startTime = parseDateOrThrow(extracted.start_time, "start_time");
+    const startTime = extracted.start_time ? parseDateOrThrow(extracted.start_time, "start_time") : undefined;
     const endTime = extracted.end_time ? parseDateOrThrow(extracted.end_time, "end_time") : undefined;
+    const eventScope = EVENT_SCOPES.includes(extracted.event_scope) ? extracted.event_scope : "unknown";
 
     return {
       title,
       description,
-      start_time: startTime.toISOString(),
+      start_time: startTime?.toISOString(),
       end_time: endTime?.toISOString(),
       venue_name: extracted.venue_name?.trim() || undefined,
       venue_url: extracted.venue_url?.trim() || undefined,
       related_links: mergeRelatedLinks(extracted.related_links, _context.relatedLinkCandidates),
       type: extracted.type,
+      event_scope: eventScope,
+      parent_event_hint: eventScope === "sub" ? extracted.parent_event_hint?.trim() || undefined : undefined,
       tags: Array.isArray(extracted.tags) ? extracted.tags.map((tag) => tag.trim()).filter(Boolean) : [],
     };
   }

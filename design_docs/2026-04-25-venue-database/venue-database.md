@@ -4,7 +4,7 @@
 
 The Venue Database is a Phase 2.1 reference layer for physical and virtual event locations. It should be implemented after Phase 2 extraction and before Phase 3 merge/deduplication.
 
-The purpose of Phase 2.1 is to give Phase 3 a stable venue identity without replacing the venue text extracted during extraction. Source references preserve per-source venue extraction as `source_references.venue_name` and `source_references.venue_url`; extracted events keep best-display venue fields; Phase 2.1 adds a nullable `venue_id` so candidates can point at a canonical venue record when exact resolution is possible.
+The purpose of Phase 2.1 is to give Phase 3 a stable venue identity without replacing the venue text extracted during extraction. Each extracted event stores its per-source venue extraction in `extracted_events.venue_name` and `extracted_events.venue_url` (the per-source extraction is also the best display value, since each extracted event is 1:1 with a raw item). Phase 2.1 adds a nullable `venue_id` so candidates can point at a canonical venue record when exact resolution is possible.
 
 ## Problem
 
@@ -36,7 +36,7 @@ Without a venue database, deduplication can only compare raw text fields. That m
 - Do not require every event to have a venue record.
 - Do not automatically geocode addresses in Phase 2.1.
 - Do not use venue matching as the only deduplication signal.
-- Do not overwrite the original venue extraction preserved in `source_references`.
+- Do not overwrite the original venue extraction preserved on the extracted event (`venue_name`, `venue_url`).
 - Do not model multiple venues per event yet.
 
 ## Data Model
@@ -98,7 +98,7 @@ Existing fields remain:
 - `venue_name`
 - `venue_url`
 
-These extracted event-level fields represent the best extracted display venue text. Per-source extracted venue text is preserved in `source_references.venue_name` and `source_references.venue_url`. `venue_id` adds canonical identity without removing the original extraction.
+These extracted event-level fields *are* the per-source extraction (each extracted event is 1:1 with a raw item), and they double as the best display value. `venue_id` adds canonical identity without removing the original extraction.
 
 ## Venue Kinds
 

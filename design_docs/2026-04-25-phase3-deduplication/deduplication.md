@@ -6,11 +6,10 @@ Phase 3 consolidates multiple extracted event candidates that refer to the same 
 
 Phase 3 builds on:
 
-- Phase 2 extracted events
+- Phase 2 extracted events (each row carries its source provenance inline: `publish_time`, `author`, `source_url`, `raw_content`)
 - Direct `extracted_events.artist_id` links populated during extraction when a raw item came from a watch target
 - `extracted_events.start_time` / `end_time`
 - Phase 2.1 venue database and `extracted_events.venue_id`
-- `source_references`
 - `extracted_event_related_links`
 
 ## Problem
@@ -69,11 +68,16 @@ Phase 3 depends on the following fields on extracted event candidates, resolved 
 
 | Field | Type | Description |
 | --- | --- | --- |
+| `raw_item_id` | text fk unique | Direct link to the source raw item for the one-raw-item-to-one-extracted-event contract. |
 | `artist_id` | text fk nullable | Direct link to the primary artist for candidate selection. This intentionally does not model collaborations yet; collaboration support can add `event_artists` later. |
-| `start_time` | timestamp nullable | Preferred event start time. New code should use this for time-window queries. |
+| `start_time` | timestamp nullable | Preferred event start time when known. Some extracted sub-events may not have their own time. |
 | `end_time` | timestamp nullable | Optional event end time. |
+| `event_scope` | text | `main`, `sub`, or `unknown`; source-derived hint for hierarchy decisions. |
+| `parent_event_hint` | text nullable | Source-derived hint naming or implying the larger event for a sub-event. |
 
 One raw item maps to at most one extracted event. The current implementation stores this layer in `extracted_events`; Phase 3 should add separate canonical normalized-event storage instead of changing the meaning of extracted rows.
+
+Sub-event hints are not canonical relationships. Phase 3 candidate selection should not require `start_time` for extracted sub-events; when time is missing, use stronger signals such as source references, related links, artist, venue, and `parent_event_hint`, or defer to Phase 3.1 review.
 
 ### `normalized_events`
 
@@ -135,7 +139,7 @@ Example:
   "related_link_overlap": true,
   "venue_id_match": false,
   "title_similarity": 0.82,
-  "source_reference_overlap": false
+  "source_identity_overlap": false
 }
 ```
 

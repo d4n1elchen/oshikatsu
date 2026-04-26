@@ -69,6 +69,7 @@ export const venueAliases = sqliteTable("venue_aliases", {
 
 export const extractedEvents = sqliteTable("extracted_events", {
   id: text("id").primaryKey(),
+  rawItemId: text("raw_item_id").notNull().references(() => rawItems.id, { onDelete: "cascade" }),
   artistId: text("artist_id").references(() => artists.id, { onDelete: "set null" }),
   title: text("title").notNull(),
   description: text("description").notNull(),
@@ -78,11 +79,21 @@ export const extractedEvents = sqliteTable("extracted_events", {
   venueName: text("venue_name"),
   venueUrl: text("venue_url"),
   type: text("type").notNull(),
+  eventScope: text("event_scope", { enum: ["main", "sub", "unknown"] }).notNull().default("unknown"),
+  parentEventHint: text("parent_event_hint"),
   isCancelled: integer("is_cancelled", { mode: "boolean" }).notNull().default(false),
   tags: text("tags", { mode: "json" }).$type<string[]>().notNull(),
+  // Source provenance for the single raw item this extracted event came from.
+  // Folded in from the former source_references table now that extracted_events
+  // is 1:1 with raw_items (enforced by idx_extracted_events_raw_item).
+  publishTime: integer("publish_time", { mode: "timestamp" }).notNull(),
+  author: text("author").notNull(),
+  sourceUrl: text("source_url").notNull(),
+  rawContent: text("raw_content").notNull(),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 }, (table) => [
+  uniqueIndex("idx_extracted_events_raw_item").on(table.rawItemId),
   index("idx_extracted_events_artist_start_time").on(table.artistId, table.startTime),
   index("idx_extracted_events_start_time").on(table.startTime),
 ]);
@@ -97,18 +108,3 @@ export const extractedEventRelatedLinks = sqliteTable("extracted_event_related_l
 }, (table) => [
   uniqueIndex("idx_extracted_event_related_link_dedup").on(table.extractedEventId, table.url),
 ]);
-
-export const sourceReferences = sqliteTable("source_references", {
-  id: text("id").primaryKey(),
-  extractedEventId: text("extracted_event_id").notNull().references(() => extractedEvents.id, { onDelete: "cascade" }),
-  rawItemId: text("raw_item_id").notNull().references(() => rawItems.id, { onDelete: "cascade" }),
-  sourceName: text("source_name").notNull(),
-  sourceId: text("source_id").notNull(),
-  publishTime: integer("publish_time", { mode: "timestamp" }).notNull(),
-  url: text("url").notNull(),
-  author: text("author").notNull(),
-  venueName: text("venue_name"),
-  venueUrl: text("venue_url"),
-  rawContent: text("raw_content").notNull(),
-  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-});

@@ -71,6 +71,20 @@
       "when": 1777169338270,
       "tag": "0009_wide_risque",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1777169834914,
+      "tag": "0010_tough_boom_boom",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1777170283557,
+      "tag": "0011_grey_lionheart",
+      "breakpoints": true
     }
   ]
 }

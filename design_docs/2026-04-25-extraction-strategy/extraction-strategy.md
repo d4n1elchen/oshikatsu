@@ -25,7 +25,7 @@ If this logic lives directly in the engine, the engine becomes a collection of s
 - Keep the engine responsible for orchestration only.
 - Encapsulate source-specific raw data interpretation behind a stable interface.
 - Support new source extractors without changing the engine.
-- Preserve source provenance consistently in `source_references`, including venue text extracted from that source item.
+- Preserve source provenance consistently as inline columns on the extracted event (`publish_time`, `author`, `source_url`, `raw_content`), including venue text extracted from that source item.
 - Extract event-relevant links separately from source provenance.
 - Mark raw items as `error` when LLM extraction, validation, or sanitization fails.
 - Avoid hard-coded artist, venue, campaign, or event keyword rules in the core engine.
@@ -48,7 +48,7 @@ flowchart TD
     CTX --> PROMPT["Build LLM Prompt"]
     PROMPT --> LLM["LLMProvider.extract"]
     LLM --> SANITIZE["Strategy.sanitize"]
-    SANITIZE --> SAVE["Save extracted event + extracted_event_related_links + source_references"]
+    SANITIZE --> SAVE["Save extracted event (with inline source provenance) + extracted_event_related_links"]
     LLM -. "failure" .-> ERROR["Mark raw item error"]
     SANITIZE -. "failure" .-> ERROR
 ```
@@ -64,7 +64,7 @@ The engine owns the workflow:
 3. Ask the strategy to build a normalized source context.
 4. Ask the LLM provider to extract structured event fields.
 5. Ask the strategy to sanitize the LLM result.
-6. Persist the extracted event and source reference in one transaction.
+6. Persist the extracted event and source reference in one transaction. The extracted event stores `raw_item_id` directly; the source reference stores source provenance details for audit/debugging.
 7. Mark the raw item as processed.
 8. If context assembly, LLM extraction, schema validation, sanitization, or persistence fails, mark the raw item as `error`.
 
@@ -101,7 +101,7 @@ Field meanings:
 
 The `url` field is provenance. `relatedLinkCandidates` are possible event destinations. Related links should store only URL and title.
 
-Extracted venue fields belong in `source_references` as source-specific provenance. Extracted event-level venue fields may hold the best extracted display value, and `venue_id` may point to a canonical venue when resolved.
+Extracted venue fields are stored as `venue_name` and `venue_url` directly on the extracted event. Because each extracted event has exactly one source, the per-source extraction *is* the best display value. `venue_id` may point to a canonical venue when resolved.
 
 ### Extraction Strategy
 
@@ -147,7 +147,7 @@ Behavior:
 - Extracts publish time from `rawData.legacy.created_at`.
 - Extracts author from `rawData.core.user_results.result.legacy.screen_name`.
 - Builds a canonical X status URL from author and tweet ID.
-- Preserves the full tweet text in `rawContent`. The source publish time stays in `publishTime` and `source_references.publish_time`; it is not included in the LLM text so it is not mistaken for an event start time.
+- Preserves the full tweet text in `rawContent`. The source publish time stays in `publishTime` and is persisted as `extracted_events.publish_time`; it is not included in the LLM text so it is not mistaken for an event start time.
 - Reuses default prompt and sanitize behavior unless source-specific improvements are needed later.
 
 The Twitter strategy should not contain artist-specific or campaign-specific business rules.
@@ -160,7 +160,7 @@ Strategies share the same event extraction schema:
 export const EventExtractionSchema = z.object({
   title: z.string().min(1),
   description: z.string().min(1),
-  start_time: z.string(),
+  start_time: z.string().optional(),
   end_time: z.string().optional(),
   venue_name: z.string().optional(),
   venue_url: z.string().optional(),
@@ -177,11 +177,17 @@ export const EventExtractionSchema = z.object({
     "collaboration",
     "side_event",
   ]),
+  event_scope: z.enum(["main", "sub", "unknown"]).default("unknown"),
+  parent_event_hint: z.string().optional(),
   tags: z.array(z.string()).default([]),
 });
 ```
 
-The fixed event type enum is part of the extracted event schema contract. It is not considered hard-coded inference behavior. General announcements are not an event type, but informational posts can still announce real events. Classification should follow the underlying activity being announced, updated, scheduled, cancelled, or linked: for example, a post announcing a scheduled concert is `concert`, and a post announcing a merch sale is `merchandise`. A post must describe one of the allowed event-like categories and provide an actual event time to become an extracted event candidate. The source publish time must not be used as `start_time`.
+The fixed event type enum is part of the extracted event schema contract. It is not considered hard-coded inference behavior. General announcements are not an event type, but informational posts can still announce real events. Classification should follow the underlying activity being announced, updated, scheduled, cancelled, or linked: for example, a post announcing a scheduled concert is `concert`, and a post announcing a merch sale is `merchandise`.
+
+`start_time` is optional. A source may announce a real sub-event, such as a merch sale, ticket lottery, booth, meet-and-greet, or pre-show, without restating the main event's time or even the sub-event's own time. The extractor should leave `start_time` unset when the source does not provide a safe activity time. The source publish time must not be used as `start_time`.
+
+`event_scope` records whether the extracted activity is a standalone/main event, a sub-event tied to a larger event, or unclear. `parent_event_hint` is a best-effort text hint only; it should be set for sub-events only when the source names or clearly implies the larger event. The LLM may infer that a post is a sub-event from wording such as booth, goods, lottery, meet-and-greet, after-party, or same-day campaign, but it must not invent a main-event title as fact.
 
 ## Related Link Handling
 
@@ -191,7 +197,7 @@ The LLM may produce human-readable titles for candidate links when the surroundi
 
 If title extraction fails, explicit candidate URLs should still be preserved with an empty or source-provided title. Strategies should deduplicate links by normalized URL before persistence.
 
-Related links are saved as event content, not as provenance. The original source item URL remains in `source_references.url`.
+Related links are saved as event content, not as provenance. The original source item URL is persisted inline as `extracted_events.source_url`.
 
 ## Language Policy
 
@@ -213,12 +219,13 @@ For example, if the source text says `花譜` or `宿声`, the normalized title 
 
 ## Failure Policy
 
-The engine does not create fallback extracted events. If the LLM call fails, returns malformed JSON, fails schema validation, or produces values that fail strategy sanitization, the raw item is marked as `error` and no extracted event, `extracted_event_related_links`, or `source_references` rows are created for that attempt.
+The engine does not create fallback extracted events. If the LLM call fails, returns malformed JSON, fails schema validation, or produces values that fail strategy sanitization, the raw item is marked as `error` and no extracted event or `extracted_event_related_links` rows are created for that attempt.
 
 Allowed deterministic sanitization:
 
 - Trim required strings and reject them if empty.
-- Parse `start_time` and `end_time`, rejecting invalid timestamps.
+- Parse `start_time` and `end_time` when present, rejecting invalid timestamps.
+- Preserve `event_scope`; store `parent_event_hint` only for sub-events.
 - Preserve explicit related link candidates with URL and title only when the LLM extraction succeeds.
 - Deduplicate related links by normalized URL.
 
@@ -247,7 +254,7 @@ The `ExtractionEngine` should not need changes.
 - If `buildContext` returns `null`, the raw item is marked as `error`.
 - If LLM extraction, validation, or sanitization fails, the raw item is marked as `error`.
 - If persistence fails, the raw item is marked as `error`.
-- If a raw item already has a `source_references` row, the engine marks it as processed and does not create duplicate extracted events.
+- If a raw item already has an extracted event, the engine marks it as processed and does not create a duplicate.
 
 ## Testing Strategy
 
@@ -257,8 +264,8 @@ Recommended tests:
 - Related link candidate extraction from representative raw Twitter payloads.
 - Raw item is marked `error` when the LLM provider throws.
 - Raw item is marked `error` when the LLM provider returns invalid timestamps or empty required fields.
-- Engine idempotency when a raw item already has a source reference.
-- Persistence verifies matching extracted event, `extracted_event_related_links`, and `source_references` counts.
+- Engine idempotency when a raw item already has an extracted event.
+- Persistence verifies matching extracted event row (with inline source provenance fields populated) and `extracted_event_related_links` counts.
 
 ## Current Implementation Status
 

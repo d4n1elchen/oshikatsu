@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { eq } from "drizzle-orm";
 import { db } from "../db";
-import { extractedEvents, extractedEventRelatedLinks, sourceReferences, watchTargets } from "../db/schema";
+import { extractedEvents, extractedEventRelatedLinks, watchTargets } from "../db/schema";
 import { RawStorage } from "./RawStorage";
 import { VenueResolver } from "./VenueResolver";
 import type { LLMProvider } from "./LLMProvider";
@@ -67,9 +67,9 @@ export class ExtractionEngine {
         throw new Error("No usable text context found in raw data");
       }
 
-      if (await this.hasSourceReference(item.id)) {
+      if (await this.hasExistingExtraction(item.id)) {
         await this.rawStorage.markProcessed(item.id);
-        console.log(`[ExtractionEngine] Item ${item.id} already has an extracted source reference; marked processed.`);
+        console.log(`[ExtractionEngine] Item ${item.id} already has an extracted event; marked processed.`);
         return true;
       }
 
@@ -90,13 +90,12 @@ export class ExtractionEngine {
     }
   }
 
-  private async hasSourceReference(rawItemId: string): Promise<boolean> {
-    const rows = await db.select({ id: sourceReferences.id })
-      .from(sourceReferences)
-      .where(eq(sourceReferences.rawItemId, rawItemId))
+  private async hasExistingExtraction(rawItemId: string): Promise<boolean> {
+    const eventRows = await db.select({ id: extractedEvents.id })
+      .from(extractedEvents)
+      .where(eq(extractedEvents.rawItemId, rawItemId))
       .limit(1);
-
-    return rows.length > 0;
+    return eventRows.length > 0;
   }
 
   private getStrategy(sourceName: string): ExtractionStrategy {
@@ -119,13 +118,12 @@ export class ExtractionEngine {
   }
 
   /**
-   * Save the parsed event and its source reference.
+   * Save the parsed event with inline source provenance.
    */
   private async saveExtractedEvent(rawItem: any, context: SourceContext, extracted: EventExtractionResult): Promise<void> {
     const extractedEventId = randomUUID();
-    const referenceId = randomUUID();
     const artistId = await this.getArtistIdForRawItem(rawItem);
-    const startTime = parsePersistedDate(extracted.start_time, "start_time");
+    const startTime = extracted.start_time ? parsePersistedDate(extracted.start_time, "start_time") : null;
     const endTime = extracted.end_time ? parsePersistedDate(extracted.end_time, "end_time") : null;
     const venueResolution = await this.venueResolver.resolve({
       venueName: extracted.venue_name,
@@ -133,9 +131,9 @@ export class ExtractionEngine {
     });
 
     db.transaction((tx) => {
-      // 1. Insert the extracted event
       tx.insert(extractedEvents).values({
         id: extractedEventId,
+        rawItemId: rawItem.id,
         artistId,
         title: extracted.title,
         description: extracted.description,
@@ -145,8 +143,15 @@ export class ExtractionEngine {
         venueName: extracted.venue_name || null,
         venueUrl: extracted.venue_url || null,
         type: extracted.type,
+        eventScope: extracted.event_scope,
+        parentEventHint: extracted.parent_event_hint || null,
         isCancelled: false,
         tags: extracted.tags,
+        // Source provenance (formerly source_references)
+        publishTime: context.publishTime,
+        author: context.author,
+        sourceUrl: context.url,
+        rawContent: context.rawContent,
         createdAt: new Date(),
         updatedAt: new Date(),
       }).run();
@@ -161,21 +166,6 @@ export class ExtractionEngine {
           createdAt: new Date(),
         }).onConflictDoNothing().run();
       }
-
-      tx.insert(sourceReferences).values({
-        id: referenceId,
-        extractedEventId,
-        rawItemId: rawItem.id,
-        sourceName: rawItem.sourceName,
-        sourceId: rawItem.sourceId,
-        publishTime: context.publishTime,
-        url: context.url,
-        author: context.author,
-        venueName: extracted.venue_name || null,
-        venueUrl: extracted.venue_url || null,
-        rawContent: context.rawContent,
-        createdAt: new Date(),
-      }).run();
     });
   }
 

@@ -20,23 +20,37 @@ Terminology note: earlier project docs used `normalized_events` or `preprocessed
 
 ## Data Model (Extracted Event Storage)
 
-We will introduce three new Drizzle tables.
+We will introduce two Drizzle tables.
 
 ### 1. `extracted_events`
-The source-derived representation of one event candidate extracted from one raw item. This is not canonical and may later be merged with other extracted events.
+The source-derived representation of one event candidate extracted from one raw item. This is not canonical and may later be merged with other extracted events. Source provenance is folded directly into this table because each extracted event is 1:1 with a raw item (enforced by a unique index on `raw_item_id`).
 - `id` (text, uuid)
+- `raw_item_id` (text, fk to raw_items, unique) — The source raw item this extracted event came from
 - `artist_id` (text, optional fk to artists) — Direct artist link for Phase 3 candidate selection; nullable for historical rows and future non-watchlist imports
 - `title` (text)
 - `description` (text)
 - `start_time` (timestamp, optional) — Event start time
 - `end_time` (timestamp, optional)
+- `venue_id` (text, optional fk to venues) — Canonical venue when resolved
 - `venue_name` (text, optional)
 - `venue_url` (text, optional)
 - `type` (text) — e.g., 'live_stream', 'merchandise', 'concert'
+- `event_scope` (text) — `main`, `sub`, or `unknown`
+- `parent_event_hint` (text, optional) — Best-effort main-event title for sub-events when the source names or clearly implies it
 - `is_cancelled` (boolean)
 - `tags` (text, JSON array)
+- `publish_time` (timestamp) — When the source item was published (provenance)
+- `author` (text) — Source author / username / channel (provenance)
+- `source_url` (text) — Canonical URL of the source item itself, e.g. the tweet URL (provenance)
+- `raw_content` (text) — Full source-item text passed to the LLM (provenance)
 - `created_at` (timestamp)
 - `updated_at` (timestamp)
+
+`source_url` points to the source item; links mentioned inside the source content belong in `extracted_event_related_links`.
+
+`source_name` and `source_id` are intentionally not duplicated on this table — they remain on `raw_items` and are reachable via the `raw_item_id` join.
+
+`venue_name` and `venue_url` capture the per-source venue extraction. They are also the best display values for this extracted event because each extracted event has exactly one source.
 
 ### 2. `extracted_event_related_links`
 Event-relevant links extracted from the source content or structured source payload.
@@ -49,26 +63,11 @@ Event-relevant links extracted from the source content or structured source payl
 
 `extracted_event_related_links` are not provenance records. They represent destinations that are useful to downstream consumers and users. Each related link stores only a URL and title.
 
-### 3. `source_references`
-The provenance links tying extracted events back to the raw data.
-- `id` (text, uuid)
-- `extracted_event_id` (text, fk to extracted_events)
-- `raw_item_id` (text, fk to raw_items)
-- `source_name` (text) — e.g., 'twitter'
-- `source_id` (text) — The native platform ID (e.g., tweet ID)
-- `publish_time` (timestamp)
-- `url` (text)
-- `author` (text)
-- `venue_name` (text, optional) — Venue text extracted from this source item
-- `venue_url` (text, optional) — Venue URL extracted from this source item
-- `raw_content` (text)
-- `created_at` (timestamp)
-
-`source_references.url` points to the original source item, such as the tweet URL. If that tweet also mentions a ticket page or stream page, those links belong in `extracted_event_related_links`.
-
-`source_references.venue_name` and `source_references.venue_url` preserve the venue extraction from that specific source item. Extracted event-level venue fields can use the best extracted display value, while source references retain the per-source extraction.
+> **Historical note.** Earlier drafts of this design introduced a separate `source_references` table that mirrored the 1:1 relationship between extracted events and raw items. It was folded into `extracted_events` once that 1:1 relationship was enforced by a unique index, removing the always-needed join.
 
 ## Link Extraction
+
+Sub-event announcements are valid extracted events even when they do not include the main event's full details. `start_time` is optional because the source may announce a real sub-event without providing that sub-event's time. The extractor may classify `event_scope = "sub"` and store a `parent_event_hint`, but it must not invent a main event as fact. Phase 3/3.1 owns canonical parent-child linking.
 
 The extraction pipeline extracts related links from two places:
 
@@ -103,5 +102,5 @@ export interface LLMProvider {
 To monitor the extraction pipeline, we will add an **Events** tab to the TUI (accessible via `Tab` or `3`).
 
 - **List View**: Displays successfully extracted events ordered by `start_time` until Phase 3 introduces canonical normalized events.
-- **Detail View**: Shows the full event details, related links, and a nested list of its `source_references`.
+- **Detail View**: Shows the full event details, related links, and the inline source provenance (author, source URL, raw content).
 - **Manual Reprocessing**: A keybind to retry extraction for `error` items in the Monitor tab.

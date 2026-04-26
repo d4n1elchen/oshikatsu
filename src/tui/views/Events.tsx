@@ -1,11 +1,15 @@
 import React, { useState, useCallback } from "react";
 import { Box, Text, useInput } from "ink";
 import { db } from "../../db";
-import { extractedEvents, extractedEventRelatedLinks, sourceReferences, venues } from "../../db/schema";
+import { extractedEvents, extractedEventRelatedLinks, rawItems, venues } from "../../db/schema";
 import { desc, eq } from "drizzle-orm";
-import type { ExtractedEvent, ExtractedEventRelatedLink, SourceReference, Venue } from "../../core/types";
+import type { ExtractedEvent, ExtractedEventRelatedLink, Venue } from "../../core/types";
 
-type EnrichedExtractedEvent = ExtractedEvent & { links: ExtractedEventRelatedLink[]; refs: SourceReference[]; venue: Venue | null };
+type EnrichedExtractedEvent = ExtractedEvent & {
+  links: ExtractedEventRelatedLink[];
+  venue: Venue | null;
+  sourceName: string | null;
+};
 
 export default function Events() {
   const [events, setEvents] = useState<EnrichedExtractedEvent[]>([]);
@@ -24,18 +28,24 @@ export default function Events() {
 
     const enriched = await Promise.all(
       recentEvents.map(async (ev) => {
-        const [links, refs, venueRows] = await Promise.all([
+        const [links, venueRows, rawItemRows] = await Promise.all([
           db.select()
             .from(extractedEventRelatedLinks)
             .where(eq(extractedEventRelatedLinks.extractedEventId, ev.id)),
-          db.select()
-            .from(sourceReferences)
-            .where(eq(sourceReferences.extractedEventId, ev.id)),
           ev.venueId
             ? db.select().from(venues).where(eq(venues.id, ev.venueId)).limit(1)
             : Promise.resolve([]),
+          db.select({ sourceName: rawItems.sourceName })
+            .from(rawItems)
+            .where(eq(rawItems.id, ev.rawItemId))
+            .limit(1),
         ]);
-        return { ...ev, links, refs, venue: venueRows[0] || null };
+        return {
+          ...ev,
+          links,
+          venue: venueRows[0] || null,
+          sourceName: rawItemRows[0]?.sourceName ?? null,
+        };
       })
     );
 
@@ -117,6 +127,10 @@ export default function Events() {
               <Box marginTop={1} flexDirection="column">
                 <Text><Text dimColor>Time:  </Text>{selectedEvent.startTime ? new Date(selectedEvent.startTime).toLocaleString() : "Unknown"}</Text>
                 <Text><Text dimColor>Type:  </Text>{selectedEvent.type}</Text>
+                <Text><Text dimColor>Scope: </Text>{selectedEvent.eventScope}</Text>
+                {selectedEvent.parentEventHint && (
+                  <Text><Text dimColor>Parent: </Text>{selectedEvent.parentEventHint}</Text>
+                )}
                 {(selectedEvent.venueName || selectedEvent.venue) && (
                   <Text>
                     <Text dimColor>Venue: </Text>
@@ -158,29 +172,22 @@ export default function Events() {
               )}
 
               <Box marginTop={1} flexDirection="column">
-                <Text bold color="blue">Source References ({selectedEvent.refs.length})</Text>
-                {selectedEvent.refs.map((ref) => (
-                  <Box key={ref.id} flexDirection="column" marginTop={1}>
-                    <Text>
-                      <Text dimColor>└─ </Text>
-                      <Text color="blue">{ref.sourceName}</Text>
-                      <Text dimColor> (@{ref.author})</Text>
-                    </Text>
-                    {isExpanded && (
-                      <Box marginLeft={3} marginTop={0} flexDirection="column">
-                        <Text dimColor>{ref.url}</Text>
-                        {(ref.venueName || ref.venueUrl) && (
-                          <Text dimColor>
-                            Venue: {ref.venueName || "unknown"}{ref.venueUrl ? ` (${ref.venueUrl})` : ""}
-                          </Text>
-                        )}
-                        <Box borderStyle="round" borderColor="gray" paddingX={1} marginTop={0}>
-                          <Text>{ref.rawContent}</Text>
-                        </Box>
+                <Text bold color="blue">Source</Text>
+                <Box flexDirection="column" marginTop={1}>
+                  <Text>
+                    <Text dimColor>└─ </Text>
+                    <Text color="blue">{selectedEvent.sourceName ?? "unknown"}</Text>
+                    <Text dimColor> (@{selectedEvent.author})</Text>
+                  </Text>
+                  {isExpanded && (
+                    <Box marginLeft={3} marginTop={0} flexDirection="column">
+                      <Text dimColor>{selectedEvent.sourceUrl}</Text>
+                      <Box borderStyle="round" borderColor="gray" paddingX={1} marginTop={0}>
+                        <Text>{selectedEvent.rawContent}</Text>
                       </Box>
-                    )}
-                  </Box>
-                ))}
+                    </Box>
+                  )}
+                </Box>
               </Box>
             </Box>
           ) : (

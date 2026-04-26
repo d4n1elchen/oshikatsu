@@ -14,7 +14,7 @@ Needed tests:
 - Related link extraction and persistence
 - LLM failure marks raw items as `error`
 - Idempotency when a raw item already has a source reference
-- Database persistence consistency between extracted event rows, `source_references`, and `extracted_event_related_links`
+- Database persistence consistency between extracted event rows (with inline source provenance) and `extracted_event_related_links`
 
 ### Existing extracted data may need reprocessing
 
@@ -145,7 +145,7 @@ Decision:
 
 - **Artist link on extracted events.** Add nullable `artist_id` directly to the Phase 2 extracted event table for the Phase 3 candidate query. This is the simplest primary-artist model; collaborations and guest appearances can add an `event_artists` join table later if needed.
 - **`start_time` / `end_time`.** Add nullable `start_time` and `end_time` to extracted events and later carry selected canonical values into normalized events; remove `event_time` from the active schema and code.
-- **Event hierarchy.** Tracked as Phase 3.1 in `design_docs/2026-04-23-implementation-plan/plan.md`; no schema work is needed before Phase 3, but the Phase 3 dedup design should not foreclose the parent/sub-event model.
+- **Event hierarchy.** Extracted events now carry source-derived `event_scope` and `parent_event_hint`, but canonical parent/sub-event links remain Phase 3.1 work. Phase 3 must treat the hint as evidence, not as an authoritative relationship.
 
 ## Scheduler
 
@@ -208,7 +208,7 @@ Follow-up:
 
 ### Source URL handling needs continued attention
 
-`source_references.url` should always point to the source item, such as the tweet URL. Links mentioned inside the source content belong in `extracted_event_related_links`.
+`extracted_events.source_url` should always point to the source item, such as the tweet URL. Links mentioned inside the source content belong in `extracted_event_related_links`.
 
 ## TUI / Developer Workflow
 
@@ -251,6 +251,10 @@ Follow-up:
 ### Phase 2 extraction failure policy was updated on 2026-04-26
 
 Resolved during the Phase 3 preparation pass, then revised after deciding low-confidence fallback events should not be created: `design_docs/2026-04-24-phase2-designs/extraction.md` and `design_docs/2026-04-25-extraction-strategy/extraction-strategy.md` now state that LLM extraction, validation, and sanitization failures mark the raw item as `error`.
+
+### `source_references` table folded into `extracted_events` on 2026-04-26
+
+Resolved during the Phase 3 prep work. Because the unique index on `extracted_events.raw_item_id` already enforces a 1:1 relationship between extracted events and raw items, the dedicated `source_references` table was always-joined and added no information. Its provenance columns (`publish_time`, `author`, `source_url`, `raw_content`) now live inline on `extracted_events`. `source_name` and `source_id` were not duplicated since they remain on `raw_items` reachable via the `raw_item_id` join. `venue_name` and `venue_url` were already on the extracted event and stay there. The conceptual `source_references` array on the normalized event schema in ARCHITECTURE.md remains valid because Phase 3 dedup will aggregate multiple extracted events under a single normalized event, each contributing its provenance.
 
 ### Phase 1 design docs were reconciled to current code on 2026-04-25
 
