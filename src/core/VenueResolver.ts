@@ -103,7 +103,7 @@ export class VenueResolver {
       venueId,
       alias: displayName,
       locale: null,
-      source: "normalization",
+      source: "preprocessing",
       createdAt: new Date(),
     }).onConflictDoNothing();
   }
@@ -150,7 +150,7 @@ export class VenueResolver {
       venueId: newVenue.id,
       alias: displayName,
       locale: null,
-      source: "normalization",
+      source: "preprocessing",
       createdAt: now,
     };
 

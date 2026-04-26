@@ -57,6 +57,13 @@
       "when": 1777165583786,
       "tag": "0007_superb_jean_grey",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1777168890166,
+      "tag": "0008_early_jubilee",
+      "breakpoints": true
     }
   ]
 }

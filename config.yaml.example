@@ -3,7 +3,7 @@
 
 scheduler:
   ingestionIntervalMinutes: 15
-  normalizationIntervalMinutes: 5
+  preprocessingIntervalMinutes: 5
 
 llm:
   provider: "ollama"

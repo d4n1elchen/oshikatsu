@@ -34,14 +34,14 @@ export interface RelatedLinkCandidate {
   title?: string;
 }
 
-export interface NormalizationStrategy {
+export interface PreprocessingStrategy {
   supports(sourceName: string): boolean;
   buildContext(rawItem: any): SourceContext | null;
   buildPrompt(context: SourceContext): string;
   sanitize(rawItem: any, context: SourceContext, extracted: ExtractedEvent): ExtractedEvent;
 }
 
-export class DefaultNormalizationStrategy implements NormalizationStrategy {
+export class DefaultPreprocessingStrategy implements PreprocessingStrategy {
   supports(_sourceName: string): boolean {
     return true;
   }
@@ -115,7 +115,7 @@ Venue rules:
   }
 }
 
-export class TwitterNormalizationStrategy extends DefaultNormalizationStrategy {
+export class TwitterPreprocessingStrategy extends DefaultPreprocessingStrategy {
   supports(sourceName: string): boolean {
     return sourceName === "twitter";
   }
@@ -142,10 +142,10 @@ export class TwitterNormalizationStrategy extends DefaultNormalizationStrategy {
   }
 }
 
-export function createDefaultNormalizationStrategies(): NormalizationStrategy[] {
+export function createDefaultPreprocessingStrategies(): PreprocessingStrategy[] {
   return [
-    new TwitterNormalizationStrategy(),
-    new DefaultNormalizationStrategy(),
+    new TwitterPreprocessingStrategy(),
+    new DefaultPreprocessingStrategy(),
   ];
 }
 

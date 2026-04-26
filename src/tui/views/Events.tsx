@@ -1,14 +1,14 @@
 import React, { useState, useCallback } from "react";
 import { Box, Text, useInput } from "ink";
 import { db } from "../../db";
-import { normalizedEvents, eventRelatedLinks, sourceReferences, venues } from "../../db/schema";
+import { preprocessedEvents, preprocessedEventRelatedLinks, sourceReferences, venues } from "../../db/schema";
 import { desc, eq } from "drizzle-orm";
-import type { EventRelatedLink, NormalizedEvent, SourceReference, Venue } from "../../core/types";
+import type { PreprocessedEvent, PreprocessedEventRelatedLink, SourceReference, Venue } from "../../core/types";
 
-type EnrichedEvent = NormalizedEvent & { links: EventRelatedLink[]; refs: SourceReference[]; venue: Venue | null };
+type EnrichedPreprocessedEvent = PreprocessedEvent & { links: PreprocessedEventRelatedLink[]; refs: SourceReference[]; venue: Venue | null };
 
 export default function Events() {
-  const [events, setEvents] = useState<EnrichedEvent[]>([]);
+  const [events, setEvents] = useState<EnrichedPreprocessedEvent[]>([]);
   const [cursor, setCursor] = useState(0);
   const [isExpanded, setIsExpanded] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -16,21 +16,21 @@ export default function Events() {
   const loadEvents = useCallback(async () => {
     setLoading(true);
     
-    // Fetch events ordered by start_time.
+    // Fetch preprocessed events ordered by start_time.
     const recentEvents = await db.select()
-      .from(normalizedEvents)
-      .orderBy(desc(normalizedEvents.startTime))
+      .from(preprocessedEvents)
+      .orderBy(desc(preprocessedEvents.startTime))
       .limit(50);
 
     const enriched = await Promise.all(
       recentEvents.map(async (ev) => {
         const [links, refs, venueRows] = await Promise.all([
           db.select()
-            .from(eventRelatedLinks)
-            .where(eq(eventRelatedLinks.eventId, ev.id)),
+            .from(preprocessedEventRelatedLinks)
+            .where(eq(preprocessedEventRelatedLinks.preprocessedEventId, ev.id)),
           db.select()
             .from(sourceReferences)
-            .where(eq(sourceReferences.eventId, ev.id)),
+            .where(eq(sourceReferences.preprocessedEventId, ev.id)),
           ev.venueId
             ? db.select().from(venues).where(eq(venues.id, ev.venueId)).limit(1)
             : Promise.resolve([]),
@@ -63,11 +63,11 @@ export default function Events() {
   });
 
   if (loading) {
-    return <Text color="cyan">Loading Events...</Text>;
+    return <Text color="cyan">Loading Preprocessed Events...</Text>;
   }
 
   if (events.length === 0) {
-    return <Text color="yellow">No normalized events found. Run the ingestion daemon!</Text>;
+    return <Text color="yellow">No preprocessed events found. Run the ingestion daemon!</Text>;
   }
 
   // Calculate sliding window to keep cursor in view
@@ -87,7 +87,7 @@ export default function Events() {
         {/* Left side: List of events */}
         <Box flexDirection="column" width="40%" borderStyle="single" borderTop={false} borderBottom={false} borderLeft={false} borderColor="gray" paddingRight={1}>
           <Box marginBottom={1}>
-            <Text bold color="cyan">Normalized Events</Text>
+            <Text bold color="cyan">Preprocessed Events</Text>
           </Box>
           {visibleEvents.map((ev, idx) => {
             const actualIndex = startIndex + idx;
@@ -109,7 +109,7 @@ export default function Events() {
         {/* Right side: Event details */}
         <Box flexDirection="column" width="60%" paddingLeft={1}>
           <Box marginBottom={1}>
-            <Text bold color="cyan">Event Details</Text>
+            <Text bold color="cyan">Preprocessed Event Details</Text>
           </Box>
           {selectedEvent ? (
             <Box flexDirection="column">

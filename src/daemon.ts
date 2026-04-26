@@ -1,5 +1,5 @@
 import { IngestionScheduler } from "./core/Scheduler";
-import { NormalizationEngine } from "./core/NormalizationEngine";
+import { PreprocessingEngine } from "./core/PreprocessingEngine";
 import { OllamaProvider } from "./core/LLMProvider";
 import { getConfig } from "./config";
 
@@ -14,34 +14,34 @@ async function main() {
   });
 
   const llm = new OllamaProvider();
-  const normalizer = new NormalizationEngine(llm);
+  const preprocessor = new PreprocessingEngine(llm);
 
   console.log("Starting backend daemon...");
   
   // Start the ingestion scheduler (it handles its own interval loop)
   await scheduler.start();
   
-  // We'll run the normalizer on the configured loop
-  const normalizationIntervalMs = config.scheduler.normalizationIntervalMinutes * 60 * 1000;
+  // We'll run the preprocessor on the configured loop
+  const preprocessingIntervalMs = config.scheduler.preprocessingIntervalMinutes * 60 * 1000;
   
-  async function runNormalization() {
+  async function runPreprocessing() {
     try {
-      await normalizer.processBatch(20);
+      await preprocessor.processBatch(20);
     } catch (e) {
-      console.error("Normalization loop error:", e);
+      console.error("Preprocessing loop error:", e);
     }
   }
 
-  // Run normalizer immediately
-  await runNormalization();
+  // Run preprocessor immediately
+  await runPreprocessing();
   
-  // Schedule normalizer
-  const normTimer = setInterval(runNormalization, normalizationIntervalMs);
+  // Schedule preprocessor
+  const preprocessTimer = setInterval(runPreprocessing, preprocessingIntervalMs);
   
   // Keep the process alive
   process.on('SIGINT', async () => {
     console.log("\nShutting down gracefully...");
-    clearInterval(normTimer);
+    clearInterval(preprocessTimer);
     await scheduler.stop();
     process.exit(0);
   });

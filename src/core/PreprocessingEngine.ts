@@ -1,31 +1,31 @@
 import { randomUUID } from "crypto";
 import { eq } from "drizzle-orm";
 import { db } from "../db";
-import { normalizedEvents, eventRelatedLinks, sourceReferences, watchTargets } from "../db/schema";
+import { preprocessedEvents, preprocessedEventRelatedLinks, sourceReferences, watchTargets } from "../db/schema";
 import { RawStorage } from "./RawStorage";
 import { VenueResolver } from "./VenueResolver";
 import type { LLMProvider } from "./LLMProvider";
 import {
-  createDefaultNormalizationStrategies,
+  createDefaultPreprocessingStrategies,
   EventExtractionSchema,
   type ExtractedEvent,
-  type NormalizationStrategy,
+  type PreprocessingStrategy,
   type SourceContext,
-} from "./NormalizationStrategy";
+} from "./PreprocessingStrategy";
 
 type ProcessBatchResult = {
   processed: number;
   failed: number;
 };
 
-export class NormalizationEngine {
+export class PreprocessingEngine {
   private rawStorage: RawStorage;
-  private strategies: NormalizationStrategy[];
+  private strategies: PreprocessingStrategy[];
   private venueResolver: VenueResolver;
 
   constructor(
     private llm: LLMProvider,
-    strategies: NormalizationStrategy[] = createDefaultNormalizationStrategies(),
+    strategies: PreprocessingStrategy[] = createDefaultPreprocessingStrategies(),
     venueResolver: VenueResolver = new VenueResolver()
   ) {
     this.rawStorage = new RawStorage();
@@ -41,7 +41,7 @@ export class NormalizationEngine {
     const result: ProcessBatchResult = { processed: 0, failed: 0 };
     if (items.length === 0) return result;
 
-    console.log(`[NormalizationEngine] Processing batch of ${items.length} items...`);
+    console.log(`[PreprocessingEngine] Processing batch of ${items.length} items...`);
 
     for (const item of items) {
       if (await this.processItem(item)) {
@@ -59,7 +59,7 @@ export class NormalizationEngine {
    */
   async processItem(item: any): Promise<boolean> {
     try {
-      console.log(`[NormalizationEngine] Normalizing item ${item.id} from ${item.sourceName}...`);
+      console.log(`[PreprocessingEngine] Preprocessing item ${item.id} from ${item.sourceName}...`);
       
       const strategy = this.getStrategy(item.sourceName);
       const context = strategy.buildContext(item);
@@ -69,7 +69,7 @@ export class NormalizationEngine {
 
       if (await this.hasSourceReference(item.id)) {
         await this.rawStorage.markProcessed(item.id);
-        console.log(`[NormalizationEngine] Item ${item.id} already has a normalized source reference; marked processed.`);
+        console.log(`[PreprocessingEngine] Item ${item.id} already has a preprocessed source reference; marked processed.`);
         return true;
       }
 
@@ -77,14 +77,14 @@ export class NormalizationEngine {
 
       const extracted = await this.extractAndSanitize(item, context, strategy, systemPrompt);
 
-      await this.saveNormalizedEvent(item, context, extracted);
+      await this.savePreprocessedEvent(item, context, extracted);
 
       await this.rawStorage.markProcessed(item.id);
-      console.log(`[NormalizationEngine] Successfully normalized item ${item.id}`);
+      console.log(`[PreprocessingEngine] Successfully preprocessed item ${item.id}`);
       return true;
 
     } catch (e: any) {
-      console.error(`[NormalizationEngine] Failed to normalize item ${item.id}:`, e);
+      console.error(`[PreprocessingEngine] Failed to preprocess item ${item.id}:`, e);
       await this.rawStorage.markError(item.id, e.message || "Unknown LLM extraction error");
       return false;
     }
@@ -99,14 +99,14 @@ export class NormalizationEngine {
     return rows.length > 0;
   }
 
-  private getStrategy(sourceName: string): NormalizationStrategy {
+  private getStrategy(sourceName: string): PreprocessingStrategy {
     return this.strategies.find((strategy) => strategy.supports(sourceName)) ?? this.strategies[this.strategies.length - 1];
   }
 
   private async extractAndSanitize(
     item: any,
     context: SourceContext,
-    strategy: NormalizationStrategy,
+    strategy: PreprocessingStrategy,
     systemPrompt: string
   ): Promise<ExtractedEvent> {
     try {
@@ -121,8 +121,8 @@ export class NormalizationEngine {
   /**
    * Save the parsed event and its source reference.
    */
-  private async saveNormalizedEvent(rawItem: any, context: SourceContext, extracted: ExtractedEvent): Promise<void> {
-    const eventId = randomUUID();
+  private async savePreprocessedEvent(rawItem: any, context: SourceContext, extracted: ExtractedEvent): Promise<void> {
+    const preprocessedEventId = randomUUID();
     const referenceId = randomUUID();
     const artistId = await this.getArtistIdForRawItem(rawItem);
     const startTime = parsePersistedDate(extracted.start_time, "start_time");
@@ -134,8 +134,8 @@ export class NormalizationEngine {
 
     db.transaction((tx) => {
       // 1. Insert the event
-      tx.insert(normalizedEvents).values({
-        id: eventId,
+      tx.insert(preprocessedEvents).values({
+        id: preprocessedEventId,
         artistId,
         title: extracted.title,
         description: extracted.description,
@@ -152,9 +152,9 @@ export class NormalizationEngine {
       }).run();
 
       for (const link of extracted.related_links) {
-        tx.insert(eventRelatedLinks).values({
+        tx.insert(preprocessedEventRelatedLinks).values({
           id: randomUUID(),
-          eventId,
+          preprocessedEventId,
           rawItemId: rawItem.id,
           url: link.url,
           title: link.title || null,
@@ -164,7 +164,7 @@ export class NormalizationEngine {
 
       tx.insert(sourceReferences).values({
         id: referenceId,
-        eventId: eventId,
+        preprocessedEventId,
         rawItemId: rawItem.id,
         sourceName: rawItem.sourceName,
         sourceId: rawItem.sourceId,

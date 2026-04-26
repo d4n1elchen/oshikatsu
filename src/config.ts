@@ -5,7 +5,7 @@ import { parse } from "yaml";
 export interface OshikatsuConfig {
   scheduler: {
     ingestionIntervalMinutes: number;
-    normalizationIntervalMinutes: number;
+    preprocessingIntervalMinutes: number;
   };
   llm: {
     provider: "ollama" | string;
@@ -25,7 +25,7 @@ export interface OshikatsuConfig {
 const DEFAULT_CONFIG: OshikatsuConfig = {
   scheduler: {
     ingestionIntervalMinutes: 15,
-    normalizationIntervalMinutes: 5,
+    preprocessingIntervalMinutes: 5,
   },
   llm: {
     provider: "ollama",
@@ -44,11 +44,17 @@ const DEFAULT_CONFIG: OshikatsuConfig = {
 
 let cachedConfig: OshikatsuConfig | null = null;
 
+type RawConfig = Partial<Omit<OshikatsuConfig, "scheduler">> & {
+  scheduler?: Partial<OshikatsuConfig["scheduler"]> & {
+    normalizationIntervalMinutes?: number;
+  };
+};
+
 export function getConfig(): OshikatsuConfig {
   if (cachedConfig) return cachedConfig;
 
   const configPath = path.resolve(process.cwd(), "config.yaml");
-  let userConfig = {};
+  let userConfig: RawConfig = {};
 
   try {
     if (fs.existsSync(configPath)) {
@@ -59,12 +65,21 @@ export function getConfig(): OshikatsuConfig {
     console.warn("[Config] Failed to load config.yaml, using defaults.", e);
   }
 
+  const { normalizationIntervalMinutes, ...schedulerOverrides } = userConfig.scheduler ?? {};
+  const schedulerConfig = {
+    ...DEFAULT_CONFIG.scheduler,
+    ...schedulerOverrides,
+  };
+  if (schedulerOverrides.preprocessingIntervalMinutes === undefined && normalizationIntervalMinutes !== undefined) {
+    schedulerConfig.preprocessingIntervalMinutes = normalizationIntervalMinutes;
+  }
+
   // Deep merge userConfig into DEFAULT_CONFIG
   cachedConfig = {
-    scheduler: { ...DEFAULT_CONFIG.scheduler, ...(userConfig as any).scheduler },
-    llm: { ...DEFAULT_CONFIG.llm, ...(userConfig as any).llm },
-    twitter: { ...DEFAULT_CONFIG.twitter, ...(userConfig as any).twitter },
-    paths: { ...DEFAULT_CONFIG.paths, ...(userConfig as any).paths },
+    scheduler: schedulerConfig,
+    llm: { ...DEFAULT_CONFIG.llm, ...userConfig.llm },
+    twitter: { ...DEFAULT_CONFIG.twitter, ...userConfig.twitter },
+    paths: { ...DEFAULT_CONFIG.paths, ...userConfig.paths },
   };
 
   // Resolve relative paths based on CWD

@@ -1,11 +1,11 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../db";
-import { normalizedEvents, rawItems, sourceReferences } from "../db/schema";
+import { preprocessedEvents, rawItems, sourceReferences } from "../db/schema";
 
 type ResetArgs = {
   all: boolean;
   dryRun: boolean;
-  eventIds: string[];
+  preprocessedEventIds: string[];
   rawItemIds: string[];
 };
 
@@ -13,7 +13,7 @@ function parseArgs(argv: string[]): ResetArgs {
   const args: ResetArgs = {
     all: false,
     dryRun: false,
-    eventIds: [],
+    preprocessedEventIds: [],
     rawItemIds: [],
   };
 
@@ -22,8 +22,8 @@ function parseArgs(argv: string[]): ResetArgs {
       args.all = true;
     } else if (arg === "--dry-run") {
       args.dryRun = true;
-    } else if (arg.startsWith("--event-id=")) {
-      args.eventIds.push(readValue(arg, "--event-id="));
+    } else if (arg.startsWith("--preprocessed-event-id=")) {
+      args.preprocessedEventIds.push(readValue(arg, "--preprocessed-event-id="));
     } else if (arg.startsWith("--raw-item-id=")) {
       args.rawItemIds.push(readValue(arg, "--raw-item-id="));
     } else if (arg === "--help" || arg === "-h") {
@@ -34,9 +34,9 @@ function parseArgs(argv: string[]): ResetArgs {
     }
   }
 
-  const targetModeCount = Number(args.all) + Number(args.eventIds.length > 0) + Number(args.rawItemIds.length > 0);
+  const targetModeCount = Number(args.all) + Number(args.preprocessedEventIds.length > 0) + Number(args.rawItemIds.length > 0);
   if (targetModeCount !== 1) {
-    throw new Error("Specify exactly one target mode: --event-id, --raw-item-id, or --all.");
+    throw new Error("Specify exactly one target mode: --preprocessed-event-id, --raw-item-id, or --all.");
   }
 
   return args;
@@ -52,18 +52,18 @@ function readValue(arg: string, prefix: string): string {
 
 function printUsage(): void {
   console.log(`Usage:
-  npm run reset:normalized -- --event-id=<normalized_event_id>
-  npm run reset:normalized -- --raw-item-id=<raw_item_id>
-  npm run reset:normalized -- --all
+  npm run reset:preprocessed -- --preprocessed-event-id=<preprocessed_event_id>
+  npm run reset:preprocessed -- --raw-item-id=<raw_item_id>
+  npm run reset:preprocessed -- --all
 
 Options:
   --dry-run      Print the rows that would be touched without changing the database.
   --help, -h     Show this help text.
 
 Notes:
-  - Resetting an event deletes the normalized event.
+  - Resetting an event deletes the preprocessed event.
   - Its source raw item(s) are marked status="new" and error_message=NULL.
-  - event_related_links and source_references are removed by cascade delete.`);
+  - preprocessed_event_related_links and source_references are removed by cascade delete.`);
 }
 
 async function main(): Promise<void> {
@@ -72,11 +72,11 @@ async function main(): Promise<void> {
   const targetRawItemIds = await resolveTargetRawItemIds(targetEventIds, args.rawItemIds);
 
   if (targetEventIds.length === 0 && targetRawItemIds.length === 0) {
-    console.log("No matching normalized events or raw items found.");
+    console.log("No matching preprocessed events or raw items found.");
     return;
   }
 
-  console.log(`Target normalized event(s): ${targetEventIds.length}`);
+  console.log(`Target preprocessed event(s): ${targetEventIds.length}`);
   for (const id of targetEventIds) console.log(`  event ${id}`);
 
   console.log(`Raw item(s) to requeue: ${targetRawItemIds.length}`);
@@ -96,32 +96,32 @@ async function main(): Promise<void> {
     }
 
     if (targetEventIds.length > 0) {
-      tx.delete(normalizedEvents)
-        .where(inArray(normalizedEvents.id, targetEventIds))
+      tx.delete(preprocessedEvents)
+        .where(inArray(preprocessedEvents.id, targetEventIds))
         .run();
     }
   });
 
-  console.log(`Reset complete. Deleted ${targetEventIds.length} normalized event(s), requeued ${targetRawItemIds.length} raw item(s).`);
+  console.log(`Reset complete. Deleted ${targetEventIds.length} preprocessed event(s), requeued ${targetRawItemIds.length} raw item(s).`);
 }
 
 async function resolveTargetEventIds(args: ResetArgs): Promise<string[]> {
   if (args.all) {
-    const rows = await db.select({ id: normalizedEvents.id }).from(normalizedEvents);
+    const rows = await db.select({ id: preprocessedEvents.id }).from(preprocessedEvents);
     return unique(rows.map((row) => row.id));
   }
 
-  if (args.eventIds.length > 0) {
-    const rows = await db.select({ id: normalizedEvents.id })
-      .from(normalizedEvents)
-      .where(inArray(normalizedEvents.id, unique(args.eventIds)));
+  if (args.preprocessedEventIds.length > 0) {
+    const rows = await db.select({ id: preprocessedEvents.id })
+      .from(preprocessedEvents)
+      .where(inArray(preprocessedEvents.id, unique(args.preprocessedEventIds)));
     return unique(rows.map((row) => row.id));
   }
 
-  const rows = await db.select({ eventId: sourceReferences.eventId })
+  const rows = await db.select({ preprocessedEventId: sourceReferences.preprocessedEventId })
     .from(sourceReferences)
     .where(inArray(sourceReferences.rawItemId, unique(args.rawItemIds)));
-  return unique(rows.map((row) => row.eventId));
+  return unique(rows.map((row) => row.preprocessedEventId));
 }
 
 async function resolveTargetRawItemIds(eventIds: string[], explicitRawItemIds: string[]): Promise<string[]> {
@@ -130,7 +130,7 @@ async function resolveTargetRawItemIds(eventIds: string[], explicitRawItemIds: s
   if (eventIds.length > 0) {
     const rows = await db.select({ rawItemId: sourceReferences.rawItemId })
       .from(sourceReferences)
-      .where(inArray(sourceReferences.eventId, eventIds));
+      .where(inArray(sourceReferences.preprocessedEventId, eventIds));
     for (const row of rows) ids.add(row.rawItemId);
   }
 
