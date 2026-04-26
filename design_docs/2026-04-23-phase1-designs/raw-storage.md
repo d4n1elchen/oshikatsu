@@ -7,7 +7,7 @@ The raw storage layer persists raw items fetched from sources before they are no
 ## Purpose
 
 - Store the raw response from each source exactly as-is, without interpretation.
-- Track processing status so the normalization pipeline knows which items still need processing.
+- Track processing status so the preprocessing pipeline knows which items still need processing.
 - Preserve full provenance for debugging and reprocessing.
 
 ## Data Model

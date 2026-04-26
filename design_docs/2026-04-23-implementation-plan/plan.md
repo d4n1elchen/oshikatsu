@@ -18,18 +18,18 @@ This plan outlines the phased implementation of the Oshikatsu platform, starting
 
 **Working product**: New tweets from configured Twitter/X sources are fetched, stored, and retrievable via TUI.
 
-## Phase 2: Normalization Engine
+## Phase 2: Preprocessing / Extraction Engine
 
-**Goal**: Transform raw source items into the unified internal event schema.
+**Goal**: Transform each raw source item into one source-derived preprocessed event candidate.
 
 **Deliverables**:
 
-- Twitter/X normalizer that maps raw items to the unified schema
+- Twitter/X preprocessing strategy that maps raw items to the preprocessed event schema
 - Field extraction logic (title, description, start_time, end_time, venue, artist, type, tags)
-- Storage layer updated to persist normalized records
-- TUI for browsing and inspecting normalized events
+- Storage layer updated to persist preprocessed event records
+- TUI for browsing and inspecting preprocessed events
 
-**Working product**: Raw Twitter/X items are automatically normalized into the unified event schema, viewable via TUI.
+**Working product**: Raw Twitter/X items are automatically extracted into preprocessed event candidates, viewable via TUI. These are not canonical events until Phase 3 dedup/merge runs.
 
 ## Phase 2.1: Venue Database
 
@@ -39,37 +39,37 @@ This plan outlines the phased implementation of the Oshikatsu platform, starting
 
 - Venue database for physical and virtual venues
 - Venue alias table for alternate names/spellings
-- Nullable `venue_id` reference on normalized events
+- Nullable `venue_id` reference on preprocessed events
 - Conservative exact URL / exact alias venue resolver
 - TUI visibility for extracted venue and matched canonical venue
 
-**Working product**: Normalized events can be linked to canonical venues when exact venue resolution is possible, while preserving extracted `venue_name` and `venue_url`.
+**Working product**: Preprocessed events can be linked to canonical venues when exact venue resolution is possible, while preserving extracted `venue_name` and `venue_url`.
 
 ## Phase 3: Merge/Deduplication
 
-**Goal**: Consolidate multiple source items referring to the same event.
+**Goal**: Consolidate multiple preprocessed event candidates referring to the same real-world event into canonical normalized events.
 
 **Deliverables**:
 
-- Deduplication logic that identifies duplicate events
-- Merge strategy that combines source references from duplicate events under a single canonical record
+- Deduplication logic that identifies duplicate or overlapping preprocessed events
+- Merge strategy that creates/updates canonical normalized events while preserving links to source preprocessed events
 - Update mechanism for rescheduled/cancelled events
 - TUI for viewing merge/dedup status and source provenance
 
-**Working product**: Duplicate events from the same or different sources are automatically merged; event updates are reflected correctly.
+**Working product**: Duplicate preprocessed events from the same or different sources are automatically merged into canonical normalized events; event updates are reflected correctly.
 
 ## Phase 3.1: Event Hierarchy
 
 **Goal**: Model main/sub-event relationships on top of canonical events produced by Phase 3.
 
-**Motivation**: Real-world activities often consist of a main event (e.g., a concert) plus related sub-activities (merch booth, pre-show talk, post-show meet & greet, livestream of the same concert). Today these surface as independent normalized events, which fragments the timeline and downstream calendar/notification output.
+**Motivation**: Real-world activities often consist of a main event (e.g., a concert) plus related sub-activities (merch booth, pre-show talk, post-show meet & greet, livestream of the same concert). Before Phase 3, these surface as independent preprocessed events; after Phase 3, they may still surface as separate canonical normalized events that need hierarchy assignment.
 
 **Deliverables**:
 
 - Schema additions to `normalized_events`:
   - `parent_event_id` (nullable FK to `normalized_events`) — set on sub-events.
   - One-level-deep constraint: a sub-event cannot itself have sub-events.
-- Conservative rules for promoting a normalized event to a sub-event of an existing canonical event (e.g., shared artist + close time + explicit reference in source text), explicitly separate from Phase 3 dedup signals.
+- Conservative rules for promoting a canonical normalized event to a sub-event of an existing canonical event (e.g., shared artist + close time + explicit reference in source text), explicitly separate from Phase 3 dedup signals.
 - Manual override in the TUI to attach/detach a sub-event from a parent.
 - TUI Event detail view shows parent context for a sub-event and a sub-event list for a main event.
 - Query helpers so downstream consumers can fetch a main event with its sub-events in a single call.

@@ -2,9 +2,9 @@
 
 ## Overview
 
-The Venue Database is a Phase 2.1 reference layer for physical and virtual event locations. It should be implemented after Phase 2 normalization and before Phase 3 merge/deduplication.
+The Venue Database is a Phase 2.1 reference layer for physical and virtual event locations. It should be implemented after Phase 2 preprocessing and before Phase 3 merge/deduplication.
 
-The purpose of Phase 2.1 is to give Phase 3 a stable venue identity without replacing the venue text extracted during normalization. Source references preserve per-source venue extraction as `source_references.venue_name` and `source_references.venue_url`; normalized events keep best-display venue fields; Phase 2.1 adds a nullable `venue_id` so events can point at a canonical venue record when exact resolution is possible.
+The purpose of Phase 2.1 is to give Phase 3 a stable venue identity without replacing the venue text extracted during preprocessing. Source references preserve per-source venue extraction as `source_references.venue_name` and `source_references.venue_url`; preprocessed events keep best-display venue fields; Phase 2.1 adds a nullable `venue_id` so candidates can point at a canonical venue record when exact resolution is possible.
 
 ## Problem
 
@@ -85,7 +85,7 @@ Recommended unique constraint:
 
 - `(venue_id, alias)`
 
-### `normalized_events` additions
+### `preprocessed_events` additions
 
 Add a nullable canonical venue reference:
 
@@ -98,7 +98,7 @@ Existing fields remain:
 - `venue_name`
 - `venue_url`
 
-These event-level fields represent the best display venue text. Per-source extracted venue text is preserved in `source_references.venue_name` and `source_references.venue_url`. `venue_id` adds canonical identity without removing the original extraction.
+These preprocessed event-level fields represent the best extracted display venue text. Per-source extracted venue text is preserved in `source_references.venue_name` and `source_references.venue_url`. `venue_id` adds canonical identity without removing the original extraction.
 
 ## Venue Kinds
 
@@ -138,11 +138,11 @@ Venue resolution should be conservative and auto-discovery first in Phase 2.1. T
 
 Recommended matching order:
 
-1. **Exact URL match**: If `normalized_events.venue_url` matches a known venue URL or known platform URL.
-2. **Exact alias match**: Normalize whitespace/case and compare `normalized_events.venue_name` to `venue_aliases.alias`.
-3. **Exact name match**: Normalize whitespace/case and compare `normalized_events.venue_name` to `venues.name`.
+1. **Exact URL match**: If `preprocessed_events.venue_url` matches a known venue URL or known platform URL.
+2. **Exact alias match**: Normalize whitespace/case and compare `preprocessed_events.venue_name` to `venue_aliases.alias`.
+3. **Exact name match**: Normalize whitespace/case and compare `preprocessed_events.venue_name` to `venues.name`.
 4. **Auto-discovery**: If `venue_name` exists and no exact match is found, create a new venue with `status = "discovered"` and add the extracted name as an alias.
-5. **Manual link**: User or future UI explicitly sets `normalized_events.venue_id`.
+5. **Manual link**: User or future UI explicitly sets `preprocessed_events.venue_id`.
 6. **Unmatched**: Keep `venue_id = null` only when no usable `venue_name` exists.
 
 Normalization for matching may include:
@@ -159,7 +159,7 @@ LLM-suggested venue candidates can be explored later, but Phase 2.1 should start
 
 Venue status indicates how trustworthy the venue record is.
 
-- `discovered`: Created automatically from extracted normalized event data.
+- `discovered`: Created automatically from extracted preprocessed event data.
 - `verified`: Reviewed or curated by a user or trusted seed data.
 - `ignored`: Known noisy/generic venue value that should not be used for deduplication.
 
@@ -177,7 +177,7 @@ When an event has extracted `venue_name` and no existing venue matches:
 2. Create a `venue_aliases` row:
    - `alias = venue_name`
    - `source = "normalization"`
-3. Set `normalized_events.venue_id` to the discovered venue ID.
+3. Set `preprocessed_events.venue_id` to the discovered venue ID.
 
 Auto-discovery should not create a venue when `venue_name` is empty, generic punctuation, or otherwise unusable.
 
@@ -212,7 +212,7 @@ Dedup should avoid merging events based only on common generic virtual platforms
 
 If the system later needs multiple venues per event, venue match confidence/history, or detailed auditability of venue resolution, add an `event_venue_links` table.
 
-That table is intentionally deferred for now. The Phase 2.1 model should use nullable `normalized_events.venue_id` to keep the implementation small.
+That table is intentionally deferred for now. The Phase 2.1 model should use nullable `preprocessed_events.venue_id` to keep the implementation small.
 
 ## TUI / UI Considerations
 
@@ -230,7 +230,7 @@ Full venue CRUD can wait until a later management UI, but the Phase 2.1 storage 
 1. Add Drizzle tables:
    - `venues`
    - `venue_aliases`
-2. Add nullable `venue_id` to `normalized_events`.
+2. Add nullable `venue_id` to `preprocessed_events`.
 3. Add TypeScript inferred types.
 4. Add a `VenueResolver` service with conservative exact URL, exact alias, exact name, and auto-discovery behavior.
 5. Update normalization persistence or post-normalization processing to populate `venue_id`, creating discovered venues when needed.
@@ -250,7 +250,7 @@ Implemented base Phase 2.1 support:
 - `venues`
 - `venue_aliases`
 - `venues.status` with `discovered`, `verified`, and `ignored`
-- nullable `normalized_events.venue_id`
+- nullable `preprocessed_events.venue_id`
 - conservative exact URL / exact alias / exact name resolver
 - auto-discovery for usable extracted venue names
 - normalization-sourced venue aliases for discovered venues

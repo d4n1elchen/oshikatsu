@@ -48,10 +48,10 @@ The first row in each pair is the **venue identity**. The second is the **venue 
 ## Decisions
 
 1. **Channel-URL granularity.** The venue identity for a virtual venue is the channel/profile URL, not the per-stream URL. Per-stream URLs belong in `event_related_links`.
-2. **Auto-discovery requires `venue_url` when kind is `virtual`.** Without a URL, the resolver returns null. The event's extracted `venue_name` text is preserved on `normalized_events`; only `venue_id` is left unset.
+2. **Auto-discovery requires `venue_url` when kind is `virtual`.** Without a URL, the resolver returns null. The preprocessed event's extracted `venue_name` text is preserved; only `venue_id` is left unset.
 3. **Auto-discovery for physical / unknown kinds is unchanged.** Name-only auto-discovery still applies, because physical venue names are usually identifying ("Tokyo Dome" is not a generic class label the way "YouTube" is).
 4. **Tolerate stream URLs as venue URLs in the short term.** If the LLM only surfaces a stream URL with no channel URL available, accept the stream URL as the venue URL for now. This is a known imperfection — see Open Questions.
-5. **No data migration.** The local database will be rebuilt from scratch as part of rollout. All existing rows in `venues`, `venue_aliases`, `normalized_events`, etc. are dropped. The first ingestion cycle after rollout populates everything fresh under the new resolver behavior.
+5. **No data migration.** The local database will be rebuilt from scratch as part of rollout. All existing rows in `venues`, `venue_aliases`, preprocessed event storage, etc. are dropped. The first ingestion cycle after rollout populates everything fresh under the new resolver behavior.
 
 ## Resolver Behavior Changes
 
@@ -87,7 +87,7 @@ Add one rule to the venue-extraction guidance in `NormalizationStrategy`:
 > - Put the specific stream URL (e.g., `https://youtube.com/watch?v=...`) into `related_links` instead.
 > - If only a stream URL is available and no channel URL can be inferred, you may use the stream URL as `venue_url` — but never use a bare platform name like "YouTube" as `venue_name` without an accompanying URL.
 
-If the LLM call fails, the raw item is marked as `error` and no normalized event or venue resolution is attempted. If the LLM succeeds but leaves `venue_url` unset, the resolver rule means no generic virtual venue gets auto-created.
+If the LLM call fails, the raw item is marked as `error` and no preprocessed event or venue resolution is attempted. If the LLM succeeds but leaves `venue_url` unset, the resolver rule means no generic virtual venue gets auto-created.
 
 ## Rollout
 
@@ -101,7 +101,7 @@ Operationally:
 4. Re-add artists and watch targets via the TUI.
 5. Restart the daemon.
 
-Note that this also drops `raw_items` and `normalized_events`, so historical tweets that have scrolled out of the X timeline view will not be recoverable. This is an accepted trade-off.
+Note that this also drops `raw_items` and preprocessed event rows, so historical tweets that have scrolled out of the X timeline view will not be recoverable. This is an accepted trade-off.
 
 ## Testing
 

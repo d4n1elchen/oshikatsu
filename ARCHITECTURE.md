@@ -2,7 +2,7 @@
 
 ## Overview
 
-Oshikatsu is a platform for tracking updates about favorite artists and converting them into a unified, analyzable data format. The system ingests data from multiple sources, normalizes it into a consistent schema, deduplicates events, and exports to downstream pipelines.
+Oshikatsu is a platform for tracking updates about favorite artists and converting them into a unified, analyzable data format. The system ingests data from multiple sources, extracts one preprocessed event candidate per raw item, merges/deduplicates those candidates into normalized canonical events, and exports to downstream pipelines.
 
 > **Scope of this document.** ARCHITECTURE.md is a high-level, conceptual view of the platform. It describes how components are intended to relate and what shape data conceptually takes. It deliberately does **not** track implementation status, phase progress, or which fields are persisted today — that information lives in the phase design docs under `design_docs/`, in `TECH_DEBTS.md`, and (for the actual DB layout) in `src/db/schema.ts`. For the technology choices see [TECH_STACK.md](./TECH_STACK.md).
 
@@ -18,11 +18,12 @@ flowchart LR
     SCHED["Scheduler"]
 
     SC["Source Connectors"]
-    NE["Normalization"]
+    PE["Preprocessing / Extraction"]
     MD["Merge/Dedup"]
 
     WL[("Watch List")]
     RAW[("Raw Storage")]
+    PRE[("Preprocessed Event Storage")]
     NORM[("Normalized Storage")]
 
     subgraph Downstream
@@ -39,11 +40,11 @@ flowchart LR
     SC -- "fetch" --> TW & IG & YT
 
     SC -- "write (archival)" --> RAW
-    SC --> NE --> MD
+    SC --> PE --> PRE --> MD
     MD -- "write" --> NORM
     MD --> CAL & NOTIF & API
 
-    MON -. "observes" .-> SC & NE & MD
+    MON -. "observes" .-> SC & PE & MD
 ```
 
 ## Core Components
@@ -64,23 +65,24 @@ Owns the **monitoring orchestration** layer: which artists from the Artist Datab
 - Supports enable/disable toggles per artist (a master switch over all of an artist's watch targets) and per individual watch target
 - Decouples "what to watch" from "how to fetch" — and from "who the artist is," which lives in the Artist Database
 
-### 3. Normalization Engine
+### 3. Preprocessing / Extraction Engine
 
-Converts raw source items into the unified internal event schema using LLM-based parsing.
+Converts raw source items into preprocessed event candidates using LLM-based parsing.
 
 - Receives raw items directly from source connectors (not from storage)
-- Exposes `normalize(raw)` to transform raw data into unified format
+- Exposes `preprocess(raw)` to transform one raw item into one preprocessed event candidate
 - Uses LLM to parse unstructured text and extract structured event fields
 - Each source may have its own prompt/parsing strategy
-- Output follows the unified event schema
+- Output follows the preprocessed event schema and preserves source provenance
+- A preprocessed event is not yet canonical. It may duplicate or partially overlap with other preprocessed events.
 
 ### 4. Merge/Deduplication Layer
 
 Identifies and merges duplicate or overlapping events across sources.
 
-- Goal: consolidate multiple source items referring to the same event into a single normalized record while preserving all provenance in `source_references`
+- Goal: consolidate multiple preprocessed events referring to the same real-world event into a single normalized record while preserving all provenance
 - **Execution**: Runs synchronously as the final step of the ingestion pipeline.
-- **Deduplication Strategy**: Queries the Normalized Database for candidates within a specific time constraint (e.g., +/- 48 hours of `start_time`), then uses conservative signals such as exact source references, related link overlap, canonical venue ID, and title similarity to identify overlaps.
+- **Deduplication Strategy**: Queries the Preprocessed Event Database for candidates within a specific time constraint (e.g., +/- 48 hours of `start_time`), then uses conservative signals such as exact source references, related link overlap, canonical venue ID, and title similarity to identify overlaps.
 - **Auditability**: Merge decisions should be recorded with matched signals and a human-readable reason so false positives can be inspected.
 
 ### 5. Downstream Integration
@@ -119,13 +121,20 @@ Handles persistence of data across the pipeline. The names below describe logica
 
 - **Watch List**: Persists which artists are actively monitored, the watch targets that describe how each artist is monitored, and the per-artist and per-target enable/disable toggles. References artist identities from the Artist Database rather than holding them.
 - **Raw Storage**: Persists raw payloads fetched from sources before normalization, along with metadata (source identifier, fetch timestamps, processing status).
-- **Artist Database**: Owns the canonical artist identity — display name, categories, groups, known handles and channels. Consumed by the Watch List (to identify which artist a watch target belongs to), by Normalization (to link normalized events to known artists), and by downstream consumers for display and enrichment.
-- **Venue Database**: Reference database of physical and virtual venue information and aliases. Normalized events may reference a canonical venue through `venue_id`, which is used as a conservative signal during merge/deduplication.
-- **Normalized Storage**: Persists unified event records after deduplication, related event links, and source references, and provides query capabilities for downstream consumers.
+- **Artist Database**: Owns the canonical artist identity — display name, categories, groups, known handles and channels. Consumed by the Watch List (to identify which artist a watch target belongs to), by Preprocessing (to link preprocessed events to known artists), and by downstream consumers for display and enrichment.
+- **Venue Database**: Reference database of physical and virtual venue information and aliases. Preprocessed events may reference a canonical venue through `venue_id`, which is used as a conservative signal during merge/deduplication.
+- **Preprocessed Event Storage**: Persists one extracted event candidate per raw item, plus extracted related links and source provenance. The current implementation still uses the table name `normalized_events` for this role; conceptually this table is preprocessed event storage until it is renamed.
+- **Normalized Storage**: Persists canonical event records after deduplication/merging. These are the records downstream consumers should treat as the event timeline.
 
 ## Data Model
 
-### Unified Event Schema
+### Event Layer Terminology
+
+- **Raw item**: Source payload fetched from a connector.
+- **Preprocessed event**: One event candidate extracted from one raw item. This is source-derived and not deduplicated.
+- **Normalized event**: Canonical event after merge/deduplication. A normalized event may aggregate multiple preprocessed events and their source provenance.
+
+### Normalized Event Schema
 
 > **Conceptual schema, not the DB schema.** The shape below describes how the platform reasons about an event end-to-end — the fields downstream consumers should be able to ask for. The physical storage representation may flatten nested objects, split fields across multiple tables, or add fields used only for bookkeeping. The source of truth for what is actually persisted is `src/db/schema.ts`.
 
@@ -206,9 +215,9 @@ Handles persistence of data across the pipeline. The names below describe logica
 All components expose stable, abstract interfaces:
 
 - `fetchUpdates()` — retrieve new items from a source
-- `normalize(raw)` — convert raw source items to unified format
-- `merge(existing, normalized)` — identify and merge duplicates
-- `save(record)` — persist normalized records
+- `preprocess(raw)` — convert one raw source item into one preprocessed event candidate
+- `merge(preprocessed)` — identify and merge duplicate/overlapping preprocessed events into canonical normalized events
+- `save(record)` — persist preprocessed or normalized records depending on component boundary
 - `export(record)` — expose records to downstream pipelines
 
 ## User Interface
@@ -229,7 +238,7 @@ The platform provides both a **TUI (Terminal UI)** and a **Web UI** for manageme
 
 ### Event Dashboard
 
-- View normalized events in a timeline or list view
+- View normalized canonical events in a timeline or list view
 - Filter by artist, event type, date range, or source
 - Drill down into event details including source provenance
 
@@ -247,7 +256,7 @@ The platform provides both a **TUI (Terminal UI)** and a **Web UI** for manageme
 
 ## Design Principles
 
-- **Modularity**: Clean separation between ingestion, normalization, deduplication, storage, and downstream export
+- **Modularity**: Clean separation between ingestion, preprocessing, deduplication/normalization, storage, and downstream export
 - **Source-agnostic**: Design allows adding new sources with minimal impact
 - **Provenance preservation**: Preserve source provenance while normalizing records
 - **Incremental growth**: Start with a single source (Twitter/X) and expand to additional sources over time
@@ -255,7 +264,7 @@ The platform provides both a **TUI (Terminal UI)** and a **Web UI** for manageme
 ## Success Criteria
 
 - **Coverage**: Able to ingest new items from supported sources reliably
-- **Consistency**: Data is transformed into a stable, unified schema
+- **Consistency**: Raw data is extracted into a stable preprocessed schema, then merged into canonical normalized events
 - **Extensibility**: New sources can be added with minimal disruption
 
 ## Long-term Direction

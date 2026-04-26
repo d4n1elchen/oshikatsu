@@ -2,16 +2,18 @@
 
 ## Overview
 
-Phase 3 consolidates multiple normalized records that refer to the same real-world event. The goal is to preserve all source provenance while presenting one canonical event to downstream consumers.
+Phase 3 consolidates multiple preprocessed event candidates that refer to the same real-world event. The goal is to preserve all source provenance while presenting one canonical normalized event to downstream consumers.
 
 Phase 3 builds on:
 
-- Phase 2 normalized events
-- Direct `normalized_events.artist_id` links populated during normalization when a raw item came from a watch target
-- `normalized_events.start_time` / `end_time`
-- Phase 2.1 venue database and `normalized_events.venue_id`
+- Phase 2 preprocessed events
+- Direct `preprocessed_events.artist_id` links populated during preprocessing when a raw item came from a watch target
+- `preprocessed_events.start_time` / `end_time`
+- Phase 2.1 venue database and `preprocessed_events.venue_id`
 - `source_references`
 - `event_related_links`
+
+Implementation note: the current code still stores Phase 2 preprocessed events in a table named `normalized_events`. This document uses the refined terminology. A future schema migration should rename or split the table so `normalized_events` is reserved for canonical post-merge events.
 
 ## Problem
 
@@ -28,7 +30,7 @@ Without deduplication, downstream calendar/notification workflows may create dup
 
 ## Goals
 
-- Identify duplicate or overlapping normalized events.
+- Identify duplicate or overlapping preprocessed events.
 - Merge source provenance into a single canonical event.
 - Preserve source references and related links from all duplicates.
 - Avoid false merges, especially for generic virtual venues and repeated reminders.
@@ -45,13 +47,17 @@ Without deduplication, downstream calendar/notification workflows may create dup
 
 ## Core Concepts
 
-### Canonical Event
+### Preprocessed Event
 
-A canonical event is the record users and downstream systems should treat as the primary event.
+A preprocessed event is one source-derived event candidate extracted from one raw item. It is useful for audit/debugging but is not canonical.
 
-### Duplicate Event
+### Normalized Event
 
-A duplicate event is a normalized event believed to refer to the same real-world event as a canonical event.
+A normalized event is the canonical post-dedup record users and downstream systems should treat as the event.
+
+### Duplicate / Overlapping Candidate
+
+A duplicate candidate is a preprocessed event believed to refer to the same real-world event as an existing normalized event or another preprocessed event in the same merge group.
 
 ### Merge Decision
 
@@ -59,9 +65,9 @@ A merge decision records the signals and reasoning that caused one event to be l
 
 ## Data Model
 
-### `normalized_events` additions
+### `preprocessed_events`
 
-Phase 3 depends on the following identity and time fields, resolved before dedup implementation:
+Phase 3 depends on the following fields on preprocessed event candidates, resolved before dedup implementation:
 
 | Field | Type | Description |
 | --- | --- | --- |
@@ -69,25 +75,42 @@ Phase 3 depends on the following identity and time fields, resolved before dedup
 | `start_time` | timestamp nullable | Preferred event start time. New code should use this for time-window queries. |
 | `end_time` | timestamp nullable | Optional event end time. |
 
-`event_time` is removed from the active schema. Historical migrations may create it before a later migration drops it, but Phase 3 code should use `start_time`.
+One raw item maps to at most one preprocessed event. In the current implementation this role is still physically stored in `normalized_events`; Phase 3 should either rename that table to `preprocessed_events` or introduce a compatibility layer before adding canonical normalized-event storage.
 
-Add canonical linkage fields:
+### `normalized_events`
+
+Phase 3 should introduce true normalized events as canonical post-merge records.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `canonical_event_id` | text fk nullable | Points to the canonical event when this event is a duplicate |
-| `merge_status` | text | `canonical`, `duplicate`, `needs_review`, or `ignored` |
+| `id` | text uuid | Canonical normalized event identifier |
+| `title` | text | Canonical title selected from merged candidates |
+| `description` | text | Canonical description selected or synthesized from merged candidates |
+| `artist_id` | text fk nullable | Primary artist for candidate selection and display |
+| `start_time` | timestamp nullable | Canonical event start time |
+| `end_time` | timestamp nullable | Canonical event end time |
+| `venue_id` | text fk nullable | Canonical venue when resolved |
+| `venue_name` | text nullable | Best display venue text |
+| `venue_url` | text nullable | Best display venue URL |
+| `type` | text | Canonical event type |
+| `is_cancelled` | boolean | Cancellation flag |
+| `tags` | json | Union/curated tags |
+| `created_at` | timestamp | Creation time |
+| `updated_at` | timestamp | Last update time |
 
-Default:
+### `normalized_event_sources`
 
-- `canonical_event_id = null`
-- `merge_status = "canonical"`
+Links canonical normalized events to the preprocessed events they were built from.
 
-Interpretation:
+| Field | Type | Description |
+| --- | --- | --- |
+| `id` | text uuid | Internal link identifier |
+| `normalized_event_id` | text fk | Canonical normalized event |
+| `preprocessed_event_id` | text fk | Source preprocessed event candidate |
+| `role` | text | `primary`, `merged`, `review_candidate`, or `ignored` |
+| `created_at` | timestamp | Link creation time |
 
-- If `canonical_event_id` is null and `merge_status = "canonical"`, the event is currently canonical.
-- If `canonical_event_id` is set, the event is a duplicate of that canonical event.
-- `needs_review` means the dedup engine found possible candidates but did not safely merge.
+This link table preserves the many-to-one relationship from source-derived candidates to canonical normalized events without mutating the meaning of either layer.
 
 ### `event_merge_decisions`
 
@@ -96,8 +119,8 @@ Records merge attempts and decisions.
 | Field | Type | Description |
 | --- | --- | --- |
 | `id` | text uuid | Internal decision identifier |
-| `candidate_event_id` | text fk | Event being evaluated |
-| `matched_event_id` | text fk nullable | Candidate canonical event, if any |
+| `candidate_preprocessed_event_id` | text fk | Preprocessed event being evaluated |
+| `matched_normalized_event_id` | text fk nullable | Candidate canonical normalized event, if any |
 | `decision` | text | `merged`, `needs_review`, `no_match`, `ignored` |
 | `score` | real nullable | Aggregate score from matching signals |
 | `signals` | json | Signal details used for the decision |
@@ -122,7 +145,7 @@ Example:
 
 The dedup engine should avoid comparing every event against every other event.
 
-For each new or unmerged event, select candidates using:
+For each new preprocessed event, select candidate preprocessed and normalized events using:
 
 - Event time window: initially +/- 48 hours.
 - Same `artist_id` when available.
@@ -209,23 +232,23 @@ If deterministic similarity is not enough later, document and add semantic match
 
 ## Merge Behavior
 
-When event B is merged into canonical event A:
+When preprocessed event B is merged into normalized event A:
 
-1. Set `B.canonical_event_id = A.id`.
-2. Set `B.merge_status = "duplicate"`.
-3. Copy B's `source_references` to point at A, or keep them on B and query through duplicate links.
-4. Copy B's `event_related_links` to A, deduped by URL.
+1. Create or update normalized event A.
+2. Add a `normalized_event_sources` row linking A to preprocessed event B.
+3. Copy or project B's related links into canonical normalized-event related links, deduped by URL.
+4. Keep source references attached to the preprocessed event layer, and expose them through `normalized_event_sources`.
 5. Record an `event_merge_decisions` row.
 
 Near-term recommendation:
 
-- Keep duplicate event rows.
-- Move or copy source references and related links onto the canonical event.
-- Do not delete duplicates.
+- Keep preprocessed event rows as immutable-ish audit records.
+- Query source references through `normalized_event_sources` rather than moving provenance away from the preprocessed layer.
+- Do not delete duplicate candidates automatically.
 
 ## Canonical Field Selection
 
-When merging, canonical event fields should be updated conservatively.
+When merging, normalized event fields should be updated conservatively.
 
 Recommended rules:
 
@@ -274,10 +297,11 @@ The first implementation can start with a read-only merge status display.
 Recommended placement:
 
 1. Raw ingestion stores raw items.
-2. Normalization creates normalized event, source reference, and related links.
+2. Preprocessing creates one preprocessed event, source reference, and related links.
 3. Phase 2.1 venue resolver has already attempted `venue_id` population.
-4. Dedup engine evaluates the new normalized event.
-5. Merge decision is recorded.
+4. Dedup engine evaluates the new preprocessed event.
+5. A normalized canonical event is created or updated.
+6. Merge decision is recorded.
 
 The dedup engine should be idempotent. Re-running it should not duplicate source references, related links, or merge decisions unnecessarily.
 
@@ -297,20 +321,21 @@ Required fixtures:
 ## Implementation Plan
 
 1. Add schema fields:
-   - `normalized_events.canonical_event_id`
-   - `normalized_events.merge_status`
+   - rename/split current `normalized_events` into `preprocessed_events`
+   - create canonical `normalized_events`
+   - create `normalized_event_sources`
    - `event_merge_decisions`
 2. Implement title similarity helper.
 3. Implement `DeduplicationEngine`.
 4. Implement candidate selection queries.
 5. Implement conservative rule-based merge decisions.
-6. Update normalization/daemon flow to run dedup after each batch, after Phase 2.1 venue resolution.
+6. Update preprocessing/daemon flow to run dedup after each batch, after Phase 2.1 venue resolution.
 7. Add TUI display for merge status.
 8. Add fixture tests.
 
 ## Open Questions
 
-- Should source references be moved to canonical events or queried across duplicate links?
+- Should canonical normalized-event related links be copied from preprocessed links, queried through `normalized_event_sources`, or both?
 - Should merge decisions be append-only, or should reruns update previous decisions?
 - What threshold should title similarity use initially?
 - Should `needs_review` be managed in TUI during Phase 3 or deferred?
