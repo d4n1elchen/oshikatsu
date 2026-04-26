@@ -1,122 +1,102 @@
-import { WatchListManager } from "./WatchListManager";
-import { RawStorage } from "./RawStorage";
-import { TwitterConnector } from "../connectors/twitter";
-import { getConfig } from "../config";
 import { tagged } from "./logger";
 
 const log = tagged("Scheduler");
 
-export interface SchedulerConfig {
+export interface ScheduledTask {
+  /** Display name used in logs (e.g. "Ingestion", "Extraction"). */
+  name: string;
+  /** Interval between runs, in minutes. */
   intervalMinutes: number;
-  maxConcurrentJobs: number;
-  retryOnFailure: boolean;
-  retryDelayMinutes: number;
+  /** The work to do on each tick. Errors are caught and logged; the loop continues. */
+  run: () => Promise<void>;
+  /** When true, run once immediately on start instead of waiting one interval. Default true. */
+  runImmediately?: boolean;
 }
 
-export class IngestionScheduler {
-  private wlm: WatchListManager;
-  private storage: RawStorage;
-  private isRunning: boolean = false;
-  private timer: NodeJS.Timeout | null = null;
-  private inFlight: Promise<void> | null = null;
+type TaskState = {
+  task: ScheduledTask;
+  running: boolean;
+  timer: NodeJS.Timeout | null;
+  inFlight: Promise<void> | null;
+};
 
-  constructor(private config: SchedulerConfig) {
-    this.wlm = new WatchListManager();
-    this.storage = new RawStorage();
+/**
+ * Generic background-task scheduler.
+ *
+ * Each registered task gets its own self-paced loop. The next tick is scheduled
+ * via setTimeout *after* the current run completes (not setInterval), so a slow
+ * run can never overlap the next one. Tasks are independent of each other and
+ * may execute concurrently — callers must ensure each task is internally
+ * idempotent if it shares state with others.
+ *
+ * Stop is graceful: it cancels pending timers and awaits any in-flight runs
+ * before returning.
+ */
+export class Scheduler {
+  private states: TaskState[] = [];
+  private isStarted = false;
+
+  /**
+   * Register a task. Must be called before `start()`. Returns `this` for
+   * chaining: `new Scheduler().add(...).add(...).start()`.
+   */
+  add(task: ScheduledTask): this {
+    if (this.isStarted) {
+      throw new Error("Cannot add tasks after start(); register them first.");
+    }
+    this.states.push({
+      task,
+      running: false,
+      timer: null,
+      inFlight: null,
+    });
+    return this;
   }
 
-  /** Start the scheduler loop. */
-  async start(): Promise<void> {
-    if (this.isRunning) return;
-    this.isRunning = true;
+  /** Kick off all registered tasks. */
+  start(): void {
+    if (this.isStarted) return;
+    this.isStarted = true;
 
-    log.info(`Started; interval ${this.config.intervalMinutes}m`);
-
-    // Run immediately, then chain subsequent runs via setTimeout *after* each
-    // run completes. setInterval would fire on a fixed cadence regardless of
-    // run duration, causing overlap when a cycle takes longer than the
-    // interval. Chaining absorbs drift and serializes runs naturally.
-    const loop = async () => {
-      if (!this.isRunning) return;
-      this.inFlight = this.runOnce().catch((e) => {
-        log.error("Cycle error:", e);
-      });
-      await this.inFlight;
-      this.inFlight = null;
-      if (!this.isRunning) return;
-      const intervalMs = this.config.intervalMinutes * 60 * 1000;
-      this.timer = setTimeout(loop, intervalMs);
-    };
-
-    void loop();
+    for (const state of this.states) {
+      state.running = true;
+      log.info(`Started ${state.task.name}; interval ${state.task.intervalMinutes}m`);
+      void this.tick(state, state.task.runImmediately !== false);
+    }
   }
 
-  /** Stop the scheduler gracefully. Waits for any in-flight cycle. */
+  /**
+   * Stop all loops gracefully. Cancels pending timers and waits for any
+   * in-flight runs to finish.
+   */
   async stop(): Promise<void> {
-    this.isRunning = false;
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
+    for (const state of this.states) {
+      state.running = false;
+      if (state.timer) {
+        clearTimeout(state.timer);
+        state.timer = null;
+      }
     }
-    if (this.inFlight) {
-      await this.inFlight;
-    }
+    await Promise.all(this.states.map((s) => s.inFlight).filter((p): p is Promise<void> => p !== null));
     log.info("Stopped");
   }
 
-  /** Execute one full ingestion cycle across all active targets. */
-  async runOnce(): Promise<void> {
-    log.info(`Ingestion cycle starting at ${new Date().toISOString()}`);
+  private async tick(state: TaskState, runNow: boolean): Promise<void> {
+    if (!state.running) return;
 
-    // 1. Fetch active Twitter targets
-    const activeTwitterTargets = await this.wlm.getActiveTargets("twitter");
-    log.info(`Found ${activeTwitterTargets.length} active Twitter watch target(s)`);
-
-    if (activeTwitterTargets.length > 0) {
-      const globalConfig = getConfig();
-      
-      // Initialize Twitter Connector
-      const twitterConnector = new TwitterConnector({
-        browser: {
-          userDataDir: globalConfig.paths.browserData,
-          headless: globalConfig.twitter.headless,
-        },
-        fetch: {
-          maxTweetsPerSource: globalConfig.twitter.maxTweetsPerSource,
-          scrollDelayMs: 1500,
-          pageLoadTimeoutMs: 15000,
-        },
+    if (runNow) {
+      state.inFlight = state.task.run().catch((e) => {
+        log.error(`${state.task.name} run error:`, e);
       });
-
-      try {
-        await twitterConnector.start();
-
-        // Process each target sequentially for safety (anti-bot)
-        for (const target of activeTwitterTargets) {
-          log.info(`Fetching updates for @${target.sourceConfig.username}`);
-          try {
-            const items = await twitterConnector.fetchUpdates(target);
-            log.info(`Fetched ${items.length} item(s) from @${target.sourceConfig.username}`);
-
-            if (items.length > 0) {
-              const newItemsCount = await this.storage.saveItems(
-                target.id,
-                "twitter",
-                items.map(i => ({ sourceId: i.sourceId, rawData: i.rawData }))
-              );
-              log.info(`Saved ${newItemsCount} new item(s) to raw storage`);
-            }
-          } catch (e) {
-            log.error(`Failed to fetch/save watch target ${target.id}:`, e);
-          }
-        }
-      } catch (e) {
-        log.error("Failed to start Twitter connector:", e);
-      } finally {
-        await twitterConnector.stop();
-      }
+      await state.inFlight;
+      state.inFlight = null;
     }
 
-    log.info("Ingestion cycle complete");
+    if (!state.running) return;
+
+    const intervalMs = state.task.intervalMinutes * 60 * 1000;
+    state.timer = setTimeout(() => {
+      void this.tick(state, true);
+    }, intervalMs);
   }
 }

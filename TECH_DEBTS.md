@@ -132,22 +132,13 @@ Follow-up:
 
 ## Scheduler
 
-### Scheduler builds its own dependencies
+### Ingestion connector registry is hardcoded
 
-`IngestionScheduler` constructs `WatchListManager`, `RawStorage`, and `TwitterConnector` internally rather than receiving them via constructor. This makes the class hard to test in isolation and ties the scheduler to a single connector type. The scheduler design doc has been updated to call this out.
-
-Follow-up:
-
-- Refactor to accept `watchlist`, `storage`, and a `connectors: Record<string, BaseConnector>` map via the constructor.
-- Update `daemon.ts` to wire dependencies explicitly.
-
-### Several `SchedulerConfig` fields are not honored
-
-`SchedulerConfig` defines `maxConcurrentJobs`, `retryOnFailure`, and `retryDelayMinutes`, but the implementation only uses `intervalMinutes`. Targets are always processed sequentially with no retry on failure beyond per-target try/catch.
+`runIngestionCycle` instantiates `TwitterConnector` directly and only iterates `getActiveTargets("twitter")`. Adding Instagram/YouTube means editing the function. The conceptual `connectors: Record<string, BaseConnector>` registry from the design doc isn't implemented yet because there's only one connector — defer until the second one lands.
 
 Follow-up:
 
-- Either implement the missing behavior or remove the unused fields from the type.
+- When adding a second connector, accept `connectors: Record<string, BaseConnector>` as a parameter to `runIngestionCycle` and iterate platforms.
 
 ## Raw Storage
 
