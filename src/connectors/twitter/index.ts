@@ -103,7 +103,12 @@ export class TwitterConnector implements BaseConnector {
         scrolls++;
       }
     } catch (e) {
+      // Re-throw so the scheduler treats this as a failed fetch rather than
+      // an empty-but-successful one. Without this, navigation timeouts, login
+      // walls, and broken page loads are indistinguishable from "the user
+      // posted nothing today" — silent data loss.
       log.error(`Error fetching updates for ${username}:`, e);
+      throw e;
     } finally {
       // Clean up the listener so it doesn't duplicate on the next fetch
       this.page.removeListener("response", responseHandler);

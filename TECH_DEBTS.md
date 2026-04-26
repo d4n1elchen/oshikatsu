@@ -180,14 +180,14 @@ Follow-up:
 - Add sample payload fixtures.
 - Detect login wall / anti-bot / empty timeline states explicitly.
 
-### Fetch failures currently look like empty successful fetches
+### Login-wall / anti-bot detection is not explicit
 
-`TwitterConnector.fetchUpdates` catches navigation and scraping failures, logs them, and returns the collected items, often an empty array. The scheduler only treats a target as failed when `fetchUpdates` throws, so timeouts, login walls, or broken page loads can be recorded as clean zero-item fetches.
+`TwitterConnector.fetchUpdates` now re-throws on navigation/scrape exceptions, so hard failures surface to the scheduler as failed fetches instead of empty successes. But subtle failure modes — a login wall that loads as a valid page, an anti-bot interstitial that returns HTTP 200, or an unexpectedly empty timeline because X changed the GraphQL response shape — still look like a clean zero-item fetch.
 
 Follow-up:
 
-- Re-throw hard navigation/scraping failures or return a structured fetch result with status and error details.
-- Add explicit detection for login walls, anti-bot pages, and unexpected empty timelines.
+- Add explicit detection for login walls and anti-bot pages (e.g., look for known DOM markers or absence of expected timeline GraphQL responses) and throw a typed error when detected.
+- Distinguish "the GraphQL handler never fired" from "the handler fired and the timeline really was empty" — the former is a likely shape change, the latter is a quiet day.
 
 ### Source URL handling needs continued attention
 
