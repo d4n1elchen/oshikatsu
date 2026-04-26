@@ -99,14 +99,6 @@ Follow-up:
 - Add a curated merge action in a future venue review workflow.
 - Or add an LLM-assisted post-pass to extract a channel URL from a stream URL and re-point references.
 
-### No URL canonicalization across YouTube URL forms
-
-The resolver matches venue URLs by exact string. The same channel referenced via different URL forms — `youtu.be/x`, `youtube.com/watch?v=x`, `youtube.com/@channel`, `youtube.com/channel/UCxxxx` — creates separate venue rows.
-
-Follow-up:
-
-- Add a small canonicalizer for known platforms (YouTube, Twitch, NicoNico) that maps recognized URL forms to a canonical channel/profile URL before lookup and storage.
-
 ### Resolver tests for virtual-venue rules are still missing
 
 The virtual-venue-granularity design lists six focused resolver tests (null on virtual-without-URL, distinct venues for distinct channel URLs, alias addition on subsequent matches, regression guard for physical auto-discovery). The test runner now exists (`node:test`), so these can land at any time.

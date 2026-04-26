@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../db";
 import { venueAliases, venues } from "../db/schema";
 import type { NewVenueAlias, Venue } from "./types";
+import { canonicalizeUrl } from "./canonicalizeUrl";
 
 export interface VenueResolutionInput {
   venueName?: string | null;
@@ -179,7 +180,10 @@ function normalizeVenueName(value?: string | null): string {
 }
 
 function normalizeUrl(value?: string | null): string {
-  return (value || "").trim();
+  // Canonicalize platform-specific channel/profile URLs so the same venue
+  // resolves to one row regardless of which URL form a source uses
+  // (youtu.be vs youtube.com/@handle vs youtube.com/channel/UC..., etc.).
+  return canonicalizeUrl(value);
 }
 
 function isUsableVenueName(displayName: string, normalizedName: string): boolean {
