@@ -12,7 +12,7 @@
 ## 3. Core Objectives
 
 - **Multi-source data ingestion**: Build a flexible system that can gather updates from one or more content sources.
-- **Source-aware merging and deduplication**: Identify the same event across different sources and merge related information into a single record without duplication.
+- **Source-aware event resolution**: Identify the same event across different sources, merge related information into a single canonical record without duplication, and link sub-events (merch booths, pre-show talks, livestreams of a concert) to their main event.
 - **Unified data format**: Normalize collected records so downstream analysis and integrations can consume them consistently.
 - **Downstream pipeline integration**: Output standardized data to downstream pipelines for automation, such as calendar updates or notification dispatch.
 - **Incremental growth**: Start with a single source today and expand to additional sources over time.

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Venue Database is a Phase 2.1 reference layer for physical and virtual event locations. It should be implemented after Phase 2 extraction and before Phase 3 merge/deduplication.
+The Venue Database is a Phase 2.1 reference layer for physical and virtual event locations. It should be implemented after Phase 2 extraction and before Phase 3 event resolution.
 
 The purpose of Phase 2.1 is to give Phase 3 a stable venue identity without replacing the venue text extracted during extraction. Each extracted event stores its per-source venue extraction in `extracted_events.venue_name` and `extracted_events.venue_url` (the per-source extraction is also the best display value, since each extracted event is 1:1 with a raw item). Phase 2.1 adds a nullable `venue_id` so candidates can point at a canonical venue record when exact resolution is possible.
 
@@ -19,11 +19,11 @@ Examples:
 - `YouTube Premiere`
 - `オンライン配信`
 
-Without a venue database, deduplication can only compare raw text fields. That makes it harder to identify duplicate events when sources describe the same venue differently.
+Without a venue database, event resolution can only compare raw text fields. That makes it harder to identify duplicate or related events when sources describe the same venue differently.
 
 ## Goals
 
-- Create a canonical venue identity for deduplication and enrichment.
+- Create a canonical venue identity for event resolution and enrichment.
 - Support both physical venues and virtual platforms.
 - Preserve the original venue text extracted from each source.
 - Add only the minimum venue linkage needed before Phase 3.
@@ -35,7 +35,7 @@ Without a venue database, deduplication can only compare raw text fields. That m
 - Do not implement a full global venue directory.
 - Do not require every event to have a venue record.
 - Do not automatically geocode addresses in Phase 2.1.
-- Do not use venue matching as the only deduplication signal.
+- Do not use venue matching as the only event resolution signal.
 - Do not overwrite the original venue extraction preserved on the extracted event (`venue_name`, `venue_url`).
 - Do not model multiple venues per event yet.
 
@@ -161,7 +161,7 @@ Venue status indicates how trustworthy the venue record is.
 
 - `discovered`: Created automatically from extracted event data.
 - `verified`: Reviewed or curated by a user or trusted seed data.
-- `ignored`: Known noisy/generic venue value that should not be used for deduplication.
+- `ignored`: Known noisy/generic venue value that should not be used as an event resolution signal.
 
 Newly auto-created venues should start as `discovered`.
 
@@ -183,30 +183,30 @@ Auto-discovery should not create a venue when `venue_name` is empty, generic pun
 
 If a later event uses a different extracted name for the same exact `venue_url`, the resolver should reuse the existing venue and add the new extracted name as an alias.
 
-## Use in Phase 3 Deduplication
+## Use in Phase 3 Event Resolution
 
-Venue identity can strengthen event matching but should not be mandatory.
+Venue identity can strengthen event matching (both merge and hierarchy) but should not be mandatory.
 
-Strong dedup signals:
+Strong resolution signals:
 
 - Same verified canonical `venue_id` and close event time.
 - Same related link URL and close event time.
 - Same source URL or exact source ID.
 
-Moderate dedup signals:
+Moderate resolution signals:
 
 - Same discovered `venue_id` and close event time, when supported by title similarity or related link overlap.
 - Same extracted `venue_name` and similar title.
 - Same city/country through matched venue records and close event time.
 - Same virtual platform and similar title.
 
-Weak or risky dedup signals:
+Weak or risky resolution signals:
 
 - Venue name only, without time/title similarity.
 - Generic virtual venues such as `YouTube`, because many unrelated events happen there.
 - Ignored venues.
 
-Dedup should avoid merging events based only on common generic virtual platforms.
+Event resolution should avoid merging or linking events based only on common generic virtual platforms.
 
 ## Future Expansion: Event-Venue Links
 
@@ -234,13 +234,13 @@ Full venue CRUD can wait until a later management UI, but the Phase 2.1 storage 
 3. Add TypeScript inferred types.
 4. Add a `VenueResolver` service with conservative exact URL, exact alias, exact name, and auto-discovery behavior.
 5. Update extraction persistence or post-extraction processing to populate `venue_id`, creating discovered venues when needed.
-6. Use `venue_id` as one signal in Phase 3 deduplication.
+6. Use `venue_id` as one signal in Phase 3 event resolution.
 7. Add focused tests for exact alias, exact URL, exact name, auto-discovered venue, ignored venue, and virtual venue matching.
 
 ## Open Questions
 
 - Should venue URL matching include related links or only `venue_url`?
-- Should exact venue matching run during extraction or as a separate enrichment pass before deduplication?
+- Should exact venue matching run during extraction or as a separate enrichment pass before event resolution?
 - Which venue names should be treated as too generic and marked `ignored`?
 
 ## Current Status
