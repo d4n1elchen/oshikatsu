@@ -18,6 +18,7 @@ export class IngestionScheduler {
   private storage: RawStorage;
   private isRunning: boolean = false;
   private timer: NodeJS.Timeout | null = null;
+  private inFlight: Promise<void> | null = null;
 
   constructor(private config: SchedulerConfig) {
     this.wlm = new WatchListManager();
@@ -30,24 +31,35 @@ export class IngestionScheduler {
     this.isRunning = true;
 
     log.info(`Started; interval ${this.config.intervalMinutes}m`);
-    
-    // Run immediately on start
-    await this.runOnce();
 
-    // Schedule subsequent runs
-    const intervalMs = this.config.intervalMinutes * 60 * 1000;
-    this.timer = setInterval(async () => {
+    // Run immediately, then chain subsequent runs via setTimeout *after* each
+    // run completes. setInterval would fire on a fixed cadence regardless of
+    // run duration, causing overlap when a cycle takes longer than the
+    // interval. Chaining absorbs drift and serializes runs naturally.
+    const loop = async () => {
       if (!this.isRunning) return;
-      await this.runOnce();
-    }, intervalMs);
+      this.inFlight = this.runOnce().catch((e) => {
+        log.error("Cycle error:", e);
+      });
+      await this.inFlight;
+      this.inFlight = null;
+      if (!this.isRunning) return;
+      const intervalMs = this.config.intervalMinutes * 60 * 1000;
+      this.timer = setTimeout(loop, intervalMs);
+    };
+
+    void loop();
   }
 
-  /** Stop the scheduler gracefully. */
+  /** Stop the scheduler gracefully. Waits for any in-flight cycle. */
   async stop(): Promise<void> {
     this.isRunning = false;
     if (this.timer) {
-      clearInterval(this.timer);
+      clearTimeout(this.timer);
       this.timer = null;
+    }
+    if (this.inFlight) {
+      await this.inFlight;
     }
     log.info("Stopped");
   }

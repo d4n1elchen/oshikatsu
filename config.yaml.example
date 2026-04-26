@@ -2,8 +2,9 @@
 # This file overrides the default application settings.
 
 scheduler:
-  ingestionIntervalMinutes: 60
-  extractionIntervalMinutes: 5
+  ingestionIntervalMinutes: 60      # how often to fetch new raw items from sources
+  extractionIntervalMinutes: 5      # how often to run LLM extraction over unprocessed raw items
+  resolutionIntervalMinutes: 2      # how often to resolve newly extracted events into normalized events
 
 llm:
   provider: "ollama"

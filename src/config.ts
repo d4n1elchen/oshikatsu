@@ -6,6 +6,7 @@ export interface OshikatsuConfig {
   scheduler: {
     ingestionIntervalMinutes: number;
     extractionIntervalMinutes: number;
+    resolutionIntervalMinutes: number;
   };
   llm: {
     provider: "ollama" | string;
@@ -32,6 +33,7 @@ const DEFAULT_CONFIG: OshikatsuConfig = {
   scheduler: {
     ingestionIntervalMinutes: 15,
     extractionIntervalMinutes: 5,
+    resolutionIntervalMinutes: 2,
   },
   llm: {
     provider: "ollama",
