@@ -1,4 +1,7 @@
 import { EventResolver } from "../core/EventResolver";
+import { tagged } from "../core/logger";
+
+const log = tagged("resolve:once");
 
 function parseArgs(argv: string[]): { limit: number } {
   const limitArg = argv.find((arg) => arg.startsWith("--limit="));
@@ -10,10 +13,10 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const resolver = new EventResolver();
   const result = await resolver.processBatch(args.limit);
-  console.log(`Resolution complete. Resolved: ${result.resolved}, failed: ${result.failed}.`);
+  log.info(`Done; resolved ${result.resolved}, failed ${result.failed}`);
 }
 
 main().catch((error) => {
-  console.error(error);
+  log.error("Fatal:", error);
   process.exit(1);
 });

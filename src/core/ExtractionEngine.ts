@@ -5,7 +5,6 @@ import { extractedEvents, extractedEventRelatedLinks, watchTargets } from "../db
 import { RawStorage } from "./RawStorage";
 import { VenueResolver } from "./VenueResolver";
 import type { LLMProvider } from "./LLMProvider";
-import { log } from "./logger";
 import {
   createDefaultExtractionStrategies,
   EventExtractionSchema,
@@ -13,6 +12,9 @@ import {
   type ExtractionStrategy,
   type SourceContext,
 } from "./ExtractionStrategy";
+import { tagged } from "./logger";
+
+const log = tagged("ExtractionEngine");
 
 type ProcessBatchResult = {
   processed: number;
@@ -42,7 +44,7 @@ export class ExtractionEngine {
     const result: ProcessBatchResult = { processed: 0, failed: 0 };
     if (items.length === 0) return result;
 
-    log.info(`[ExtractionEngine] Processing batch of ${items.length} items...`);
+    log.info(`Processing batch of ${items.length} item(s)`);
 
     for (const item of items) {
       if (await this.processItem(item)) {
@@ -60,7 +62,7 @@ export class ExtractionEngine {
    */
   async processItem(item: any): Promise<boolean> {
     try {
-      log.info(`[ExtractionEngine] Extracting item ${item.id} from ${item.sourceName}...`);
+      log.info(`Extracting item ${item.id} from ${item.sourceName}`);
       
       const strategy = this.getStrategy(item.sourceName);
       const context = strategy.buildContext(item);
@@ -70,7 +72,7 @@ export class ExtractionEngine {
 
       if (await this.hasExistingExtraction(item.id)) {
         await this.rawStorage.markProcessed(item.id);
-        log.info(`[ExtractionEngine] Item ${item.id} already has an extracted event; marked processed.`);
+        log.info(`Item ${item.id} already extracted; marked processed`);
         return true;
       }
 
@@ -81,11 +83,11 @@ export class ExtractionEngine {
       await this.saveExtractedEvent(item, context, extracted);
 
       await this.rawStorage.markProcessed(item.id);
-      log.info(`[ExtractionEngine] Successfully extracted item ${item.id}`);
+      log.info(`Extracted item ${item.id}`);
       return true;
 
     } catch (e: any) {
-      log.error(`[ExtractionEngine] Failed to extract item ${item.id}:`, e);
+      log.error(`Failed to extract item ${item.id}:`, e);
       await this.rawStorage.markError(item.id, e.message || "Unknown LLM extraction error");
       return false;
     }

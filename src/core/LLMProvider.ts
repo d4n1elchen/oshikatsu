@@ -1,7 +1,9 @@
 import { Ollama } from "ollama";
 import { z, type ZodType } from "zod";
 import { getConfig } from "../config";
-import { log } from "./logger";
+import { tagged } from "./logger";
+
+const log = tagged("OllamaProvider");
 
 export interface LLMProvider {
   extract<T>(text: string, schema: ZodType<T>, systemPrompt: string): Promise<T>;
@@ -47,7 +49,7 @@ ${JSON.stringify(jsonSchema, null, 2)}`;
       const validatedData = schema.parse(parsedJson);
       return validatedData;
     } catch (error) {
-      log.error("[OllamaProvider] Failed to extract data:", error);
+      log.error("Failed to extract data:", error);
       throw error;
     }
   }

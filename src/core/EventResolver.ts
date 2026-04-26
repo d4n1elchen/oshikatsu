@@ -11,7 +11,9 @@ import {
 import { titleSimilarity } from "./titleSimilarity";
 import type { ResolutionSignals, ResolutionDecisionType } from "./types";
 import { getConfig } from "../config";
-import { log } from "./logger";
+import { tagged } from "./logger";
+
+const log = tagged("EventResolver");
 
 export type EventResolverThresholds = {
   titleSimilarityThreshold: number;
@@ -63,7 +65,7 @@ export class EventResolver {
       .limit(1);
 
     if (!candidate) {
-      log.warn(`[EventResolver] Extracted event ${extractedEventId} not found`);
+      log.warn(`Extracted event ${extractedEventId} not found`);
       return;
     }
 
@@ -75,7 +77,7 @@ export class EventResolver {
       .limit(1);
 
     if (existing.length > 0) {
-      log.info(`[EventResolver] Event ${extractedEventId} already resolved; skipping.`);
+      log.info(`Event ${extractedEventId} already resolved; skipping`);
       return;
     }
 
@@ -324,13 +326,13 @@ export class EventResolver {
         await this.resolve(row.id);
         resolved++;
       } catch (e) {
-        log.error(`[EventResolver] Failed to resolve event ${row.id}:`, e);
+        log.error(`Failed to resolve event ${row.id}:`, e);
         failed++;
       }
     }
 
     if (resolved > 0 || failed > 0) {
-      log.info(`[EventResolver] Resolved ${resolved} events, ${failed} failed.`);
+      log.info(`Resolved ${resolved} event(s); ${failed} failed`);
     }
 
     return { resolved, failed };
@@ -611,7 +613,7 @@ export class EventResolver {
         }).run();
       });
 
-      log.info(`[EventResolver] Created new normalized event ${newNormId} for extracted ${candidate.id}`);
+      log.info(`Created new normalized event ${newNormId} for extracted ${candidate.id}`);
 
     } else if (decision === "linked_as_sub" && normalizedEventId) {
       // Phase 3.1: create a new normalized event as a sub-event of the matched main event.
@@ -657,7 +659,7 @@ export class EventResolver {
         }).run();
       });
 
-      log.info(`[EventResolver] Linked extracted ${candidate.id} as sub-event ${subId} of ${normalizedEventId}`);
+      log.info(`Linked extracted ${candidate.id} as sub-event ${subId} of ${normalizedEventId}`);
 
     } else if (decision === "merged" && normalizedEventId) {
       // Merge into existing normalized event
@@ -715,7 +717,7 @@ export class EventResolver {
         }
       }
 
-      log.info(`[EventResolver] Merged extracted ${candidate.id} into normalized ${normalizedEventId}`);
+      log.info(`Merged extracted ${candidate.id} into normalized ${normalizedEventId}`);
 
     } else if (decision === "needs_review") {
       // Record for human review but do not create or merge
@@ -730,7 +732,7 @@ export class EventResolver {
         createdAt: new Date(),
       }).run();
 
-      log.info(`[EventResolver] Flagged extracted ${candidate.id} for review (score ${score.toFixed(2)})`);
+      log.info(`Flagged extracted ${candidate.id} for review (score ${score.toFixed(2)})`);
     }
   }
 }

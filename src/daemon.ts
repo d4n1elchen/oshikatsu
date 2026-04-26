@@ -2,7 +2,10 @@ import { IngestionScheduler } from "./core/Scheduler";
 import { ExtractionEngine } from "./core/ExtractionEngine";
 import { EventResolver } from "./core/EventResolver";
 import { OllamaProvider } from "./core/LLMProvider";
+import { tagged } from "./core/logger";
 import { getConfig } from "./config";
+
+const log = tagged("daemon");
 
 async function main() {
   const config = getConfig();
@@ -18,7 +21,7 @@ async function main() {
   const extractor = new ExtractionEngine(llm);
   const resolver = new EventResolver();
 
-  console.log("Starting backend daemon...");
+  log.info("Starting backend daemon");
 
   // Start the ingestion scheduler (it handles its own interval loop)
   await scheduler.start();
@@ -31,7 +34,7 @@ async function main() {
       await extractor.processBatch(20);
       await resolver.processBatch(50);
     } catch (e) {
-      console.error("Extraction loop error:", e);
+      log.error("Extraction loop error:", e);
     }
   }
 
@@ -43,11 +46,11 @@ async function main() {
   
   // Keep the process alive
   process.on('SIGINT', async () => {
-    console.log("\nShutting down gracefully...");
+    log.info("Shutting down gracefully");
     clearInterval(extractTimer);
     await scheduler.stop();
     process.exit(0);
   });
 }
 
-main().catch(console.error);
+main().catch((e) => log.error("Fatal:", e));

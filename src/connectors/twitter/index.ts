@@ -1,7 +1,9 @@
 import { chromium, type BrowserContext, type Page } from "playwright";
 import type { BaseConnector } from "../types";
 import type { WatchTarget } from "../../core/types";
-import { log } from "../../core/logger";
+import { tagged } from "../../core/logger";
+
+const log = tagged("TwitterConnector");
 
 export interface TwitterConnectorConfig {
   browser: {
@@ -22,7 +24,7 @@ export class TwitterConnector implements BaseConnector {
   constructor(private config: TwitterConnectorConfig) {}
 
   async start(): Promise<void> {
-    log.info(`Launching persistent browser context at: ${this.config.browser.userDataDir}`);
+    log.info(`Launching persistent browser context at ${this.config.browser.userDataDir}`);
     this.context = await chromium.launchPersistentContext(this.config.browser.userDataDir, {
       headless: this.config.browser.headless,
       // Useful for reducing anti-bot detections
@@ -42,7 +44,7 @@ export class TwitterConnector implements BaseConnector {
     if (!username) throw new Error("Invalid source config: missing username");
 
     const targetUrl = `https://x.com/${username}`;
-    log.info(`Navigating to ${targetUrl}...`);
+    log.info(`Navigating to ${targetUrl}`);
 
     const rawItems: Record<string, any>[] = [];
 
@@ -97,7 +99,7 @@ export class TwitterConnector implements BaseConnector {
       const maxScrolls = Math.ceil(this.config.fetch.maxTweetsPerSource / 10); // Rough estimate
 
       while (scrolls < maxScrolls && rawItems.length < this.config.fetch.maxTweetsPerSource) {
-        log.info(`Scrolling... (collected ${rawItems.length} items so far)`);
+        log.info(`Scrolling (collected ${rawItems.length} so far)`);
         await this.page.evaluate(() => window.scrollBy(0, 1000));
         await this.page.waitForTimeout(this.config.fetch.scrollDelayMs);
         scrolls++;
@@ -107,7 +109,7 @@ export class TwitterConnector implements BaseConnector {
       // an empty-but-successful one. Without this, navigation timeouts, login
       // walls, and broken page loads are indistinguishable from "the user
       // posted nothing today" — silent data loss.
-      log.error(`Error fetching updates for ${username}:`, e);
+      log.error(`Failed to fetch updates for @${username}:`, e);
       throw e;
     } finally {
       // Clean up the listener so it doesn't duplicate on the next fetch

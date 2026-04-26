@@ -3,7 +3,10 @@ import { rawItems } from "../db/schema";
 import { ExtractionEngine } from "../core/ExtractionEngine";
 import { OllamaProvider } from "../core/LLMProvider";
 import { RawStorage } from "../core/RawStorage";
+import { tagged } from "../core/logger";
 import { eq } from "drizzle-orm";
+
+const log = tagged("extract:once");
 
 function parseArgs(argv: string[]): { limit: number; retryErrors: boolean } {
   const limitArg = argv.find((arg) => arg.startsWith("--limit="));
@@ -24,16 +27,16 @@ async function main() {
     for (const item of errored) {
       await storage.markNew(item.id);
     }
-    console.log(`Queued ${errored.length} errored raw item(s) for retry.`);
+    log.info(`Queued ${errored.length} errored raw item(s) for retry`);
   }
 
   const engine = new ExtractionEngine(new OllamaProvider());
   const result = await engine.processBatch(args.limit);
 
-  console.log(`Extraction complete. Processed: ${result.processed}, failed: ${result.failed}.`);
+  log.info(`Done; processed ${result.processed}, failed ${result.failed}`);
 }
 
 main().catch((error) => {
-  console.error(error);
+  log.error("Fatal:", error);
   process.exit(1);
 });
