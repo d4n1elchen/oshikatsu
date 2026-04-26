@@ -11,6 +11,8 @@ type EnrichedNormalizedEvent = NormalizedEvent & {
   sourceCount: number;
   latestDecision: string | null;
   latestReason: string | null;
+  parentTitle: string | null;
+  subEventCount: number;
 };
 
 const DECISION_COLOR: Record<string, string> = {
@@ -38,7 +40,7 @@ export default function NormalizedEvents() {
 
     const enriched = await Promise.all(
       rows.map(async (ev) => {
-        const [venueRows, artistRows, sourcesRow, decisionRows] = await Promise.all([
+        const [venueRows, artistRows, sourcesRow, decisionRows, parentRows, subEventRow] = await Promise.all([
           ev.venueId
             ? db.select().from(venues).where(eq(venues.id, ev.venueId)).limit(1)
             : Promise.resolve([]),
@@ -64,6 +66,17 @@ export default function NormalizedEvents() {
               sql`${normalizedEventSources.normalizedEventId} = ${ev.id} AND ${normalizedEventSources.role} = 'primary'`
             )
             .limit(1),
+          ev.parentEventId
+            ? db
+                .select({ title: normalizedEvents.title })
+                .from(normalizedEvents)
+                .where(eq(normalizedEvents.id, ev.parentEventId))
+                .limit(1)
+            : Promise.resolve([]),
+          db
+            .select({ cnt: count() })
+            .from(normalizedEvents)
+            .where(eq(normalizedEvents.parentEventId, ev.id)),
         ]);
 
         return {
@@ -73,6 +86,8 @@ export default function NormalizedEvents() {
           sourceCount: sourcesRow[0]?.cnt ?? 0,
           latestDecision: decisionRows[0]?.decision ?? null,
           latestReason: decisionRows[0]?.reason ?? null,
+          parentTitle: parentRows[0]?.title ?? null,
+          subEventCount: subEventRow[0]?.cnt ?? 0,
         };
       })
     );
@@ -133,7 +148,8 @@ export default function NormalizedEvents() {
                   [{ev.latestDecision ?? "?"}]{" "}
                 </Text>
                 <Text color={isSelected ? "white" : "gray"} wrap="truncate" strikethrough={ev.isCancelled}>
-                  {ev.title}
+                  {ev.parentEventId ? "↳ " : ""}{ev.title}
+                  {ev.subEventCount > 0 ? ` (+${ev.subEventCount} sub)` : ""}
                 </Text>
               </Box>
             );
@@ -175,6 +191,18 @@ export default function NormalizedEvents() {
                 )}
                 {selectedEvent.tags && selectedEvent.tags.length > 0 && (
                   <Text><Text dimColor>Tags:     </Text>{selectedEvent.tags.join(", ")}</Text>
+                )}
+                {selectedEvent.parentTitle && (
+                  <Text>
+                    <Text dimColor>Parent:   </Text>
+                    <Text color="magenta">↳ {selectedEvent.parentTitle}</Text>
+                  </Text>
+                )}
+                {selectedEvent.subEventCount > 0 && (
+                  <Text>
+                    <Text dimColor>Sub:      </Text>
+                    <Text color="magenta">{selectedEvent.subEventCount} sub-event{selectedEvent.subEventCount !== 1 ? "s" : ""}</Text>
+                  </Text>
                 )}
               </Box>
 

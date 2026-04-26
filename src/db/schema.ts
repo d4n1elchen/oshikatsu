@@ -111,7 +111,7 @@ export const extractedEventRelatedLinks = sqliteTable("extracted_event_related_l
 
 export const normalizedEvents = sqliteTable("normalized_events", {
   id: text("id").primaryKey(),
-  parentEventId: text("parent_event_id"),
+  parentEventId: text("parent_event_id").references((): any => normalizedEvents.id, { onDelete: "set null" }),
   artistId: text("artist_id").references(() => artists.id, { onDelete: "set null" }),
   title: text("title").notNull(),
   description: text("description").notNull(),

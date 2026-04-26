@@ -63,9 +63,164 @@ export class EventResolver {
     const candidateLinks = await this.getRelatedLinks(extractedEventId);
     const normalizedCandidates = await this.selectNormalizedCandidates(candidate, candidateLinks);
 
-    const result = await this.decideResolution(candidate, candidateLinks, normalizedCandidates);
+    let result = await this.decideResolution(candidate, candidateLinks, normalizedCandidates);
+
+    // Phase 3.1 hierarchy resolution: if no merge match, try sub-event linking.
+    if (
+      (result.decision === "new" || result.decision === "no_match") &&
+      candidate.eventScope === "sub"
+    ) {
+      const hierarchyResult = await this.tryHierarchyResolution(candidate);
+      if (hierarchyResult) {
+        result = hierarchyResult;
+      }
+    }
 
     await this.applyDecision(candidate, candidateLinks, result);
+  }
+
+  /**
+   * Phase 3.1: try to attach a sub-event candidate to a canonical main event.
+   * Returns null if no plausible parent is found and the candidate has no hint
+   * (i.e. fall through to "new"). Returns a `linked_as_sub`, or `needs_review`
+   * result when the candidate has a sub-event hint but parent identification
+   * is ambiguous.
+   */
+  private async tryHierarchyResolution(
+    candidate: ExtractedEventRow
+  ): Promise<ResolutionResult | null> {
+    if (!candidate.artistId) {
+      // Without an artist anchor we can't safely identify a parent.
+      return candidate.parentEventHint
+        ? {
+            decision: "needs_review",
+            normalizedEventId: null,
+            score: 0.2,
+            signals: { event_scope: "sub", parent_event_hint_matched: false },
+            reason: "Sub-event hint present but candidate has no artist_id to anchor parent search.",
+          }
+        : null;
+    }
+
+    // Select main-event candidates: same artist, parent_event_id IS NULL.
+    const mainCandidates = await this.db
+      .select()
+      .from(normalizedEvents)
+      .where(
+        and(
+          eq(normalizedEvents.artistId, candidate.artistId),
+          sql`${normalizedEvents.parentEventId} IS NULL`
+        )
+      );
+
+    if (mainCandidates.length === 0) {
+      // No parent exists yet; do not invent one.
+      return candidate.parentEventHint
+        ? {
+            decision: "needs_review",
+            normalizedEventId: null,
+            score: 0.2,
+            signals: { event_scope: "sub", parent_event_hint_matched: false },
+            reason: `Sub-event hint "${candidate.parentEventHint}" present but no main events exist for this artist yet.`,
+          }
+        : null;
+    }
+
+    // Score each main candidate for hierarchy attachment
+    type Scored = { main: NormalizedEventRow; score: number; reasons: string[]; hintMatched: boolean };
+    const scored: Scored[] = [];
+
+    for (const main of mainCandidates) {
+      let score = 0;
+      const reasons: string[] = [];
+      let hintMatched = false;
+
+      // Hint match: parent_event_hint vs main.title
+      if (candidate.parentEventHint) {
+        const hintSim = titleSimilarity(candidate.parentEventHint, main.title);
+        if (hintSim >= TITLE_SIMILARITY_AUTO_MERGE_THRESHOLD) {
+          score += 0.6;
+          hintMatched = true;
+          reasons.push(`hint matches main title (sim=${hintSim.toFixed(2)})`);
+        }
+      }
+
+      // Same venue
+      if (candidate.venueId && main.venueId && candidate.venueId === main.venueId) {
+        score += 0.25;
+        reasons.push("same venue_id");
+      }
+
+      // Time alignment: candidate start within main event window (±48h)
+      if (candidate.startTime && main.startTime) {
+        const diffMs = Math.abs(candidate.startTime.getTime() - main.startTime.getTime());
+        if (diffMs <= CANDIDATE_WINDOW_MS) {
+          score += 0.2;
+          reasons.push("start_time within main event window");
+        }
+      } else if (!candidate.startTime && hintMatched) {
+        // Sub-event with no time but hint-matched parent: acceptable
+        score += 0.1;
+      }
+
+      if (score > 0) {
+        scored.push({ main, score, reasons, hintMatched });
+      }
+    }
+
+    if (scored.length === 0) {
+      return candidate.parentEventHint
+        ? {
+            decision: "needs_review",
+            normalizedEventId: null,
+            score: 0.2,
+            signals: { event_scope: "sub", parent_event_hint_matched: false },
+            reason: `Sub-event hint "${candidate.parentEventHint}" present but no main event matched.`,
+          }
+        : null;
+    }
+
+    // Sort by score descending
+    scored.sort((a, b) => b.score - a.score);
+    const best = scored[0]!;
+
+    // Ambiguous: multiple plausible parents within a small score margin
+    const ambiguous =
+      scored.length > 1 && scored[1]!.score >= best.score - 0.1 && scored[1]!.score >= 0.5;
+
+    const signals: ResolutionSignals = {
+      event_scope: "sub",
+      parent_event_hint_matched: best.hintMatched,
+      venue_id_match: candidate.venueId != null && candidate.venueId === best.main.venueId,
+    };
+
+    if (ambiguous) {
+      return {
+        decision: "needs_review",
+        normalizedEventId: best.main.id,
+        score: best.score,
+        signals,
+        reason: `Multiple plausible parent events; top score ${best.score.toFixed(2)}, runner-up ${scored[1]!.score.toFixed(2)}.`,
+      };
+    }
+
+    if (best.score >= 0.7) {
+      return {
+        decision: "linked_as_sub",
+        normalizedEventId: best.main.id,
+        score: best.score,
+        signals,
+        reason: `Linked as sub-event of "${best.main.title}": ${best.reasons.join("; ")}.`,
+      };
+    }
+
+    return {
+      decision: "needs_review",
+      normalizedEventId: best.main.id,
+      score: best.score,
+      signals,
+      reason: `Sub-event candidate but signals weak (score ${best.score.toFixed(2)}): ${best.reasons.join("; ")}.`,
+    };
   }
 
   /**
@@ -380,6 +535,52 @@ export class EventResolver {
       });
 
       console.log(`[EventResolver] Created new normalized event ${newNormId} for extracted ${candidate.id}`);
+
+    } else if (decision === "linked_as_sub" && normalizedEventId) {
+      // Phase 3.1: create a new normalized event as a sub-event of the matched main event.
+      // Sub-events are independent canonical records linked back via parent_event_id;
+      // they do not edit the parent's canonical fields.
+      const subId = randomUUID();
+      await this.db.transaction((tx) => {
+        tx.insert(normalizedEvents).values({
+          id: subId,
+          parentEventId: normalizedEventId,
+          artistId: candidate.artistId,
+          title: candidate.title,
+          description: candidate.description,
+          startTime: candidate.startTime,
+          endTime: candidate.endTime,
+          venueId: candidate.venueId,
+          venueName: candidate.venueName,
+          venueUrl: candidate.venueUrl,
+          type: candidate.type,
+          isCancelled: candidate.isCancelled,
+          tags: candidate.tags,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }).run();
+
+        tx.insert(normalizedEventSources).values({
+          id: randomUUID(),
+          normalizedEventId: subId,
+          extractedEventId: candidate.id,
+          role: "primary",
+          createdAt: new Date(),
+        }).run();
+
+        tx.insert(eventResolutionDecisions).values({
+          id: randomUUID(),
+          candidateExtractedEventId: candidate.id,
+          matchedNormalizedEventId: normalizedEventId,
+          decision: "linked_as_sub",
+          score,
+          signals,
+          reason,
+          createdAt: new Date(),
+        }).run();
+      });
+
+      console.log(`[EventResolver] Linked extracted ${candidate.id} as sub-event ${subId} of ${normalizedEventId}`);
 
     } else if (decision === "merged" && normalizedEventId) {
       // Merge into existing normalized event

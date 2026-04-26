@@ -96,7 +96,7 @@ function createTestDb() {
     );
     CREATE TABLE normalized_events (
       id TEXT PRIMARY KEY,
-      parent_event_id TEXT,
+      parent_event_id TEXT REFERENCES normalized_events(id) ON DELETE SET NULL,
       artist_id TEXT,
       title TEXT NOT NULL,
       description TEXT NOT NULL,
@@ -175,6 +175,9 @@ function insertExtractedEvent(
     title?: string;
     sourceUrl?: string;
     isCancelled?: boolean;
+    eventScope?: "main" | "sub" | "unknown";
+    parentEventHint?: string;
+    type?: string;
   } = {}
 ) {
   const rawId = randomUUID();
@@ -200,9 +203,9 @@ function insertExtractedEvent(
     venueId: opts.venueId ?? null,
     venueName: null,
     venueUrl: null,
-    type: "concert",
-    eventScope: "main",
-    parentEventHint: null,
+    type: opts.type ?? "concert",
+    eventScope: opts.eventScope ?? "main",
+    parentEventHint: opts.parentEventHint ?? null,
     isCancelled: opts.isCancelled ?? false,
     tags: [],
     publishTime: NOW,
@@ -444,4 +447,164 @@ test("related links are accessible via normalized_event_sources join after merge
   const urls = new Set(links.map((l) => l.url));
   assert.ok(urls.has(sharedLink), "shared link should be accessible");
   assert.ok(urls.has(extraLink), "extra link from second source should be accessible");
+});
+
+// ---- Phase 3.1 hierarchy tests ----
+
+test("event_scope=sub with matching parent_event_hint links as sub-event", async () => {
+  const db = createTestDb();
+  insertArtist(db);
+
+  // First, create a main event
+  const mainEv = insertExtractedEvent(db, {
+    artistId: "artist-1",
+    title: "Tokyo Dome Concert 2025",
+    type: "concert",
+    eventScope: "main",
+    sourceUrl: "https://src/main",
+  });
+  const resolver = new EventResolver(db as any);
+  await resolver.resolve(mainEv);
+
+  // Then, a sub-event hinting at the main event
+  const subEv = insertExtractedEvent(db, {
+    artistId: "artist-1",
+    title: "Pre-show meet & greet",
+    type: "side_event",
+    eventScope: "sub",
+    parentEventHint: "Tokyo Dome Concert 2025",
+    sourceUrl: "https://src/sub",
+  });
+  await resolver.resolve(subEv);
+
+  const decisions = getDecisions(db);
+  const subDecision = decisions.find((d) => d.decision === "linked_as_sub");
+  assert.ok(subDecision, "should link as sub-event");
+
+  const norm = getNormalizedEvents(db);
+  assert.equal(norm.length, 2, "should have main + sub normalized events");
+  const subNorm = norm.find((n) => n.title === "Pre-show meet & greet")!;
+  const mainNorm = norm.find((n) => n.title === "Tokyo Dome Concert 2025")!;
+  assert.equal(subNorm.parentEventId, mainNorm.id, "sub should reference main as parent");
+  assert.equal(mainNorm.parentEventId, null, "main should have no parent");
+});
+
+test("event_scope=sub with no matching main event flags needs_review (does not invent parent)", async () => {
+  const db = createTestDb();
+  insertArtist(db);
+
+  // No main events exist yet
+  const subEv = insertExtractedEvent(db, {
+    artistId: "artist-1",
+    title: "Merch booth",
+    eventScope: "sub",
+    parentEventHint: "Some Concert That Doesn't Exist",
+  });
+  const resolver = new EventResolver(db as any);
+  await resolver.resolve(subEv);
+
+  const decisions = getDecisions(db);
+  assert.equal(decisions.length, 1);
+  assert.equal(decisions[0]!.decision, "needs_review", "should flag for review");
+
+  const norm = getNormalizedEvents(db);
+  assert.equal(norm.length, 0, "should NOT create a canonical event");
+});
+
+test("sub-event resolution does not edit parent's canonical fields", async () => {
+  const db = createTestDb();
+  insertArtist(db);
+
+  const mainEv = insertExtractedEvent(db, {
+    artistId: "artist-1",
+    title: "Tokyo Dome Concert",
+    sourceUrl: "https://src/main",
+  });
+  const resolver = new EventResolver(db as any);
+  await resolver.resolve(mainEv);
+
+  const mainBefore = getNormalizedEvents(db)[0]!;
+
+  // Sub-event with cancellation flag — should NOT cancel the parent.
+  const subEv = insertExtractedEvent(db, {
+    artistId: "artist-1",
+    title: "Pre-show talk",
+    eventScope: "sub",
+    parentEventHint: "Tokyo Dome Concert",
+    isCancelled: true,
+    sourceUrl: "https://src/sub",
+  });
+  await resolver.resolve(subEv);
+
+  const allNorm = await db.select().from(schema.normalizedEvents);
+  const mainRow = allNorm.find((n) => n.id === mainBefore.id)!;
+  assert.equal(mainRow.isCancelled, false, "parent must not be cancelled by sub-event");
+  assert.equal(mainRow.title, "Tokyo Dome Concert", "parent title must not change");
+
+  const subRow = allNorm.find((n) => n.parentEventId === mainBefore.id);
+  assert.ok(subRow, "sub-event should exist");
+  assert.equal(subRow!.isCancelled, true, "sub-event itself carries its own cancellation");
+});
+
+test("event_scope=sub with same artist+venue+close time but no hint links as sub", async () => {
+  const db = createTestDb();
+  insertArtist(db);
+  insertVenue(db);
+
+  const mainEv = insertExtractedEvent(db, {
+    artistId: "artist-1",
+    venueId: "venue-1",
+    title: "Tokyo Dome Concert",
+    startTime: NOW,
+    sourceUrl: "https://src/main",
+  });
+  const resolver = new EventResolver(db as any);
+  await resolver.resolve(mainEv);
+
+  // Sub-event with venue + time but no hint — strong contextual attachment via the
+  // hint path requires the hint match. Without it, we expect needs_review.
+  const subEv = insertExtractedEvent(db, {
+    artistId: "artist-1",
+    venueId: "venue-1",
+    title: "Backstage tour",
+    startTime: new Date(NOW.getTime() + 3600_000),
+    eventScope: "sub",
+    sourceUrl: "https://src/sub",
+  });
+  await resolver.resolve(subEv);
+
+  // Without a hint, signals are weak — should be needs_review or new, but NOT auto-linked.
+  const decisions = getDecisions(db);
+  const subDecision = decisions.find((d) => d.candidateExtractedEventId === subEv);
+  assert.ok(subDecision);
+  assert.notEqual(subDecision!.decision, "linked_as_sub", "should not auto-link without hint or strong signal");
+});
+
+test("hierarchy resolution does not run for event_scope=main", async () => {
+  const db = createTestDb();
+  insertArtist(db);
+
+  const ev1 = insertExtractedEvent(db, {
+    artistId: "artist-1",
+    title: "Concert A",
+    sourceUrl: "https://src/1",
+  });
+  const resolver = new EventResolver(db as any);
+  await resolver.resolve(ev1);
+
+  // A second main event with a hint pointing at the first should NOT be auto-linked.
+  const ev2 = insertExtractedEvent(db, {
+    artistId: "artist-1",
+    title: "Concert B",
+    eventScope: "main",
+    parentEventHint: "Concert A",
+    sourceUrl: "https://src/2",
+    startTime: new Date(NOW.getTime() + 10 * 24 * 60 * 60 * 1000), // 10 days later
+  });
+  await resolver.resolve(ev2);
+
+  const decisions = getDecisions(db);
+  const ev2Decision = decisions.find((d) => d.candidateExtractedEventId === ev2);
+  assert.ok(ev2Decision);
+  assert.notEqual(ev2Decision!.decision, "linked_as_sub", "main events should not be linked as sub");
 });
