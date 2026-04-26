@@ -13,7 +13,7 @@ Needed tests:
 - Twitter strategy context extraction from fixture raw items
 - Related link extraction and persistence
 - LLM failure marks raw items as `error`
-- Idempotency when a raw item already has a source reference
+- Idempotency when a raw item already has an extracted event
 - Database persistence consistency between extracted event rows (with inline source provenance) and `extracted_event_related_links`
 
 ### Existing extracted data may need reprocessing
@@ -37,11 +37,11 @@ Follow-up:
 
 ### Extraction strategy is intentionally minimal
 
-The strategy layer exists, but source-specific behavior is conservative. It does not yet include richer source-specific rules, fixture-driven prompts, or configurable extraction policies.
+The strategy layer exists, but source-specific behavior is conservative. It does not yet include richer source-specific rules, fixture-driven prompts, or configurable extraction policies. Phase 3 resolution has landed without surfacing a concrete shortfall yet, so this remains "expand when a real gap is observed."
 
 Follow-up:
 
-- Revisit strategy design after Phase 3 event resolution reveals which fields matter most.
+- Expand the strategy layer when the review queue or resolution decisions reveal a missing field or extraction rule.
 - Keep artist-, song-, concert-, and venue-specific rules out of the core engine.
 
 ## Related Links
