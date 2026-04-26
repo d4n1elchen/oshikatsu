@@ -147,7 +147,7 @@ Behavior:
 - Extracts publish time from `rawData.legacy.created_at`.
 - Extracts author from `rawData.core.user_results.result.legacy.screen_name`.
 - Builds a canonical X status URL from author and tweet ID.
-- Preserves the post timestamp and full tweet text in `rawContent`.
+- Preserves the full tweet text in `rawContent`. The source publish time stays in `publishTime` and `source_references.publish_time`; it is not included in the LLM text so it is not mistaken for an event start time.
 - Reuses default prompt and sanitize behavior unless source-specific improvements are needed later.
 
 The Twitter strategy should not contain artist-specific or campaign-specific business rules.
@@ -176,13 +176,12 @@ export const EventExtractionSchema = z.object({
     "broadcast",
     "collaboration",
     "side_event",
-    "announcement",
   ]),
   tags: z.array(z.string()).default([]),
 });
 ```
 
-The fixed event type enum is part of the unified event schema contract. It is not considered hard-coded inference behavior.
+The fixed event type enum is part of the unified event schema contract. It is not considered hard-coded inference behavior. General announcements are not an event type, but informational posts can still announce real events. Classification should follow the underlying activity being announced, updated, scheduled, cancelled, or linked: for example, a post announcing a scheduled concert is `concert`, and a post announcing a merch sale is `merchandise`. A post must describe one of the allowed event-like categories and provide an actual event time to become a normalized event. The source publish time must not be used as `start_time`.
 
 ## Related Link Handling
 
@@ -225,7 +224,7 @@ Allowed deterministic sanitization:
 
 Disallowed fallback behavior:
 
-- Creating a minimal `announcement` record after LLM failure.
+- Creating a minimal general-announcement record after LLM failure.
 - Inferring event type from keywords after LLM failure.
 - Inferring venue from keywords after LLM failure.
 - Inferring artist, group, campaign, or location names from hard-coded lists.

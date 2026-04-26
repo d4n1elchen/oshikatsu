@@ -1,11 +1,11 @@
 import { z } from "zod";
 
-export const EVENT_TYPES = ["live_stream", "merchandise", "release", "concert", "broadcast", "collaboration", "side_event", "announcement"] as const;
+export const EVENT_TYPES = ["live_stream", "merchandise", "release", "concert", "broadcast", "collaboration", "side_event"] as const;
 
 export const EventExtractionSchema = z.object({
   title: z.string().min(1).describe("A short, descriptive title for the event. Preserve proper nouns and official titles in their original written form."),
   description: z.string().min(1).describe("A detailed English summary of the announcement. Preserve proper nouns and official titles in their original written form."),
-  start_time: z.string().describe("ISO 8601 timestamp of when the event actually starts. If none is found, return the publish time of the source item."),
+  start_time: z.string().describe("ISO 8601 timestamp of when the event actually starts. Must come from an explicit event, stream, sale, broadcast, release, or side-event time in the source."),
   end_time: z.string().optional().describe("ISO 8601 timestamp of when the event ends, if explicitly available."),
   venue_name: z.string().optional().describe("Name of the physical venue or virtual platform"),
   venue_url: z.string().optional().describe("URL to the stream, venue, or relevant event page"),
@@ -76,13 +76,14 @@ Language rules:
 - If a title combines an English summary with an official name, keep the official name in its original written form.
 
 Extraction rules:
-- start_time must be an ISO 8601 timestamp for when the actual event, stream, sale, broadcast, release, or announcement happens.
-- If no explicit event time is present, use this publish time: ${context.publishTime.toISOString()}.
+- start_time must be an ISO 8601 timestamp for when the actual event, stream, sale, broadcast, release, or side event happens.
+- Do not use the source publish time as start_time. If no actual event time is present, do not create an event.
 - end_time should only be set when an explicit end time is available.
 - related_links must contain only event-relevant candidate URLs and optional human-readable titles.
 - type must be one of: ${EVENT_TYPES.join(", ")}.
 - tags should be short labels such as artist names, group names, platforms, product names, or campaign names.
-- Use "announcement" when the post is informational but does not fit a more specific type.
+- Classify the underlying activity being announced, not the wording of the post. For example, an informational post announcing a scheduled concert is type "concert"; a post announcing a merch sale is type "merchandise".
+- Do not use a generic "announcement" category. If the post does not announce, update, schedule, cancel, or link to a specific activity in one of the allowed event types, return an empty JSON object so validation fails.
 
 Venue rules:
 - venue_name and venue_url describe where the event takes place.
@@ -136,7 +137,7 @@ export class TwitterNormalizationStrategy extends DefaultNormalizationStrategy {
       author,
       url: `https://x.com/${author}/status/${rawItem.sourceId}`,
       relatedLinkCandidates,
-      rawContent: `[Posted at: ${legacy.created_at || publishTime.toISOString()}]\n\n${text}`,
+      rawContent: text,
     };
   }
 }

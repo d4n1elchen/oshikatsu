@@ -152,7 +152,7 @@ Handles persistence of data across the pipeline. The names below describe logica
       "title": "human-readable title for the link"
     }
   ],
-  "title": "canonical event title or announcement summary",
+  "title": "canonical event title or event summary",
   "description": "normalized content summary",
   "start_time": "event start time",
   "end_time": "event end time",
@@ -186,7 +186,6 @@ Handles persistence of data across the pipeline. The names below describe logica
 
 ### Event Categories
 
-- `announcement` — general announcement
 - `live_stream` — live stream event
 - `merchandise` — merchandise release/news
 - `release` — song/album/content release

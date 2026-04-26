@@ -9,6 +9,7 @@
     "start:tui": "tsx src/index.tsx",
     "login:twitter": "tsx src/scripts/twitter_login.ts",
     "normalize:once": "tsx src/scripts/normalize_once.ts",
+    "reset:normalized": "tsx src/scripts/reset_normalized.ts",
     "start:backend": "tsx src/daemon.ts",
     "typecheck": "tsc --noEmit",
     "test": "npm run typecheck"
