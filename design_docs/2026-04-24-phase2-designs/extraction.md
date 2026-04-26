@@ -6,7 +6,7 @@ The Phase 2 engine is responsible for transforming unstructured or platform-spec
 
 Since artist announcements are highly unstructured natural language, the extraction engine relies on a **Local LLM** (Large Language Model) configured for structured data extraction.
 
-Terminology note: earlier project docs used `normalized_events` or `preprocessed_events` for the Phase 2 output table. The implementation now uses `extracted_events` for this layer: source-derived, one-to-one with raw items, and not yet deduplicated. In the refined model, **normalized events** are the Phase 3 output after deduplication and merging.
+Terminology note: earlier project docs used `normalized_events` or `preprocessed_events` for the Phase 2 output table. The implementation now uses `extracted_events` for this layer: source-derived, one-to-one with raw items, and not yet resolved against canonical events. In the refined model, **normalized events** are the Phase 3 output produced by the Event Resolution Engine (identity, merge, and hierarchy).
 
 ## Core Pipeline Flow
 
@@ -26,7 +26,7 @@ We will introduce two Drizzle tables.
 The source-derived representation of one event candidate extracted from one raw item. This is not canonical and may later be merged with other extracted events. Source provenance is folded directly into this table because each extracted event is 1:1 with a raw item (enforced by a unique index on `raw_item_id`).
 - `id` (text, uuid)
 - `raw_item_id` (text, fk to raw_items, unique) — The source raw item this extracted event came from
-- `artist_id` (text, optional fk to artists) — Direct artist link for Phase 3 candidate selection; nullable for historical rows and future non-watchlist imports
+- `artist_id` (text, optional fk to artists) — Direct artist link for Phase 3 event resolution candidate selection; nullable for historical rows and future non-watchlist imports
 - `title` (text)
 - `description` (text)
 - `start_time` (timestamp, optional) — Event start time
@@ -67,7 +67,7 @@ Event-relevant links extracted from the source content or structured source payl
 
 ## Link Extraction
 
-Sub-event announcements are valid extracted events even when they do not include the main event's full details. `start_time` is optional because the source may announce a real sub-event without providing that sub-event's time. The extractor may classify `event_scope = "sub"` and store a `parent_event_hint`, but it must not invent a main event as fact. Phase 3/3.1 owns canonical parent-child linking.
+Sub-event announcements are valid extracted events even when they do not include the main event's full details. `start_time` is optional because the source may announce a real sub-event without providing that sub-event's time. The extractor may classify `event_scope = "sub"` and store a `parent_event_hint`, but it must not invent a main event as fact. The Phase 3 Event Resolution Engine (Phase 3.1) owns canonical parent-child linking.
 
 The extraction pipeline extracts related links from two places:
 
@@ -101,6 +101,6 @@ export interface LLMProvider {
 
 To monitor the extraction pipeline, we will add an **Events** tab to the TUI (accessible via `Tab` or `3`).
 
-- **List View**: Displays successfully extracted events ordered by `start_time` until Phase 3 introduces canonical normalized events.
+- **List View**: Displays successfully extracted events ordered by `start_time` until Phase 3 event resolution introduces canonical normalized events.
 - **Detail View**: Shows the full event details, related links, and the inline source provenance (author, source URL, raw content).
 - **Manual Reprocessing**: A keybind to retry extraction for `error` items in the Monitor tab.

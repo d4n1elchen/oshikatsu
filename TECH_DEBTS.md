@@ -41,7 +41,7 @@ The strategy layer exists, but source-specific behavior is conservative. It does
 
 Follow-up:
 
-- Revisit strategy design after Phase 3 dedup reveals which fields matter most.
+- Revisit strategy design after Phase 3 event resolution reveals which fields matter most.
 - Keep artist-, song-, concert-, and venue-specific rules out of the core engine.
 
 ## Related Links
@@ -75,7 +75,7 @@ Follow-up:
 
 - Add a venue review or admin workflow for `discovered`, `verified`, and `ignored`.
 - Add a merge workflow for duplicate discovered venues.
-- Treat discovered venues as weaker Phase 3 dedup signals than verified venues.
+- Treat discovered venues as weaker Phase 3 resolution signals than verified venues.
 
 ### Event-venue link table is deferred
 
@@ -111,11 +111,11 @@ Follow-up:
 
 The virtual-venue-granularity design lists six focused resolver tests (null on virtual-without-URL, distinct venues for distinct channel URLs, alias addition on subsequent matches, regression guard for physical auto-discovery). These cannot land until the project has a test runner — currently `npm test` only typechecks. Tracked here so the tests aren't lost when test infrastructure is set up (see "Test coverage is still too thin" under Phase 2 Event Extraction).
 
-## Phase 3 Merge / Deduplication
+## Phase 3 Event Resolution
 
-### Event identity rules are designed but not implemented
+### Event resolution rules are designed but not implemented
 
-The Phase 3 merge/dedup design exists in `design_docs/2026-04-25-phase3-deduplication/deduplication.md`, but implementation has not started.
+The Phase 3 event resolution design exists in `design_docs/2026-04-25-phase3-event-resolution/event-resolution.md`, but implementation has not started. Phase 3 covers identity resolution (new vs. existing), record consolidation (merge / dedup), and hierarchy resolution (sub-event linking) — not deduplication alone.
 
 ### Canonical normalized event storage is not implemented
 
@@ -123,18 +123,18 @@ The refined event-layer model is now reflected in Phase 2 code:
 
 - `raw_items`: fetched source payloads.
 - `extracted_events`: one source-derived event candidate per raw item.
-- `normalized_events`: canonical events after deduplication and merging.
+- `normalized_events`: canonical events after event resolution.
 
 Phase 3 still needs to add true canonical `normalized_events` storage and a `normalized_event_sources` link table. Until then, downstream views should treat `extracted_events` as source-derived candidates rather than canonical events.
 
-### Merge auditability is undecided
+### Resolution auditability is undecided
 
-We need to decide how to record why events were merged.
+We need to decide how to record why each resolution decision (merge, sub-event link, new, needs-review) was made.
 
 Possible approaches:
 
-- Store merge decision logs.
-- Store confidence and matched fields.
+- Store resolution decision logs (`event_resolution_decisions`).
+- Store confidence and matched signals.
 - Keep links between extracted event IDs and canonical normalized event IDs.
 
 ### Schema gaps to resolve before Phase 3 starts
@@ -145,7 +145,7 @@ Decision:
 
 - **Artist link on extracted events.** Add nullable `artist_id` directly to the Phase 2 extracted event table for the Phase 3 candidate query. This is the simplest primary-artist model; collaborations and guest appearances can add an `event_artists` join table later if needed.
 - **`start_time` / `end_time`.** Add nullable `start_time` and `end_time` to extracted events and later carry selected canonical values into normalized events; remove `event_time` from the active schema and code.
-- **Event hierarchy.** Extracted events now carry source-derived `event_scope` and `parent_event_hint`, but canonical parent/sub-event links remain Phase 3.1 work. Phase 3 must treat the hint as evidence, not as an authoritative relationship.
+- **Event hierarchy.** Extracted events now carry source-derived `event_scope` and `parent_event_hint`. Phase 3.0 treats these as evidence carried into the resolution decision; Phase 3.1 acts on them by writing canonical parent/sub-event links via `normalized_events.parent_event_id`.
 
 ## Scheduler
 
@@ -254,7 +254,7 @@ Resolved during the Phase 3 preparation pass, then revised after deciding low-co
 
 ### `source_references` table folded into `extracted_events` on 2026-04-26
 
-Resolved during the Phase 3 prep work. Because the unique index on `extracted_events.raw_item_id` already enforces a 1:1 relationship between extracted events and raw items, the dedicated `source_references` table was always-joined and added no information. Its provenance columns (`publish_time`, `author`, `source_url`, `raw_content`) now live inline on `extracted_events`. `source_name` and `source_id` were not duplicated since they remain on `raw_items` reachable via the `raw_item_id` join. `venue_name` and `venue_url` were already on the extracted event and stay there. The conceptual `source_references` array on the normalized event schema in ARCHITECTURE.md remains valid because Phase 3 dedup will aggregate multiple extracted events under a single normalized event, each contributing its provenance.
+Resolved during the Phase 3 prep work. Because the unique index on `extracted_events.raw_item_id` already enforces a 1:1 relationship between extracted events and raw items, the dedicated `source_references` table was always-joined and added no information. Its provenance columns (`publish_time`, `author`, `source_url`, `raw_content`) now live inline on `extracted_events`. `source_name` and `source_id` were not duplicated since they remain on `raw_items` reachable via the `raw_item_id` join. `venue_name` and `venue_url` were already on the extracted event and stay there. The conceptual `source_references` array on the normalized event schema in ARCHITECTURE.md remains valid because Phase 3 event resolution will aggregate multiple extracted events under a single normalized event, each contributing its provenance.
 
 ### Phase 1 design docs were reconciled to current code on 2026-04-25
 

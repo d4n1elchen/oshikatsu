@@ -29,11 +29,11 @@ This plan outlines the phased implementation of the Oshikatsu platform, starting
 - Storage layer updated to persist extracted event records
 - TUI for browsing and inspecting extracted events
 
-**Working product**: Raw Twitter/X items are automatically extracted into extracted event candidates, viewable via TUI. These are not canonical events until Phase 3 dedup/merge runs.
+**Working product**: Raw Twitter/X items are automatically extracted into extracted event candidates, viewable via TUI. These are not canonical events until Phase 3 event resolution runs.
 
 ## Phase 2.1: Venue Database
 
-**Goal**: Add canonical venue records and conservative venue resolution before merge/deduplication.
+**Goal**: Add canonical venue records and conservative venue resolution before event resolution.
 
 **Deliverables**:
 
@@ -45,42 +45,46 @@ This plan outlines the phased implementation of the Oshikatsu platform, starting
 
 **Working product**: Extracted events can be linked to canonical venues when exact venue resolution is possible, while preserving extracted `venue_name` and `venue_url`.
 
-## Phase 3: Merge/Deduplication
+## Phase 3: Event Resolution
 
-**Goal**: Consolidate multiple extracted event candidates referring to the same real-world event into canonical normalized events.
+**Goal**: Resolve extracted event candidates into canonical normalized events. The Event Resolution Engine handles three intertwined responsibilities — identity (new vs. existing), record consolidation (merge / dedup), and hierarchy (sub-event linking) — and is delivered in two stages.
+
+### Phase 3.0: Identity & Merge
 
 **Deliverables**:
 
-- Deduplication logic that identifies duplicate or overlapping extracted events
-- Merge strategy that creates/updates canonical normalized events while preserving links to source extracted events
+- Identity resolution that decides whether each extracted event matches an existing canonical event or is new
+- Record consolidation logic that merges duplicate or overlapping extracted events into a single canonical normalized event while preserving links to source extracted events
 - Update mechanism for rescheduled/cancelled events
-- TUI for viewing merge/dedup status and source provenance
+- Resolution decision log (`event_resolution_decisions`) capturing matched signals and rationale
+- TUI for viewing resolution status and source provenance
 
-**Working product**: Duplicate extracted events from the same or different sources are automatically merged into canonical normalized events; event updates are reflected correctly.
+**Working product**: Duplicate extracted events from the same or different sources are automatically merged into canonical normalized events; event updates are reflected correctly. `event_scope` and `parent_event_hint` are carried into the resolution log as evidence but not yet acted on.
 
-## Phase 3.1: Event Hierarchy
+### Phase 3.1: Hierarchy Resolution
 
-**Goal**: Model main/sub-event relationships on top of canonical events produced by Phase 3.
+**Goal**: Extend the Event Resolution Engine to detect and persist parent/sub-event relationships.
 
-**Motivation**: Real-world activities often consist of a main event (e.g., a concert) plus related sub-activities (merch booth, pre-show talk, post-show meet & greet, livestream of the same concert). Before Phase 3, these surface as independent extracted events; after Phase 3, they may still surface as separate canonical normalized events that need hierarchy assignment.
+**Motivation**: Real-world activities often consist of a main event (e.g., a concert) plus related sub-activities (merch booth, pre-show talk, post-show meet & greet, livestream of the same concert). After Phase 3.0 these surface as independent canonical events; Phase 3.1 links them together.
 
 **Deliverables**:
 
 - Schema additions to `normalized_events`:
   - `parent_event_id` (nullable FK to `normalized_events`) — set on sub-events.
   - One-level-deep constraint: a sub-event cannot itself have sub-events.
-- Conservative rules for promoting a canonical normalized event to a sub-event of an existing canonical event (e.g., shared artist + close time + explicit reference in source text), explicitly separate from Phase 3 dedup signals.
+- Hierarchy resolution rules using source-derived `event_scope` and `parent_event_hint` plus conservative signals (shared artist, close time, venue/link overlap), explicitly separate from merge signals.
+- New `linked_as_sub` resolution decision outcome.
 - Manual override in the TUI to attach/detach a sub-event from a parent.
 - TUI Event detail view shows parent context for a sub-event and a sub-event list for a main event.
 - Query helpers so downstream consumers can fetch a main event with its sub-events in a single call.
 
-**Working product**: Related events can be grouped under a canonical main event, viewable as a parent-with-children unit in the TUI, and Phase 4 export can choose to emit the bundle or the individual records.
+**Working product**: Related events are grouped under a canonical main event, viewable as a parent-with-children unit in the TUI, and Phase 4 export can choose to emit the bundle or the individual records.
 
-**Open questions** (to resolve in a dedicated design doc before implementation):
+**Open questions** (resolved or revised in `design_docs/2026-04-25-phase3-event-resolution/event-resolution.md`):
 
-- Should hierarchy assignment run automatically as part of the dedup pass, or only via manual/TUI action initially?
+- Should hierarchy resolution run in the same pass as identity/merge, or as a follow-up sweep over recently created canonical events?
 - How should sub-events inherit (or override) the parent's venue, tags, and cancellation status?
-- Do we need `event_hierarchy_decisions` analogous to `event_merge_decisions` for auditability?
+- Resolution decisions for both merge and hierarchy share the `event_resolution_decisions` log; no separate hierarchy log is planned.
 
 ## Phase 4: Downstream Export
 
@@ -102,9 +106,9 @@ This plan outlines the phased implementation of the Oshikatsu platform, starting
 **Deliverables**:
 
 - Second source connector implementation (e.g., Instagram, YouTube)
-- Cross-source deduplication validation
+- Cross-source resolution validation (identity matching, merge correctness, sub-event linking)
 
-**Working product**: Events from two sources are ingested, normalized, merged, and exported correctly.
+**Working product**: Events from two sources are ingested, resolved (deduplicated and hierarchically linked), and exported correctly.
 
 ## Phase 6: Platform Expansion
 

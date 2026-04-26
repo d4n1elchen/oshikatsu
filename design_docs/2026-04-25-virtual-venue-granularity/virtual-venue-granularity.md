@@ -14,7 +14,7 @@ Effects:
 
 - The single "YouTube" row accumulates cross-artist, cross-genre events as if they shared a venue identity.
 - The Events TUI badges every livestream as `Venue: YouTube → YouTube [virtual, discovered]`, which is true but uninformative.
-- During Phase 3 dedup, candidate selection by `venue_id` pulls every concurrent YouTube event as a candidate to score, even though the dedup engine then has to discount the signal as weak/risky.
+- During Phase 3 event resolution, candidate selection by `venue_id` pulls every concurrent YouTube event as a candidate to score, even though the resolution engine then has to discount the signal as weak/risky.
 - The conceptual model breaks parity with physical venues: "Tokyo Dome" identifies a specific place, but "YouTube" identifies only the platform — analogous to setting every concert's venue to "concert hall."
 
 ## Goals

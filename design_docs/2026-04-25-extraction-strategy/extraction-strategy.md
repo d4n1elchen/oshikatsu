@@ -32,8 +32,8 @@ If this logic lives directly in the engine, the engine becomes a collection of s
 
 ## Non-Goals
 
-- This layer does not implement merge/deduplication.
-- This layer does not decide whether two events are the same.
+- This layer does not implement event resolution (identity, merge, or hierarchy).
+- This layer does not decide whether two events are the same; that is the Event Resolution Engine's job.
 - This layer does not replace the LLM extraction step.
 - This layer does not provide source connectors; connectors still only fetch raw data.
 - This layer does not encode fan-domain-specific rules such as particular artists, groups, venues, or campaigns.
