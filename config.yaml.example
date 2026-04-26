@@ -17,3 +17,12 @@ twitter:
 paths:
   browserData: "./browser_data"
   database: "./data/oshikatsu.db"
+
+# Event resolution thresholds (Phase 3). Tune these to be more or less
+# aggressive about auto-merging duplicate events. Lower thresholds merge more;
+# higher thresholds defer more to the review queue.
+resolution:
+  titleSimilarityThreshold: 0.6   # min title similarity for venue+time merges
+  autoMergeScoreThreshold: 0.7    # aggregate score required to auto-merge
+  needsReviewScoreThreshold: 0.25 # below auto-merge but above this → review queue
+  candidateWindowHours: 48        # ± window for considering events the same

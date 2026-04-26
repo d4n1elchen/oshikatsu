@@ -20,6 +20,12 @@ export interface OshikatsuConfig {
     browserData: string;
     database: string;
   };
+  resolution: {
+    titleSimilarityThreshold: number;
+    autoMergeScoreThreshold: number;
+    needsReviewScoreThreshold: number;
+    candidateWindowHours: number;
+  };
 }
 
 const DEFAULT_CONFIG: OshikatsuConfig = {
@@ -39,6 +45,12 @@ const DEFAULT_CONFIG: OshikatsuConfig = {
   paths: {
     browserData: "./browser_data",
     database: "./data/oshikatsu.db",
+  },
+  resolution: {
+    titleSimilarityThreshold: 0.6,
+    autoMergeScoreThreshold: 0.7,
+    needsReviewScoreThreshold: 0.25,
+    candidateWindowHours: 48,
   },
 };
 
@@ -81,6 +93,7 @@ export function getConfig(): OshikatsuConfig {
     llm: { ...DEFAULT_CONFIG.llm, ...userConfig.llm },
     twitter: { ...DEFAULT_CONFIG.twitter, ...userConfig.twitter },
     paths: { ...DEFAULT_CONFIG.paths, ...userConfig.paths },
+    resolution: { ...DEFAULT_CONFIG.resolution, ...(userConfig as any).resolution },
   };
 
   // Resolve relative paths based on CWD

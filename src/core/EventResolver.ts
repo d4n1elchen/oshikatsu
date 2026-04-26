@@ -8,10 +8,26 @@ import {
   normalizedEvents,
   normalizedEventSources,
 } from "../db/schema";
-import { titleSimilarity, TITLE_SIMILARITY_AUTO_MERGE_THRESHOLD } from "./titleSimilarity";
+import { titleSimilarity } from "./titleSimilarity";
 import type { ResolutionSignals, ResolutionDecisionType } from "./types";
+import { getConfig } from "../config";
 
-const CANDIDATE_WINDOW_MS = 48 * 60 * 60 * 1000; // 48 hours
+export type EventResolverThresholds = {
+  titleSimilarityThreshold: number;
+  autoMergeScoreThreshold: number;
+  needsReviewScoreThreshold: number;
+  candidateWindowMs: number;
+};
+
+function defaultThresholds(): EventResolverThresholds {
+  const cfg = getConfig().resolution;
+  return {
+    titleSimilarityThreshold: cfg.titleSimilarityThreshold,
+    autoMergeScoreThreshold: cfg.autoMergeScoreThreshold,
+    needsReviewScoreThreshold: cfg.needsReviewScoreThreshold,
+    candidateWindowMs: cfg.candidateWindowHours * 60 * 60 * 1000,
+  };
+}
 
 type ExtractedEventRow = typeof extractedEvents.$inferSelect;
 type NormalizedEventRow = typeof normalizedEvents.$inferSelect;
@@ -28,9 +44,11 @@ type ResolutionResult = {
 
 export class EventResolver {
   private db: DbInstance;
+  private thresholds: EventResolverThresholds;
 
-  constructor(db: DbInstance = defaultDb) {
+  constructor(db: DbInstance = defaultDb, thresholds?: Partial<EventResolverThresholds>) {
     this.db = db;
+    this.thresholds = { ...defaultThresholds(), ...thresholds };
   }
   /**
    * Resolve a single extracted event: match against existing normalized events,
@@ -77,6 +95,64 @@ export class EventResolver {
     }
 
     await this.applyDecision(candidate, candidateLinks, result);
+  }
+
+  /**
+   * Manually clear all decisions for an extracted event so resolve() can
+   * be re-run from a clean slate. Used by the review queue for "redo".
+   */
+  async resetDecision(extractedEventId: string): Promise<void> {
+    await this.db
+      .delete(eventResolutionDecisions)
+      .where(eq(eventResolutionDecisions.candidateExtractedEventId, extractedEventId));
+  }
+
+  /**
+   * Manually accept a needs_review item as a merge into the matched
+   * normalized event. Replaces any prior decision for this extracted event.
+   */
+  async acceptAsMerge(extractedEventId: string, normalizedEventId: string): Promise<void> {
+    const [candidate] = await this.db
+      .select()
+      .from(extractedEvents)
+      .where(eq(extractedEvents.id, extractedEventId))
+      .limit(1);
+    if (!candidate) throw new Error(`Extracted event ${extractedEventId} not found`);
+
+    const candidateLinks = await this.getRelatedLinks(extractedEventId);
+    await this.resetDecision(extractedEventId);
+
+    await this.applyDecision(candidate, candidateLinks, {
+      decision: "merged",
+      normalizedEventId,
+      score: 1,
+      signals: { manual_override: true },
+      reason: "Manually accepted as merge from review queue.",
+    });
+  }
+
+  /**
+   * Manually mark a needs_review item as a new canonical event. Replaces
+   * any prior decision for this extracted event.
+   */
+  async acceptAsNew(extractedEventId: string): Promise<void> {
+    const [candidate] = await this.db
+      .select()
+      .from(extractedEvents)
+      .where(eq(extractedEvents.id, extractedEventId))
+      .limit(1);
+    if (!candidate) throw new Error(`Extracted event ${extractedEventId} not found`);
+
+    const candidateLinks = await this.getRelatedLinks(extractedEventId);
+    await this.resetDecision(extractedEventId);
+
+    await this.applyDecision(candidate, candidateLinks, {
+      decision: "new",
+      normalizedEventId: null,
+      score: 1,
+      signals: { manual_override: true },
+      reason: "Manually accepted as new canonical event from review queue.",
+    });
   }
 
   /**
@@ -138,7 +214,7 @@ export class EventResolver {
       // Hint match: parent_event_hint vs main.title
       if (candidate.parentEventHint) {
         const hintSim = titleSimilarity(candidate.parentEventHint, main.title);
-        if (hintSim >= TITLE_SIMILARITY_AUTO_MERGE_THRESHOLD) {
+        if (hintSim >= this.thresholds.titleSimilarityThreshold) {
           score += 0.6;
           hintMatched = true;
           reasons.push(`hint matches main title (sim=${hintSim.toFixed(2)})`);
@@ -154,7 +230,7 @@ export class EventResolver {
       // Time alignment: candidate start within main event window (±48h)
       if (candidate.startTime && main.startTime) {
         const diffMs = Math.abs(candidate.startTime.getTime() - main.startTime.getTime());
-        if (diffMs <= CANDIDATE_WINDOW_MS) {
+        if (diffMs <= this.thresholds.candidateWindowMs) {
           score += 0.2;
           reasons.push("start_time within main event window");
         }
@@ -204,7 +280,7 @@ export class EventResolver {
       };
     }
 
-    if (best.score >= 0.7) {
+    if (best.score >= this.thresholds.autoMergeScoreThreshold) {
       return {
         decision: "linked_as_sub",
         normalizedEventId: best.main.id,
@@ -280,8 +356,8 @@ export class EventResolver {
     if (candidate.artistId) {
       // Time window filter (events within ±48 hours of candidate start_time)
       if (candidate.startTime) {
-        const windowStart = new Date(candidate.startTime.getTime() - CANDIDATE_WINDOW_MS);
-        const windowEnd = new Date(candidate.startTime.getTime() + CANDIDATE_WINDOW_MS);
+        const windowStart = new Date(candidate.startTime.getTime() - this.thresholds.candidateWindowMs);
+        const windowEnd = new Date(candidate.startTime.getTime() + this.thresholds.candidateWindowMs);
         conditions.push(
           and(
             eq(normalizedEvents.artistId, candidate.artistId),
@@ -410,10 +486,10 @@ export class EventResolver {
 
       if (overlap) {
         signals.related_link_overlap = true;
-        const timeWindowLabel = timeWindowSignal(candidate.startTime, norm.startTime);
+        const timeWindowLabel = timeWindowSignal(candidate.startTime, norm.startTime, this.thresholds.candidateWindowMs);
         signals.time_window = timeWindowLabel;
 
-        if (timeWindowLabel === "within_48h" || timeWindowLabel === "same_event_no_time") {
+        if (timeWindowLabel === "within_window" || timeWindowLabel === "same_event_no_time") {
           score += 0.8;
           reasons.push("shared related link + close time");
         } else {
@@ -433,19 +509,19 @@ export class EventResolver {
       candidate.venueId === norm.venueId
     ) {
       signals.venue_id_match = true;
-      const timeWindowLabel = timeWindowSignal(candidate.startTime, norm.startTime);
+      const timeWindowLabel = timeWindowSignal(candidate.startTime, norm.startTime, this.thresholds.candidateWindowMs);
       signals.time_window = signals.time_window ?? timeWindowLabel;
 
       const titSim = titleSimilarity(candidate.title, norm.title);
       signals.title_similarity = titSim;
 
       if (
-        (timeWindowLabel === "within_48h" || timeWindowLabel === "same_event_no_time") &&
-        titSim >= TITLE_SIMILARITY_AUTO_MERGE_THRESHOLD
+        (timeWindowLabel === "within_window" || timeWindowLabel === "same_event_no_time") &&
+        titSim >= this.thresholds.titleSimilarityThreshold
       ) {
         score += 0.75;
         reasons.push(`same venue + close time + title similarity ${titSim.toFixed(2)}`);
-      } else if (timeWindowLabel === "within_48h") {
+      } else if (timeWindowLabel === "within_window") {
         // Same venue + close time but title doesn't match
         score += 0.2;
         reasons.push("same venue + close time but title mismatch");
@@ -462,17 +538,17 @@ export class EventResolver {
 
     // --- Moderate: time window ---
     if (!signals.time_window) {
-      signals.time_window = timeWindowSignal(candidate.startTime, norm.startTime);
+      signals.time_window = timeWindowSignal(candidate.startTime, norm.startTime, this.thresholds.candidateWindowMs);
     }
 
     // Determine final decision based on score
     let decision: ResolutionDecisionType;
     let reason: string;
 
-    if (score >= 0.7) {
+    if (score >= this.thresholds.autoMergeScoreThreshold) {
       decision = "merged";
       reason = `Auto-merge: ${reasons.join("; ")}.`;
-    } else if (score >= 0.25) {
+    } else if (score >= this.thresholds.needsReviewScoreThreshold) {
       decision = "needs_review";
       reason = `Ambiguous signals (score ${score.toFixed(2)}): ${reasons.join("; ")}.`;
     } else {
@@ -660,11 +736,12 @@ export class EventResolver {
 
 function timeWindowSignal(
   candidateTime: Date | null | undefined,
-  normTime: Date | null | undefined
+  normTime: Date | null | undefined,
+  windowMs: number
 ): string {
   if (!candidateTime || !normTime) return "same_event_no_time";
   const diffMs = Math.abs(candidateTime.getTime() - normTime.getTime());
-  if (diffMs <= CANDIDATE_WINDOW_MS) return "within_48h";
+  if (diffMs <= windowMs) return "within_window";
   if (diffMs <= 7 * 24 * 60 * 60 * 1000) return "within_7d";
   return "beyond_7d";
 }

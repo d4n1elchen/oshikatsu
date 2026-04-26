@@ -43,4 +43,5 @@ export type ResolutionSignals = {
   parent_event_hint_matched?: boolean;
   same_source_url?: boolean;
   same_source_id?: boolean;
+  manual_override?: boolean;
 };
