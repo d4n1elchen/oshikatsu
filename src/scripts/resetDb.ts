@@ -69,7 +69,7 @@ function parseArgs(argv: string[]): ResetArgs {
 }
 
 function printUsage(): void {
-  console.log(`Usage: tsx src/scripts/reset_db.ts <mode> [--dry-run]
+  console.log(`Usage: tsx src/scripts/resetDb.ts <mode> [--dry-run]
 
 Modes (pick exactly one):
   --extracted_events     Delete all extracted events (cascades to resolution layer); reset linked raw items to status='new'.

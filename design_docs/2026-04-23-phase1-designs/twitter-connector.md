@@ -36,7 +36,7 @@ twitter:
 
 ### What changed from earlier drafts
 
-- **No `account` block.** Authentication is held entirely by the persistent browser profile in `userDataDir`. A one-time login is performed via `npm run login:twitter` (`src/scripts/twitter_login.ts`), which launches a headful Chromium against `https://x.com/login`, waits up to 3 minutes for manual login + 2FA, and persists cookies into `browserData`. The runtime connector reuses that profile and never re-enters credentials, so a separate `account.username` config field is unnecessary.
+- **No `account` block.** Authentication is held entirely by the persistent browser profile in `userDataDir`. A one-time login is performed via `npm run login:twitter` (`src/scripts/twitterLogin.ts`), which launches a headful Chromium against `https://x.com/login`, waits up to 3 minutes for manual login + 2FA, and persists cookies into `browserData`. The runtime connector reuses that profile and never re-enters credentials, so a separate `account.username` config field is unnecessary.
 - **`headless` defaults to `true`.** The original anti-detection rationale recommended headful, but a logged-in persistent context is the dominant signal — modern Playwright headless plus `--disable-blink-features=AutomationControlled` has been good enough in practice. Keep `headless: false` during development if you need to watch the page, or if anti-bot pressure increases.
 - **Burner account discipline still applies.** Use a dedicated X account in `browserData`, not your main account. This is a runbook concern rather than a config field.
 
