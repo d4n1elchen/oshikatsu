@@ -257,6 +257,10 @@ Implemented base Phase 2.1 support:
 - ignored venue names are not reused or rediscovered
 - Events TUI visibility for matched canonical venue
 
+Refinements layered on top of the base design:
+
+- `design_docs/2026-04-25-virtual-venue-granularity/virtual-venue-granularity.md` — virtual venues require a URL to be auto-discovered (channel-URL granularity), so platform-only names like "YouTube" no longer create a single conflated venue.
+
 Deferred:
 
 - Venue review / CRUD workflow

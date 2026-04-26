@@ -118,11 +118,21 @@ export class VenueResolver {
       return null;
     }
 
+    const inferredKind = inferVenueKind(input.normalizedVenueName, input.venueUrl);
+
+    // Virtual venues require a URL to be auto-discovered. A bare platform
+    // name like "YouTube" identifies only the platform, not a specific
+    // destination — auto-creating one venue per platform name would conflate
+    // unrelated events that just happen to share a platform.
+    if (inferredKind === "virtual" && !input.venueUrl) {
+      return null;
+    }
+
     const now = new Date();
     const newVenue: Venue = {
       id: randomUUID(),
       name: displayName,
-      kind: inferVenueKind(input.normalizedVenueName, input.venueUrl),
+      kind: inferredKind,
       status: "discovered",
       url: input.venueUrl || null,
       address: null,

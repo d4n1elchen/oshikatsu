@@ -90,6 +90,27 @@ Open questions:
 - Should venue URL matching include related links or only `venue_url`?
 - Which generic venue names should become `ignored`?
 
+### Stream URLs accepted as virtual venue identity
+
+Per `design_docs/2026-04-25-virtual-venue-granularity/virtual-venue-granularity.md`, when the LLM surfaces a stream URL (e.g., `https://youtube.com/watch?v=...`) but no channel URL, the resolver accepts the stream URL as `venue_url`. Over time this creates per-stream venue rows that conceptually belong under a single channel-level venue.
+
+Follow-up:
+
+- Add a curated merge action in a future venue review workflow.
+- Or add an LLM-assisted post-pass to extract a channel URL from a stream URL and re-point references.
+
+### No URL canonicalization across YouTube URL forms
+
+The resolver matches venue URLs by exact string. The same channel referenced via different URL forms — `youtu.be/x`, `youtube.com/watch?v=x`, `youtube.com/@channel`, `youtube.com/channel/UCxxxx` — creates separate venue rows.
+
+Follow-up:
+
+- Add a small canonicalizer for known platforms (YouTube, Twitch, NicoNico) that maps recognized URL forms to a canonical channel/profile URL before lookup and storage.
+
+### Resolver tests for virtual-venue rules are pending a test framework
+
+The virtual-venue-granularity design lists six focused resolver tests (null on virtual-without-URL, distinct venues for distinct channel URLs, alias addition on subsequent matches, regression guard for physical auto-discovery). These cannot land until the project has a test runner — currently `npm test` only typechecks. Tracked here so the tests aren't lost when test infrastructure is set up (see "Test coverage is still too thin" under Phase 2 Normalization).
+
 ## Phase 3 Merge / Deduplication
 
 ### Event identity rules are designed but not implemented

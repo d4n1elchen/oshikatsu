@@ -81,7 +81,16 @@ Extraction rules:
 - related_links must contain only event-relevant candidate URLs and optional human-readable titles.
 - type must be one of: ${EVENT_TYPES.join(", ")}.
 - tags should be short labels such as artist names, group names, platforms, product names, or campaign names.
-- Use "announcement" when the post is informational but does not fit a more specific type.`;
+- Use "announcement" when the post is informational but does not fit a more specific type.
+
+Venue rules:
+- venue_name and venue_url describe where the event takes place.
+- For physical venues, venue_name is the venue's actual name (e.g., "Tokyo Dome", "Yokohama Arena") and venue_url is the venue's official URL when available.
+- For virtual platforms (YouTube, Twitch, NicoNico, Streaming+, Z-aN, etc.):
+  - Prefer the channel or profile URL as venue_url (e.g., https://youtube.com/@channel_name).
+  - Put the specific stream URL (e.g., https://youtube.com/watch?v=...) into related_links instead.
+  - If only a stream URL is available and no channel URL can be inferred, you may use the stream URL as venue_url.
+  - Never set venue_name to a bare platform name like "YouTube" without an accompanying venue_url. If no URL is available, leave both venue_name and venue_url unset.`;
   }
 
   sanitize(_rawItem: any, context: SourceContext, extracted: ExtractedEvent): ExtractedEvent {
