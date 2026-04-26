@@ -44,7 +44,7 @@ export default function ReviewQueue() {
   const [loading, setLoading] = useState(true);
   const [showRaw, setShowRaw] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const resolver = React.useMemo(() => new EventResolver(), []);
+  const resolver = React.useMemo(() => new EventResolver(undefined, { quiet: true }), []);
 
   const loadData = useCallback(async () => {
     setLoading(true);

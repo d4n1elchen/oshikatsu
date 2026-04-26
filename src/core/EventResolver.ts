@@ -42,13 +42,25 @@ type ResolutionResult = {
   score: number;
 };
 
+export type EventResolverOptions = {
+  thresholds?: Partial<EventResolverThresholds>;
+  quiet?: boolean;
+};
+
 export class EventResolver {
   private db: DbInstance;
   private thresholds: EventResolverThresholds;
+  private log: (msg: string) => void;
+  private warn: (msg: string) => void;
+  private error: (msg: string, err?: unknown) => void;
 
-  constructor(db: DbInstance = defaultDb, thresholds?: Partial<EventResolverThresholds>) {
+  constructor(db: DbInstance = defaultDb, options: EventResolverOptions = {}) {
     this.db = db;
-    this.thresholds = { ...defaultThresholds(), ...thresholds };
+    this.thresholds = { ...defaultThresholds(), ...options.thresholds };
+    const quiet = options.quiet ?? false;
+    this.log = quiet ? () => {} : (msg) => console.log(msg);
+    this.warn = quiet ? () => {} : (msg) => console.warn(msg);
+    this.error = quiet ? () => {} : (msg, err) => console.error(msg, err);
   }
   /**
    * Resolve a single extracted event: match against existing normalized events,
@@ -62,7 +74,7 @@ export class EventResolver {
       .limit(1);
 
     if (!candidate) {
-      console.warn(`[EventResolver] Extracted event ${extractedEventId} not found`);
+      this.warn(`[EventResolver] Extracted event ${extractedEventId} not found`);
       return;
     }
 
@@ -74,7 +86,7 @@ export class EventResolver {
       .limit(1);
 
     if (existing.length > 0) {
-      console.log(`[EventResolver] Event ${extractedEventId} already resolved; skipping.`);
+      this.log(`[EventResolver] Event ${extractedEventId} already resolved; skipping.`);
       return;
     }
 
@@ -323,13 +335,13 @@ export class EventResolver {
         await this.resolve(row.id);
         resolved++;
       } catch (e) {
-        console.error(`[EventResolver] Failed to resolve event ${row.id}:`, e);
+        this.error(`[EventResolver] Failed to resolve event ${row.id}:`, e);
         failed++;
       }
     }
 
     if (resolved > 0 || failed > 0) {
-      console.log(`[EventResolver] Resolved ${resolved} events, ${failed} failed.`);
+      this.log(`[EventResolver] Resolved ${resolved} events, ${failed} failed.`);
     }
 
     return { resolved, failed };
@@ -610,7 +622,7 @@ export class EventResolver {
         }).run();
       });
 
-      console.log(`[EventResolver] Created new normalized event ${newNormId} for extracted ${candidate.id}`);
+      this.log(`[EventResolver] Created new normalized event ${newNormId} for extracted ${candidate.id}`);
 
     } else if (decision === "linked_as_sub" && normalizedEventId) {
       // Phase 3.1: create a new normalized event as a sub-event of the matched main event.
@@ -656,7 +668,7 @@ export class EventResolver {
         }).run();
       });
 
-      console.log(`[EventResolver] Linked extracted ${candidate.id} as sub-event ${subId} of ${normalizedEventId}`);
+      this.log(`[EventResolver] Linked extracted ${candidate.id} as sub-event ${subId} of ${normalizedEventId}`);
 
     } else if (decision === "merged" && normalizedEventId) {
       // Merge into existing normalized event
@@ -714,7 +726,7 @@ export class EventResolver {
         }
       }
 
-      console.log(`[EventResolver] Merged extracted ${candidate.id} into normalized ${normalizedEventId}`);
+      this.log(`[EventResolver] Merged extracted ${candidate.id} into normalized ${normalizedEventId}`);
 
     } else if (decision === "needs_review") {
       // Record for human review but do not create or merge
@@ -729,7 +741,7 @@ export class EventResolver {
         createdAt: new Date(),
       }).run();
 
-      console.log(`[EventResolver] Flagged extracted ${candidate.id} for review (score ${score.toFixed(2)})`);
+      this.log(`[EventResolver] Flagged extracted ${candidate.id} for review (score ${score.toFixed(2)})`);
     }
   }
 }
