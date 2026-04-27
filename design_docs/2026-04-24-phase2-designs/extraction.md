@@ -1,5 +1,8 @@
 # Event Extraction Engine Design (Phase 2)
 
+> **Status:** Landed.
+> **Follow-ups:** Extraction/connector test coverage, LLM retry/repair loop, and reprocess command tracked in `TECH_DEBTS.md`.
+
 ## Overview
 
 The Phase 2 engine is responsible for transforming unstructured or platform-specific data (`RawItem`) into a unified, predictable extracted event candidate (`ExtractedEvent`). One raw item maps to at most one extracted event. This decoupling ensures later pipeline stages never need to understand the nuances of Twitter's GraphQL or Instagram's API.

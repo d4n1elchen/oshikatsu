@@ -1,5 +1,8 @@
 # Implementation Plan: Oshikatsu
 
+> **Status:** Active roadmap. Phases 1, 2, 2.1, and 3 (resolution + hierarchy) have landed.
+> **Follow-ups:** Future phases scoped inline as they're approached. Open work tracked in `TECH_DEBTS.md`.
+
 ## Overview
 
 This plan outlines the phased implementation of the Oshikatsu platform, starting from a single working source (Twitter/X) and incrementally adding features. Each phase delivers a working, testable product.

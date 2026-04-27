@@ -1,5 +1,8 @@
 # Watch List Manager Design
 
+> **Status:** Landed.
+> **Follow-ups:** —
+
 ## Overview
 
 The Watch List Manager is a core component (see [ARCHITECTURE.md](../../ARCHITECTURE.md), Component #2) that provides the logic layer for managing artists and their monitored sources. It reads from and writes to the Watch List storage (same database as [raw storage](./raw-storage.md)).

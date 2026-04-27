@@ -1,5 +1,8 @@
 # Phase 3 Event Resolution Design
 
+> **Status:** Landed (3.0 identity/merge + 3.1 hierarchy). Configurable thresholds + Review Queue TUI tab shipped with it.
+> **Follow-ups:** Deterministic-only title similarity and event-alias matching for parent hints tracked in `TECH_DEBTS.md`.
+
 ## Overview
 
 Phase 3 introduces the **Event Resolution Engine**: the component that takes source-derived extracted event candidates and resolves them into canonical normalized events. "Resolution" is broader than deduplication — the engine has three intertwined responsibilities:
@@ -443,6 +446,3 @@ Phase 3.1:
 - Should cancellation/reschedule handling be part of first Phase 3.0 implementation or a follow-up?
 - Should hierarchy resolution run in the same pass as identity/merge, or as a follow-up sweep over recently created canonical events?
 
-## Current Status
-
-Not implemented yet. This document defines the Phase 3 target design. The component name "Event Resolution Engine" replaces the earlier "Merge/Deduplication Layer" terminology to reflect that the component handles identity, consolidation, and hierarchy together.

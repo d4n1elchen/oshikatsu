@@ -1,5 +1,8 @@
 # Raw Storage Design
 
+> **Status:** Landed.
+> **Follow-ups:** Optional `(source_name, status)` and `fetched_at` indexes deferred until needed; per-target failure escalation tracked in `TECH_DEBTS.md`.
+
 ## Overview
 
 The raw storage layer persists raw items fetched from sources before event extraction. It is source-agnostic — it stores whatever the source returns without interpretation.

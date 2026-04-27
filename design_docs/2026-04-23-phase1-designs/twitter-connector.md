@@ -1,5 +1,8 @@
 # Twitter/X Source Connector Design
 
+> **Status:** Landed; refined by `2026-04-26-login-wall-detection` for typed failure modes.
+> **Follow-ups:** GraphQL shape fragility and anti-bot marker drift tracked in `TECH_DEBTS.md`.
+
 ## Overview
 
 The Twitter/X source connector fetches new tweets from configured sources using a headful browser (Playwright via CDP). The connector returns raw tweet data for the ingestion pipeline to store via the [raw storage](./raw-storage.md).

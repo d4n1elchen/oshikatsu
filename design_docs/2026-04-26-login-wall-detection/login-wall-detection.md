@@ -1,5 +1,8 @@
 # Login-Wall and Anti-Bot Detection
 
+> **Status:** Landed. 8 tests in `src/connectors/twitter/__tests__/TwitterConnector.test.ts` cover all three detection signals + regression guards.
+> **Follow-ups:** Anti-bot marker list will drift with platform updates — periodic refresh tracked in `TECH_DEBTS.md`.
+
 ## Overview
 
 This document specifies how the Twitter/X connector detects subtle failure modes — login walls, anti-bot interstitials, and unexpectedly empty timelines caused by GraphQL shape changes — and surfaces them as typed, distinguishable errors instead of clean zero-item fetches.

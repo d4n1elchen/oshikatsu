@@ -1,5 +1,8 @@
 # Extraction Strategy Design
 
+> **Status:** Landed; strategy layer is intentionally minimal.
+> **Follow-ups:** Expand source-specific rules when the review queue or resolution decisions reveal a gap; tracked in `TECH_DEBTS.md`.
+
 ## Overview
 
 The extraction strategy layer keeps the Phase 2 extraction engine source-agnostic by moving source-specific extraction, prompt construction, provenance mapping, and sanitization into strategy classes.

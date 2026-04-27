@@ -1,5 +1,8 @@
 # Virtual Venue Granularity
 
+> **Status:** Landed. Resolver tests for the six rule cases ship with `VenueResolver.test.ts`.
+> **Follow-ups:** Stream-URL → channel-URL merge policy tracked in `TECH_DEBTS.md`.
+
 ## Overview
 
 This document refines the Phase 2.1 venue resolver behavior for virtual venues. It treats each distinct virtual destination (e.g., a YouTube channel) as its own venue record, mirroring how physical venues are modelled, instead of collapsing every YouTube/Twitch/etc. event into a single platform-level row.

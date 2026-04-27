@@ -1,5 +1,8 @@
 # Scheduler Design
 
+> **Status:** Landed; later generalized into a multi-task `Scheduler` that runs ingest, extract, and resolve as independent self-paced loops (see `src/core/Scheduler.ts`).
+> **Follow-ups:** Connector registry, per-cycle metrics, abort-signal interrupt, inter-target pacing, browser-context reuse — all in `TECH_DEBTS.md`.
+
 ## Overview
 
 The scheduler runs the ingestion pipeline periodically, orchestrating the fetch cycle by querying the [Watch List Manager](./watchlist.md) for active sources and dispatching them to the appropriate [source connectors](./twitter-connector.md). Fetched items are persisted via [raw storage](./raw-storage.md).

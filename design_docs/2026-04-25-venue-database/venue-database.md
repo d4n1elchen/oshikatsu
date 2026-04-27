@@ -1,5 +1,8 @@
 # Phase 2.1 Venue Database Design
 
+> **Status:** Landed; refined by `2026-04-25-virtual-venue-granularity`. URL canonicalization for YouTube/Twitch/NicoNico added separately (see `src/core/canonicalizeUrl.ts`).
+> **Follow-ups:** Curation workflow, generic-name ignore rules, stream-URL handling tracked in `TECH_DEBTS.md`.
+
 ## Overview
 
 The Venue Database is a Phase 2.1 reference layer for physical and virtual event locations. It should be implemented after Phase 2 extraction and before Phase 3 event resolution.
