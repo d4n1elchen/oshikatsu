@@ -32,6 +32,20 @@ With Phase 5 (Downstream Export) about to consume normalized events for calendar
 - No real-time streaming. The TUI polls; structured log lines remain the streaming channel.
 - No automatic pruning policy. A manual `reset:runs` script is provided.
 
+## Failure Signal Inventory
+
+Different pipeline stages persist failure information differently. Phase 4 unifies their presentation in the Monitor view but does not normalize storage — each stage already has the right place for its data:
+
+| Stage              | Per-item failure persistence                         | Per-cycle failure persistence    |
+| ------------------ | ---------------------------------------------------- | -------------------------------- |
+| Ingestion (fetch)  | None — per-target outcomes captured in run details   | `scheduler_runs.details`         |
+| Extraction         | `raw_items.status='error'` + `error_message`         | `scheduler_runs.details`         |
+| Resolution         | None — failed events retry next cycle                | `scheduler_runs.details`         |
+
+Extraction is the only stage with **persistent per-item failures**. They survive across daemon restarts until the operator either retries (manual `markNew`) or fixes the upstream issue. The Monitor view treats this as a first-class signal, not just an aggregate count.
+
+To make per-item extraction failures groupable, this phase also adds an `error_class` column to `raw_items` — symmetrical with `scheduler_runs.error_class` and far more useful than free-text error messages alone (e.g., "12 ZodError, 3 LLMTimeoutError" beats "15 errors with various messages").
+
 ## Data Model
 
 ### `scheduler_runs`
@@ -51,6 +65,16 @@ Indexes:
 
 - `(task_name, started_at desc)` — for "recent runs of task X" rendering.
 - `(status, started_at desc)` — for "recent failures across all tasks".
+
+### `raw_items.error_class` (new column)
+
+Add a nullable `error_class` column to the existing `raw_items` table. Populated by `ExtractionEngine.processItem` when it catches an error, using `error.name`. Existing `error_message` keeps its free-text role.
+
+| Field              | Type            | Description |
+| ------------------ | --------------- | ----------- |
+| `error_class`      | text nullable   | `error.name` of the exception (e.g., `ZodError`, `LLMTimeoutError`, `Error`). Set alongside `status='error'`. |
+
+`RawStorage.markError(itemId, errorMessage)` becomes `markError(itemId, errorMessage, errorClass?)`. The optional shape keeps existing callers working, but the extractor will pass `error.name` going forward.
 
 ### `ScheduledTask.run` signature
 
@@ -105,7 +129,7 @@ A small repo class (`SchedulerRunsRepo`) wraps the insert/update SQL so the sche
 
 ## TUI: `[6] Monitor`
 
-Two panels stacked vertically:
+Three panels stacked vertically:
 
 **Top panel** — one card per task:
 
@@ -116,6 +140,19 @@ Two panels stacked vertically:
 ```
 
 Card color: green (last run completed), yellow (last run aborted, or any failure in last hour), red (last run failed).
+
+**Middle panel** — per-item extraction failure summary, queried from `raw_items`:
+
+```
+  Extraction failures (raw_items where status='error')
+  Total errored items:  15
+  Grouped by error_class:
+    ZodError              12   (oldest 3h ago, newest 4m ago)
+    LLMTimeoutError        2   (oldest 1h ago, newest 1h ago)
+    Error                  1   (oldest 6h ago, newest 6h ago)
+```
+
+This panel is empty (collapsed to a single "no errored items" line) when the queue is clean. Selecting a row could deep-link into the existing `[2] Raw Items` view filtered by that error class — defer the deep-link if it expands scope.
 
 **Bottom panel** — recent runs table (last 50):
 
@@ -160,7 +197,7 @@ For now, ship a `reset:runs` script that deletes runs older than a configurable 
 
 2. **Should `error_message` be redacted?** Twitter URLs in raw item rendering are already shown in plaintext in the TUI; storing them in `error_message` doesn't escalate exposure. No redaction in Phase 4. Phase 7 alert dispatch may need it.
 
-3. **Should the Monitor view be the new home for ingestion errors?** Currently the `[2] Raw Items` view shows `status='error'` raw items via `getQueueAndErrors`. That's row-level extraction errors, not scheduler-level run errors — they belong in different views. Keep both.
+3. **Two views show the same errored items — is that confusing?** The `[2] Raw Items` view lists individual errored rows for retry; the new `[6] Monitor` aggregates them by class for health awareness. They serve different purposes (per-row triage vs. aggregate signal) and live at different abstraction levels, so two views is the right answer. The Monitor view's middle panel could deep-link into Raw Items filtered by class as a follow-up.
 
 ## Testing
 
@@ -169,9 +206,10 @@ For now, ship a `reset:runs` script that deletes runs older than a configurable 
 - Scheduler unit test: an aborted run writes `status='aborted'` and no `error_class`.
 - Scheduler unit test: a task returning `void` still gets a row, with `details = null`.
 - Repo test: `SchedulerRunsRepo` insert/update round-trip on an in-memory SQLite.
+- ExtractionEngine test: a thrown `ZodError` lands as `raw_items.status='error'` with `error_class='ZodError'` (extends the existing failure test).
 - TUI: deferred — render coverage is hard without snapshots; rely on visual inspection during dev.
 
-Total estimated: ~4 new tests in `Scheduler.test.ts` + ~3 in a new `SchedulerRunsRepo.test.ts`.
+Total estimated: ~4 new tests in `Scheduler.test.ts` + ~3 in a new `SchedulerRunsRepo.test.ts` + ~1 added to `ExtractionEngine.test.ts`.
 
 ## Tech Debts to Record (post-implementation)
 
@@ -181,6 +219,7 @@ After landing this phase, update `TECH_DEBTS.md`:
 - Refine "No error classification on persistent storage failures" to reference the now-existing `scheduler_runs` consumer instead of "the future Monitoring component."
 - Add (small): "Monitor TUI view computes per-target last-success client-side; promote to a denormalized view if it gets slow or Phase 7 alerting needs server-side aggregation."
 - Add (small): "Automatic pruning of `scheduler_runs` is deferred; manual via `reset:runs --older-than=N`."
+- Add (small): "Resolution per-event failures are not persisted (failed events stay un-resolved and retry next cycle). If recurring resolver errors become a real signal — e.g. a code bug producing the same exception every cycle — promote to a similar `error_class`-tagged persistence shape. Ephemeral retry is fine for now."
 
 ## Cross-References
 
@@ -195,14 +234,16 @@ After landing this phase, update `TECH_DEBTS.md`:
 ## Implementation Plan
 
 1. Add `scheduler_runs` table to `src/db/schema.ts` and generate the migration.
-2. Add `SchedulerRunsRepo` (insert + update + `recent(taskName?, limit)` queries) under `src/core/`.
-3. Update `ScheduledTask.run` signature to allow `Promise<RunDetails | void>`.
-4. Instrument `Scheduler.tick`: insert before run, update after, distinguish `completed | aborted | failed`, capture `error.name` / `error.message`.
-5. Update daemon tasks (`runIngestionCycle`, extractor, resolver) to return their counts as `RunDetails`.
-6. Replace per-tick `log.info("Started ...")` lines with a single end-of-run summary.
-7. Add `[6] Monitor` TUI view and tab registration.
-8. Add `reset:runs` script (or extend `resetDb.ts`).
-9. Tests per the Testing section.
-10. Update `TECH_DEBTS.md` per "Tech Debts to Record."
+2. Add `error_class` nullable column to `raw_items` in the same migration.
+3. Add `SchedulerRunsRepo` (insert + update + `recent(taskName?, limit)` queries) under `src/core/`.
+4. Update `ScheduledTask.run` signature to allow `Promise<RunDetails | void>`.
+5. Instrument `Scheduler.tick`: insert before run, update after, distinguish `completed | aborted | failed`, capture `error.name` / `error.message`.
+6. Update daemon tasks (`runIngestionCycle`, extractor, resolver) to return their counts as `RunDetails`.
+7. Update `RawStorage.markError` to accept an optional `errorClass`; update `ExtractionEngine.processItem` to pass `error.name`.
+8. Replace per-tick `log.info("Started ...")` lines with a single end-of-run summary.
+9. Add `[6] Monitor` TUI view (three panels: task cards, extraction failure summary, recent runs table) and register the tab.
+10. Add `reset:runs` script (or extend `resetDb.ts`).
+11. Tests per the Testing section.
+12. Update `TECH_DEBTS.md` per "Tech Debts to Record."
 
-Estimated effort: 3–4 hours including tests.
+Estimated effort: 4–5 hours including tests.
