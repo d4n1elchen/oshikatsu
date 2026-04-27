@@ -1,9 +1,11 @@
 import { randomUUID } from "crypto";
 import { eq } from "drizzle-orm";
-import { db } from "../db";
+import { db as defaultDb } from "../db";
 import { venueAliases, venues } from "../db/schema";
 import type { NewVenueAlias, Venue } from "./types";
 import { canonicalizeUrl } from "./canonicalizeUrl";
+
+type DbInstance = typeof defaultDb;
 
 export interface VenueResolutionInput {
   venueName?: string | null;
@@ -16,6 +18,12 @@ export interface VenueResolution {
 }
 
 export class VenueResolver {
+  private db: DbInstance;
+
+  constructor(db: DbInstance = defaultDb) {
+    this.db = db;
+  }
+
   async resolve(input: VenueResolutionInput): Promise<VenueResolution | null> {
     const venueUrl = normalizeUrl(input.venueUrl);
     const venueName = normalizeVenueName(input.venueName);
@@ -50,7 +58,7 @@ export class VenueResolver {
   }
 
   private async findByUrl(url: string): Promise<Venue | null> {
-    const rows = await db.select()
+    const rows = await this.db.select()
       .from(venues)
       .where(eq(venues.url, url))
       .limit(1);
@@ -58,7 +66,7 @@ export class VenueResolver {
   }
 
   private async findByAlias(normalizedAlias: string): Promise<Venue | null> {
-    const rows = await db.select({ venue: venues, alias: venueAliases.alias })
+    const rows = await this.db.select({ venue: venues, alias: venueAliases.alias })
       .from(venueAliases)
       .innerJoin(venues, eq(venueAliases.venueId, venues.id));
 
@@ -67,19 +75,19 @@ export class VenueResolver {
   }
 
   private async findByName(normalizedName: string): Promise<Venue | null> {
-    const rows = await db.select().from(venues);
+    const rows = await this.db.select().from(venues);
     return rows.find((venue) => venue.status !== "ignored" && normalizeVenueName(venue.name) === normalizedName) || null;
   }
 
   private async hasIgnoredName(normalizedName: string): Promise<boolean> {
-    const aliasRows = await db.select({ venue: venues, alias: venueAliases.alias })
+    const aliasRows = await this.db.select({ venue: venues, alias: venueAliases.alias })
       .from(venueAliases)
       .innerJoin(venues, eq(venueAliases.venueId, venues.id));
     if (aliasRows.some((row) => row.venue.status === "ignored" && normalizeVenueName(row.alias) === normalizedName)) {
       return true;
     }
 
-    const venueRows = await db.select().from(venues);
+    const venueRows = await this.db.select().from(venues);
     return venueRows.some((venue) => venue.status === "ignored" && normalizeVenueName(venue.name) === normalizedName);
   }
 
@@ -92,14 +100,14 @@ export class VenueResolver {
     const normalizedName = normalizedVenueName || normalizeVenueName(displayName);
     if (!isUsableVenueName(displayName, normalizedName)) return;
 
-    const rows = await db.select()
+    const rows = await this.db.select()
       .from(venueAliases)
       .where(eq(venueAliases.venueId, venueId));
     if (rows.some((alias) => normalizeVenueName(alias.alias) === normalizedName)) {
       return;
     }
 
-    await db.insert(venueAliases).values({
+    await this.db.insert(venueAliases).values({
       id: randomUUID(),
       venueId,
       alias: displayName,
@@ -155,7 +163,7 @@ export class VenueResolver {
       createdAt: now,
     };
 
-    db.transaction((tx) => {
+    this.db.transaction((tx) => {
       tx.insert(venues).values(newVenue).run();
       tx.insert(venueAliases).values(alias).onConflictDoNothing().run();
     });

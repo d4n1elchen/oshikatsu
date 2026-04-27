@@ -99,10 +99,6 @@ Follow-up:
 - Add a curated merge action in a future venue review workflow.
 - Or add an LLM-assisted post-pass to extract a channel URL from a stream URL and re-point references.
 
-### Resolver tests for virtual-venue rules are still missing
-
-The virtual-venue-granularity design lists six focused resolver tests (null on virtual-without-URL, distinct venues for distinct channel URLs, alias addition on subsequent matches, regression guard for physical auto-discovery). The test runner now exists (`node:test`), so these can land at any time.
-
 ## Phase 3 Event Resolution
 
 ### Title similarity is deterministic only
