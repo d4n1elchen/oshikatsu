@@ -4,17 +4,17 @@ This document tracks known technical debts, follow-up decisions, and intentional
 
 ## Phase 2 Event Extraction
 
-### Test coverage outside event resolution is still thin
+### Test coverage gaps
 
-`npm test` now runs typecheck + a real `node:test` suite (22 tests covering `EventResolver` and `titleSimilarity`). The extraction and connector layers still have no tests.
+The full test suite covers 94 cases across `EventResolver`, `titleSimilarity`, `canonicalizeUrl`, `VenueResolver`, `TwitterConnector`, `ExtractionStrategy`, and `ExtractionEngine`. Areas without coverage:
 
-Needed tests:
+- LLM provider implementations (`OllamaProvider`) — currently only exercised through the fake in `ExtractionEngine.test.ts`.
+- TUI views (`RawItems`, `ExtractedEvents`, `NormalizedEvents`, `ReviewQueue`, `WatchList`).
+- Daemon wiring.
 
-- Twitter strategy context extraction from fixture raw items
-- Related link extraction and persistence
-- LLM failure marks raw items as `error`
-- Idempotency when a raw item already has an extracted event
-- Database persistence consistency between extracted event rows (with inline source provenance) and `extracted_event_related_links`
+Follow-up:
+
+- Add coverage when behavior gets non-trivial enough that regressions become a real risk.
 
 ### Existing extracted data may need reprocessing
 

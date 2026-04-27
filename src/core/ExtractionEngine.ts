@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { eq } from "drizzle-orm";
-import { db } from "../db";
+import { db as defaultDb } from "../db";
 import { extractedEvents, extractedEventRelatedLinks, watchTargets } from "../db/schema";
 import { RawStorage } from "./RawStorage";
 import { VenueResolver } from "./VenueResolver";
@@ -16,24 +16,31 @@ import { tagged } from "./logger";
 
 const log = tagged("ExtractionEngine");
 
+type DbInstance = typeof defaultDb;
+
 type ProcessBatchResult = {
   processed: number;
   failed: number;
 };
 
+export interface ExtractionEngineOptions {
+  strategies?: ExtractionStrategy[];
+  venueResolver?: VenueResolver;
+  rawStorage?: RawStorage;
+  db?: DbInstance;
+}
+
 export class ExtractionEngine {
   private rawStorage: RawStorage;
   private strategies: ExtractionStrategy[];
   private venueResolver: VenueResolver;
+  private db: DbInstance;
 
-  constructor(
-    private llm: LLMProvider,
-    strategies: ExtractionStrategy[] = createDefaultExtractionStrategies(),
-    venueResolver: VenueResolver = new VenueResolver()
-  ) {
-    this.rawStorage = new RawStorage();
-    this.strategies = strategies;
-    this.venueResolver = venueResolver;
+  constructor(private llm: LLMProvider, options: ExtractionEngineOptions = {}) {
+    this.db = options.db ?? defaultDb;
+    this.rawStorage = options.rawStorage ?? new RawStorage(this.db);
+    this.strategies = options.strategies ?? createDefaultExtractionStrategies();
+    this.venueResolver = options.venueResolver ?? new VenueResolver(this.db);
   }
 
   /**
@@ -94,7 +101,7 @@ export class ExtractionEngine {
   }
 
   private async hasExistingExtraction(rawItemId: string): Promise<boolean> {
-    const eventRows = await db.select({ id: extractedEvents.id })
+    const eventRows = await this.db.select({ id: extractedEvents.id })
       .from(extractedEvents)
       .where(eq(extractedEvents.rawItemId, rawItemId))
       .limit(1);
@@ -133,7 +140,7 @@ export class ExtractionEngine {
       venueUrl: extracted.venue_url,
     });
 
-    db.transaction((tx) => {
+    this.db.transaction((tx) => {
       tx.insert(extractedEvents).values({
         id: extractedEventId,
         rawItemId: rawItem.id,
@@ -175,7 +182,7 @@ export class ExtractionEngine {
   private async getArtistIdForRawItem(rawItem: any): Promise<string | null> {
     if (!rawItem.watchTargetId) return null;
 
-    const rows = await db.select({ artistId: watchTargets.artistId })
+    const rows = await this.db.select({ artistId: watchTargets.artistId })
       .from(watchTargets)
       .where(eq(watchTargets.id, rawItem.watchTargetId))
       .limit(1);

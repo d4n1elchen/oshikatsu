@@ -1,9 +1,16 @@
-import { db } from "../db";
+import { db as defaultDb } from "../db";
 import { rawItems } from "../db/schema";
 import type { NewRawItem, RawItem } from "./types";
 import { eq, and, desc, count, inArray } from "drizzle-orm";
 
+type DbInstance = typeof defaultDb;
+
 export class RawStorage {
+  private db: DbInstance;
+
+  constructor(db: DbInstance = defaultDb) {
+    this.db = db;
+  }
   /**
    * Saves an array of raw items to the database.
    * Handles deduplication via the unique index on (source_name, source_id)
@@ -27,7 +34,7 @@ export class RawStorage {
       status: "new",
     }));
 
-    const result = await db.insert(rawItems)
+    const result = await this.db.insert(rawItems)
       .values(newItems)
       .onConflictDoNothing()
       .returning({ id: rawItems.id });
@@ -37,7 +44,7 @@ export class RawStorage {
 
   /** Check if a raw item from this source already exists. */
   async exists(sourceName: string, sourceId: string): Promise<boolean> {
-    const result = await db.select({ id: rawItems.id })
+    const result = await this.db.select({ id: rawItems.id })
       .from(rawItems)
       .where(and(
         eq(rawItems.sourceName, sourceName),
@@ -55,7 +62,7 @@ export class RawStorage {
       conditions.push(eq(rawItems.sourceName, sourceName));
     }
 
-    return db.select()
+    return this.db.select()
       .from(rawItems)
       .where(and(...conditions))
       .orderBy(desc(rawItems.fetchedAt))
@@ -73,7 +80,7 @@ export class RawStorage {
       conditions.push(eq(rawItems.sourceName, sourceName));
     }
 
-    return db.select()
+    return this.db.select()
       .from(rawItems)
       .where(and(...conditions))
       .orderBy(desc(rawItems.fetchedAt))
@@ -82,21 +89,21 @@ export class RawStorage {
 
   /** Mark an item as successfully processed. */
   async markProcessed(itemId: string): Promise<void> {
-    await db.update(rawItems)
+    await this.db.update(rawItems)
       .set({ status: "processed" })
       .where(eq(rawItems.id, itemId));
   }
 
   /** Mark an item as errored with details. */
   async markError(itemId: string, errorMessage: string): Promise<void> {
-    await db.update(rawItems)
+    await this.db.update(rawItems)
       .set({ status: "error", errorMessage })
       .where(eq(rawItems.id, itemId));
   }
 
   /** Put an item back on the extraction queue. */
   async markNew(itemId: string): Promise<void> {
-    await db.update(rawItems)
+    await this.db.update(rawItems)
       .set({ status: "new", errorMessage: null })
       .where(eq(rawItems.id, itemId));
   }
@@ -105,7 +112,7 @@ export class RawStorage {
   async getStats(sourceName?: string): Promise<{ total: number; new: number; processed: number; error: number }> {
     const conditions = sourceName ? [eq(rawItems.sourceName, sourceName)] : [];
 
-    const rows = await db.select({
+    const rows = await this.db.select({
       status: rawItems.status,
       count: count(),
     })
