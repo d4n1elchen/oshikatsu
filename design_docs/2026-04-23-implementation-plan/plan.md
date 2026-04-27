@@ -1,6 +1,6 @@
 # Implementation Plan: Oshikatsu
 
-> **Status:** Active roadmap. Phases 1, 2, 2.1, and 3 (resolution + hierarchy) have landed.
+> **Status:** Active roadmap. Phases 1, 2, 2.1, and 3 (resolution + hierarchy) have landed. Phase 4 (Monitoring & Observability) is the next target — it was pulled forward from Phase 6 because typed errors and storage-failure signals are already accumulating without a consumer, and Phase 5 (Downstream Export) would otherwise ship a new silent-failure surface.
 > **Follow-ups:** Future phases scoped inline as they're approached. Open work tracked in `TECH_DEBTS.md`.
 
 ## Overview
@@ -89,7 +89,31 @@ This plan outlines the phased implementation of the Oshikatsu platform, starting
 - How should sub-events inherit (or override) the parent's venue, tags, and cancellation status?
 - Resolution decisions for both merge and hierarchy share the `event_resolution_decisions` log; no separate hierarchy log is planned.
 
-## Phase 4: Downstream Export
+## Phase 4: Monitoring & Observability
+
+**Goal**: Provide visibility into pipeline health so failures don't accumulate silently. Substrate for the later alerting and automated-recovery deliverables.
+
+**Motivation**: Phases 1–3 already produce typed error signals (`LoginWallError`, `AntiBotError`, `TimelineShapeError`, `TwitterFetchError`) and propagate persistent-storage failures, but they only land in logs. With three concurrent loops and Phase 5 (Downstream Export) about to consume the data, "is the daemon healthy?" needs an answer that doesn't require tailing logs.
+
+**Deliverables**:
+
+- `scheduler_runs` table capturing per-cycle metadata (run_id, task_name, started_at, finished_at, status, error_class, error_message, details JSON).
+- Scheduler instrumentation: every tick records a row; AbortError → `status='aborted'`, typed errors → `status='failed'` with `error_class` from `error.name`, success → `status='completed'`.
+- Optional task-returned details payload (e.g., per-target item counts from ingestion, processed/failed counts from extraction and resolution) merged into `details`.
+- Per-target last-success / last-failure tracking, surfacing the data the eventual "mark target unhealthy" judgment will use.
+- TUI Monitor tab rendering recent runs per task, color-coded status, last-success timestamp per task, and error rate over a recent window.
+- A small structured summary log line at the end of each tick so operators tailing logs see the same data as the TUI.
+
+**Working product**: The operator can answer "is the daemon healthy?" and "did task X fail recently?" via the TUI, without log archaeology. Phase 5 export work writes its own runs through the same scheduler instrumentation for free. Storage-failure escalation (currently a silent log line) becomes a visible per-target failure counter.
+
+**Out of scope** (deferred to a later "platform expansion" phase):
+
+- Alert dispatch (email, webhook, Slack).
+- Automated recovery / auto-disable of unhealthy targets.
+- Health-check CLI command for external monitoring.
+- External monitoring integrations (Prometheus, OpenTelemetry, etc.).
+
+## Phase 5: Downstream Export
 
 **Goal**: Expose normalized events to downstream consumers.
 
@@ -100,9 +124,9 @@ This plan outlines the phased implementation of the Oshikatsu platform, starting
 - Configurable export triggers (on new event, on update)
 - TUI for managing export configuration and viewing export status
 
-**Working product**: Normalized events are exported to a calendar and/or notification system.
+**Working product**: Normalized events are exported to a calendar and/or notification system. Export runs surface in the Phase 4 monitoring view alongside ingestion/extraction/resolution.
 
-## Phase 5: Multi-Source Support
+## Phase 6: Multi-Source Support
 
 **Goal**: Add support for a second data source.
 
@@ -113,19 +137,21 @@ This plan outlines the phased implementation of the Oshikatsu platform, starting
 
 **Working product**: Events from two sources are ingested, resolved (deduplicated and hierarchically linked), and exported correctly.
 
-## Phase 6: Platform Expansion
+## Phase 7: Platform Expansion
 
-**Goal**: Add additional sources and downstream integrations.
+**Goal**: Build alerting, automated recovery, and additional integrations on top of the Phase 4 monitoring substrate.
 
 **Deliverables**:
 
-- Additional source connectors as needed
-- Additional downstream export targets
-- Monitoring and alerting for ingestion failures
+- Alert dispatch on persistent failures (configurable channel: webhook, email, etc.).
+- Automated unhealthy-target handling (auto-disable after N consecutive failures, operator notification).
+- Health-check CLI command for external monitoring.
+- Additional source connectors as needed.
+- Additional downstream export targets.
 
-**Working product**: Platform supports multiple sources and multiple downstream integrations with reliable operation.
+**Working product**: Platform supports multiple sources and downstream integrations with reliable operation; persistent failures generate alerts rather than silent log lines.
 
-## Phase 7: Web UI
+## Phase 8: Web UI
 
 **Goal**: Provide a web-based interface for managing and visualizing the platform.
 
