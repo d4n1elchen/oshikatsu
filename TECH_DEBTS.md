@@ -6,7 +6,7 @@ This document tracks known technical debts, follow-up decisions, and intentional
 
 ### Test coverage gaps
 
-The full test suite covers 94 cases across `EventResolver`, `titleSimilarity`, `canonicalizeUrl`, `VenueResolver`, `TwitterConnector`, `ExtractionStrategy`, and `ExtractionEngine`. Areas without coverage:
+The full test suite covers 100 cases across `EventResolver`, `titleSimilarity`, `canonicalizeUrl`, `VenueResolver`, `TwitterConnector`, `ExtractionStrategy`, `ExtractionEngine`, and `Scheduler`. Areas without coverage:
 
 - LLM provider implementations (`OllamaProvider`) — currently only exercised through the fake in `ExtractionEngine.test.ts`.
 - TUI views (`RawItems`, `ExtractedEvents`, `NormalizedEvents`, `ReviewQueue`, `WatchList`).
@@ -167,13 +167,12 @@ Follow-up:
 
 ### Connector depends on X internal GraphQL shape
 
-The Twitter connector intercepts X GraphQL responses. This is more stable than DOM scraping but still fragile if X changes response names or payload structure.
+The Twitter connector intercepts X GraphQL responses. This is more stable than DOM scraping but still fragile if X changes response names or payload structure. `TimelineShapeError` (from the login-wall detection design) makes shape changes loud, but doesn't fix the underlying fragility.
 
 Follow-up:
 
 - Add connector health checks.
-- Add sample payload fixtures.
-- Detect login wall / anti-bot / empty timeline states explicitly.
+- Add sample payload fixtures so a shape change can be reproduced offline.
 
 ### Anti-bot marker list will drift
 
@@ -195,11 +194,12 @@ Follow-up:
 
 ### One-shot scripts are useful but informal
 
-`extract:once` is useful for development and repair, but it is not yet a polished admin command.
+`extract:once` and `resolve:once` are useful for development and repair. `extract:once` already supports `--limit` and `--retry-errors`; `reset:*` supports `--dry-run`. The remaining gaps are options that don't have a clear use case yet.
 
 Follow-up:
 
-- Add options for source filter, raw item ID, retry errors, dry run, and reprocess existing extracted rows.
+- Add `--source` and `--raw-item-id` filters to `extract:once` when a need arises (e.g., re-extracting a specific item with a new prompt).
+- Pair with the deferred reprocess command (see "Existing extracted data may need reprocessing").
 
 ## Documentation Hygiene
 
