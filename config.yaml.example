@@ -14,6 +14,7 @@ llm:
 twitter:
   maxTweetsPerSource: 50
   headless: true
+  interTargetDelayMs: 3000           # delay between successive target fetches (with ±25% jitter); set to 0 to disable
 
 paths:
   browserData: "./browser_data"

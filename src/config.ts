@@ -16,6 +16,7 @@ export interface OshikatsuConfig {
   twitter: {
     maxTweetsPerSource: number;
     headless: boolean;
+    interTargetDelayMs: number;
   };
   paths: {
     browserData: string;
@@ -43,6 +44,7 @@ const DEFAULT_CONFIG: OshikatsuConfig = {
   twitter: {
     maxTweetsPerSource: 50,
     headless: true,
+    interTargetDelayMs: 3000,
   },
   paths: {
     browserData: "./browser_data",

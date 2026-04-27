@@ -46,11 +46,21 @@ export async function runIngestionCycle(
       await twitterConnector.start();
 
       // Process each target sequentially for safety (anti-bot).
-      for (const target of activeTwitterTargets) {
+      const baseDelayMs = globalConfig.twitter.interTargetDelayMs;
+      for (let i = 0; i < activeTwitterTargets.length; i++) {
         if (signal?.aborted) {
           log.info("Ingestion aborted; skipping remaining targets");
           break;
         }
+        // Pace requests to reduce anti-bot risk. Skip before the first
+        // target. ±25% jitter so the cadence isn't perfectly periodic.
+        if (i > 0 && baseDelayMs > 0) {
+          const jitter = (Math.random() - 0.5) * 0.5 * baseDelayMs;
+          const delay = Math.max(0, Math.floor(baseDelayMs + jitter));
+          await sleep(delay, signal);
+          if (signal?.aborted) break;
+        }
+        const target = activeTwitterTargets[i]!;
         log.info(`Fetching updates for @${target.sourceConfig.username}`);
         try {
           const items = await twitterConnector.fetchUpdates(target, signal);
@@ -76,4 +86,24 @@ export async function runIngestionCycle(
   }
 
   log.info("Cycle complete");
+}
+
+/**
+ * setTimeout-based sleep that resolves early if the abort signal fires.
+ * Used between ingestion targets so a graceful shutdown doesn't have to
+ * wait the full inter-target delay.
+ */
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) return resolve();
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }

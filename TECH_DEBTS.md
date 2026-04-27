@@ -137,14 +137,6 @@ Follow-up:
 - Track per-cycle stats in the `Scheduler` and emit a structured summary log line at the end of each tick.
 - Optionally persist to a `scheduler_runs` table (run_id, task_name, started_at, finished_at, status, item_counts) for the TUI Monitor view to query.
 
-### No inter-target pacing in ingestion
-
-`runIngestionCycle` processes Twitter targets back-to-back with no delay between them. Adding even a small randomized pause would reduce login-wall risk on the Twitter side.
-
-Follow-up:
-
-- Add an optional `interTargetDelayMs` (or jittered range) between successive `fetchUpdates` calls.
-
 ### Browser context is recreated every ingestion cycle
 
 Every cycle does `launchPersistentContext` → process all targets → `close`. Each cycle pays a ~5–10s cold-start cost. Acceptable at the default 15-minute interval, expensive if shortened. Reusing the context across cycles is doable but trades simplicity for a moving piece (a stuck/zombie context between cycles is harder to detect than one that's clearly torn down each time).
