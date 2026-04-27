@@ -19,7 +19,7 @@
     "reset:resolution": "tsx src/scripts/resetDb.ts --resolution",
     "start:backend": "tsx src/daemon.ts",
     "typecheck": "tsc --noEmit",
-    "test:unit": "node --import tsx/esm --test src/core/__tests__/**/*.test.ts",
+    "test:unit": "node --import tsx/esm --test src/**/__tests__/**/*.test.ts",
     "test": "npm run typecheck && npm run test:unit"
   },
   "keywords": [],

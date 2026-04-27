@@ -191,14 +191,13 @@ Follow-up:
 - Add sample payload fixtures.
 - Detect login wall / anti-bot / empty timeline states explicitly.
 
-### Login-wall / anti-bot detection is not explicit
+### Anti-bot marker list will drift
 
-`TwitterConnector.fetchUpdates` now re-throws on navigation/scrape exceptions, so hard failures surface to the scheduler as failed fetches instead of empty successes. But subtle failure modes — a login wall that loads as a valid page, an anti-bot interstitial that returns HTTP 200, or an unexpectedly empty timeline because X changed the GraphQL response shape — still look like a clean zero-item fetch.
+`src/connectors/twitter/errors.ts` exports `ANTI_BOT_MARKERS`, a small list of (location, substring) pairs used to detect Cloudflare-style interstitials. Platforms update these pages over time. Periodic refresh required.
 
 Follow-up:
 
-- Add explicit detection for login walls and anti-bot pages (e.g., look for known DOM markers or absence of expected timeline GraphQL responses) and throw a typed error when detected.
-- Distinguish "the GraphQL handler never fired" from "the handler fired and the timeline really was empty" — the former is a likely shape change, the latter is a quiet day.
+- Review the list quarterly or whenever an `AntiBotError` rate spike is observed.
 
 ## TUI / Developer Workflow
 
