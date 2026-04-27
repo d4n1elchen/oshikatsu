@@ -264,7 +264,51 @@ test("wraps a raw page.goto failure as TwitterFetchError", async () => {
   );
 });
 
-// ---- Bonus: missing page guard ----
+// ---- AbortSignal ----
+
+test("throws if signal is already aborted before navigation starts", async () => {
+  const connector = makeConnector();
+  connector.setPageForTesting(makeFakePage());
+  const controller = new AbortController();
+  controller.abort();
+
+  await assert.rejects(
+    () => connector.fetchUpdates(TARGET, controller.signal),
+    (err: unknown) => err instanceof TwitterFetchError
+  );
+});
+
+test("aborts during a slow page.goto via signal race", async () => {
+  // Construct a fake page where goto never resolves.
+  const handlers: any[] = [];
+  const page: any = {
+    goto: () => new Promise(() => {}), // never resolves
+    url: () => "https://x.com/test_user",
+    title: async () => "X profile",
+    content: async () => "<html></html>",
+    waitForTimeout: async () => {},
+    evaluate: async () => undefined,
+    on: (_e: any, h: any) => handlers.push(h),
+    removeListener: () => {},
+  };
+
+  const connector = makeConnector();
+  connector.setPageForTesting(page);
+
+  const controller = new AbortController();
+  const fetchPromise = connector.fetchUpdates(TARGET, controller.signal);
+
+  // Abort after a tick, well before the would-be timeout.
+  setTimeout(() => controller.abort(), 5);
+
+  await assert.rejects(
+    fetchPromise,
+    (err: unknown) =>
+      err instanceof TwitterFetchError && /Aborted/.test((err as Error).message)
+  );
+});
+
+// ---- Missing page guard ----
 
 test("throws TwitterFetchError if browser was never started", async () => {
   const connector = makeConnector();

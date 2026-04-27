@@ -44,9 +44,10 @@ export class ExtractionEngine {
   }
 
   /**
-   * Process a batch of raw items.
+   * Process a batch of raw items. If `signal` aborts mid-batch, the loop
+   * exits at the next item boundary and returns the counts collected so far.
    */
-  async processBatch(limit: number = 20): Promise<ProcessBatchResult> {
+  async processBatch(limit: number = 20, signal?: AbortSignal): Promise<ProcessBatchResult> {
     const items = await this.rawStorage.getUnprocessed(undefined, limit);
     const result: ProcessBatchResult = { processed: 0, failed: 0 };
     if (items.length === 0) return result;
@@ -54,6 +55,10 @@ export class ExtractionEngine {
     log.info(`Processing batch of ${items.length} item(s)`);
 
     for (const item of items) {
+      if (signal?.aborted) {
+        log.info(`Aborted; ${result.processed} processed, ${result.failed} failed before bail-out`);
+        break;
+      }
       if (await this.processItem(item)) {
         result.processed++;
       } else {

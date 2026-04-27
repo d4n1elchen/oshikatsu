@@ -65,11 +65,13 @@ export class TwitterConnector implements BaseConnector {
     this.page = (await this.context.newPage()) as unknown as PageLike;
   }
 
-  async fetchUpdates(source: WatchTarget): Promise<Record<string, any>[]> {
+  async fetchUpdates(source: WatchTarget, signal?: AbortSignal): Promise<Record<string, any>[]> {
     if (!this.page) throw new TwitterFetchError("Browser not started");
 
     const username = source.sourceConfig.username as string;
     if (!username) throw new TwitterFetchError("Invalid source config: missing username");
+
+    if (signal?.aborted) throw new TwitterFetchError("Aborted before navigation");
 
     const targetUrl = `https://x.com/${username}`;
     log.info(`Navigating to ${targetUrl}`);
@@ -115,10 +117,17 @@ export class TwitterConnector implements BaseConnector {
     this.page.on("response", responseHandler);
 
     try {
-      await this.page.goto(targetUrl, {
-        timeout: this.config.fetch.pageLoadTimeoutMs,
-        waitUntil: "domcontentloaded",
-      });
+      // Race the goto against the abort signal so a graceful shutdown
+      // doesn't have to wait the full pageLoadTimeoutMs. This doesn't cancel
+      // the underlying browser navigation — we just stop awaiting it; the
+      // connector's stop() closes the context shortly after.
+      await raceWithAbort(
+        this.page.goto(targetUrl, {
+          timeout: this.config.fetch.pageLoadTimeoutMs,
+          waitUntil: "domcontentloaded",
+        }),
+        signal
+      );
 
       // Login-wall probe: if we got redirected to a login flow, the profile
       // page is not viewable for this session. The persistent browser profile
@@ -143,6 +152,10 @@ export class TwitterConnector implements BaseConnector {
       const maxScrolls = Math.ceil(this.config.fetch.maxTweetsPerSource / 10);
 
       while (scrolls < maxScrolls && rawItems.length < this.config.fetch.maxTweetsPerSource) {
+        if (signal?.aborted) {
+          log.info(`Aborted mid-scroll; returning ${rawItems.length} item(s) collected so far`);
+          break;
+        }
         log.info(`Scrolling (collected ${rawItems.length} so far)`);
         await this.page.evaluate(() => window.scrollBy(0, 1000));
         await this.page.waitForTimeout(this.config.fetch.scrollDelayMs);
@@ -180,6 +193,30 @@ export class TwitterConnector implements BaseConnector {
       this.page = null;
     }
   }
+}
+
+/**
+ * Race a promise against an AbortSignal. Throws TwitterFetchError("Aborted")
+ * if the signal fires first. The underlying op is not cancelled — Playwright
+ * doesn't expose AbortSignal on goto — but we stop awaiting it, and the
+ * connector's stop() will close the browser context shortly after.
+ */
+function raceWithAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return promise;
+  if (signal.aborted) return Promise.reject(new TwitterFetchError("Aborted"));
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(new TwitterFetchError("Aborted"));
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise
+      .then((v) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(v);
+      })
+      .catch((e) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(e);
+      });
+  });
 }
 
 async function detectAntiBotMarker(page: PageLike): Promise<string | null> {

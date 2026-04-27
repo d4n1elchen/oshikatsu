@@ -12,10 +12,15 @@ const log = tagged("Ingestion");
  *
  * Idempotent at the row level — `RawStorage.saveItems` dedupes by
  * `(source_name, source_id)`, so re-running a cycle is safe.
+ *
+ * If `signal` is provided and aborted, the cycle bails out at the next
+ * target boundary. The currently-in-progress fetch is allowed to complete
+ * (or fail on its own) so we don't leave the browser context in a bad state.
  */
 export async function runIngestionCycle(
   wlm: WatchListManager = new WatchListManager(),
-  storage: RawStorage = new RawStorage()
+  storage: RawStorage = new RawStorage(),
+  signal?: AbortSignal
 ): Promise<void> {
   log.info(`Cycle starting at ${new Date().toISOString()}`);
 
@@ -42,9 +47,13 @@ export async function runIngestionCycle(
 
       // Process each target sequentially for safety (anti-bot).
       for (const target of activeTwitterTargets) {
+        if (signal?.aborted) {
+          log.info("Ingestion aborted; skipping remaining targets");
+          break;
+        }
         log.info(`Fetching updates for @${target.sourceConfig.username}`);
         try {
-          const items = await twitterConnector.fetchUpdates(target);
+          const items = await twitterConnector.fetchUpdates(target, signal);
           log.info(`Fetched ${items.length} item(s) from @${target.sourceConfig.username}`);
 
           if (items.length > 0) {

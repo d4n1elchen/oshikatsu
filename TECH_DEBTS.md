@@ -137,14 +137,6 @@ Follow-up:
 - Track per-cycle stats in the `Scheduler` and emit a structured summary log line at the end of each tick.
 - Optionally persist to a `scheduler_runs` table (run_id, task_name, started_at, finished_at, status, item_counts) for the TUI Monitor view to query.
 
-### No abort signal for graceful shutdown
-
-`Scheduler.stop()` cancels pending timers and awaits in-flight runs to finish, but it has no way to *interrupt* an in-flight run. A long browser navigation (e.g., a target that times out at the 15s `pageLoadTimeoutMs`) can block SIGINT for up to that timeout. As more connectors are added the worst-case shutdown time grows linearly.
-
-Follow-up:
-
-- Thread an `AbortSignal` through `ScheduledTask.run` and into `TwitterConnector.fetchUpdates` / `page.goto` so a stopped scheduler can interrupt long ops.
-
 ### No inter-target pacing in ingestion
 
 `runIngestionCycle` processes Twitter targets back-to-back with no delay between them. Adding even a small randomized pause would reduce login-wall risk on the Twitter side.

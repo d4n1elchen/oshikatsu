@@ -303,9 +303,10 @@ export class EventResolver {
   }
 
   /**
-   * Process all unresolved extracted events in batch.
+   * Process all unresolved extracted events in batch. If `signal` aborts
+   * mid-batch, the loop exits at the next event boundary.
    */
-  async processBatch(limit: number = 50): Promise<{ resolved: number; failed: number }> {
+  async processBatch(limit: number = 50, signal?: AbortSignal): Promise<{ resolved: number; failed: number }> {
     // Find extracted events without a resolution decision
     const unresolved = await this.db
       .select({ id: extractedEvents.id })
@@ -322,6 +323,10 @@ export class EventResolver {
     let failed = 0;
 
     for (const row of unresolved) {
+      if (signal?.aborted) {
+        log.info(`Aborted; ${resolved} resolved, ${failed} failed before bail-out`);
+        break;
+      }
       try {
         await this.resolve(row.id);
         resolved++;

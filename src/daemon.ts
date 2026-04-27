@@ -27,20 +27,20 @@ async function main() {
     .add({
       name: "Ingestion",
       intervalMinutes: config.scheduler.ingestionIntervalMinutes,
-      run: () => runIngestionCycle(),
+      run: (signal) => runIngestionCycle(undefined, undefined, signal),
     })
     .add({
       name: "Extraction",
       intervalMinutes: config.scheduler.extractionIntervalMinutes,
-      run: async () => {
-        await extractor.processBatch(20);
+      run: async (signal) => {
+        await extractor.processBatch(20, signal);
       },
     })
     .add({
       name: "Resolution",
       intervalMinutes: config.scheduler.resolutionIntervalMinutes,
-      run: async () => {
-        await resolver.processBatch(50);
+      run: async (signal) => {
+        await resolver.processBatch(50, signal);
       },
     });
 
