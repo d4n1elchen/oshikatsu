@@ -5,8 +5,9 @@ import RawItems from "./views/RawItems";
 import ExtractedEvents from "./views/ExtractedEvents";
 import NormalizedEvents from "./views/NormalizedEvents";
 import ReviewQueue from "./views/ReviewQueue";
+import Monitor from "./views/Monitor";
 
-const TABS = ["watchlist", "rawItems", "extractedEvents", "normalizedEvents", "reviewQueue"] as const;
+const TABS = ["watchlist", "rawItems", "extractedEvents", "normalizedEvents", "reviewQueue", "monitor"] as const;
 type Tab = typeof TABS[number];
 
 export default function App() {
@@ -19,6 +20,7 @@ export default function App() {
     if (input === "3") setActiveTab("extractedEvents");
     if (input === "4") setActiveTab("normalizedEvents");
     if (input === "5") setActiveTab("reviewQueue");
+    if (input === "6") setActiveTab("monitor");
 
     // Tab key cycles through tabs
     if (key.tab) {
@@ -76,6 +78,13 @@ export default function App() {
         >
           [5] Review Queue
         </Text>
+        <Text
+          color={activeTab === "monitor" ? "white" : "gray"}
+          backgroundColor={activeTab === "monitor" ? "blue" : undefined}
+          bold={activeTab === "monitor"}
+        >
+          [6] Monitor
+        </Text>
       </Box>
 
       {/* Main Content Area */}
@@ -85,6 +94,7 @@ export default function App() {
         {activeTab === "extractedEvents" && <ExtractedEvents />}
         {activeTab === "normalizedEvents" && <NormalizedEvents />}
         {activeTab === "reviewQueue" && <ReviewQueue />}
+        {activeTab === "monitor" && <Monitor />}
       </Box>
     </Box>
   );

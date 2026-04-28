@@ -33,14 +33,16 @@ async function main() {
       name: "Extraction",
       intervalMinutes: config.scheduler.extractionIntervalMinutes,
       run: async (signal) => {
-        await extractor.processBatch(20, signal);
+        const { processed, failed } = await extractor.processBatch(20, signal);
+        return { processed, failed };
       },
     })
     .add({
       name: "Resolution",
       intervalMinutes: config.scheduler.resolutionIntervalMinutes,
       run: async (signal) => {
-        await resolver.processBatch(50, signal);
+        const { resolved, failed } = await resolver.processBatch(50, signal);
+        return { resolved, failed };
       },
     });
 

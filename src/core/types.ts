@@ -1,4 +1,4 @@
-import { artists, watchTargets, rawItems, venues, venueAliases, extractedEvents, extractedEventRelatedLinks, normalizedEvents, normalizedEventSources, eventResolutionDecisions } from "../db/schema";
+import { artists, watchTargets, rawItems, venues, venueAliases, extractedEvents, extractedEventRelatedLinks, normalizedEvents, normalizedEventSources, eventResolutionDecisions, schedulerRuns } from "../db/schema";
 
 // Extract TypeScript types directly from Drizzle schemas
 export type Artist = typeof artists.$inferSelect;
@@ -45,3 +45,8 @@ export type ResolutionSignals = {
   same_source_id?: boolean;
   manual_override?: boolean;
 };
+
+export type SchedulerRun = typeof schedulerRuns.$inferSelect;
+export type NewSchedulerRun = typeof schedulerRuns.$inferInsert;
+export type SchedulerRunStatus = "running" | "completed" | "failed" | "aborted";
+export type RunDetails = Record<string, unknown>;

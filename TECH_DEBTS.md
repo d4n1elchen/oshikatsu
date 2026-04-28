@@ -6,7 +6,7 @@ This document tracks known technical debts, follow-up decisions, and intentional
 
 ### Test coverage gaps
 
-The full test suite covers 100 cases across `EventResolver`, `titleSimilarity`, `canonicalizeUrl`, `VenueResolver`, `TwitterConnector`, `ExtractionStrategy`, `ExtractionEngine`, and `Scheduler`. Areas without coverage:
+The full test suite covers 111 cases across `EventResolver`, `titleSimilarity`, `canonicalizeUrl`, `VenueResolver`, `TwitterConnector`, `ExtractionStrategy`, `ExtractionEngine`, `Scheduler`, and `SchedulerRunsRepo`. Areas without coverage:
 
 - LLM provider implementations (`OllamaProvider`) — currently only exercised through the fake in `ExtractionEngine.test.ts`.
 - TUI views (`RawItems`, `ExtractedEvents`, `NormalizedEvents`, `ReviewQueue`, `WatchList`).
@@ -128,15 +128,6 @@ Follow-up:
 
 - When adding a second connector, accept `connectors: Record<string, BaseConnector>` as a parameter to `runIngestionCycle` and iterate platforms.
 
-### No per-cycle metrics or run history
-
-The scheduler emits start/complete log lines but doesn't capture cycle duration, items fetched per target per cycle, failure counts per cycle, or time-since-last-success per target. The future Monitoring component (Component 7 in `ARCHITECTURE.md`) will need this; without it, "is the daemon healthy?" can only be answered by tailing logs.
-
-Follow-up:
-
-- Track per-cycle stats in the `Scheduler` and emit a structured summary log line at the end of each tick.
-- Optionally persist to a `scheduler_runs` table (run_id, task_name, started_at, finished_at, status, item_counts) for the TUI Monitor view to query.
-
 ### Browser context is recreated every ingestion cycle
 
 Every cycle does `launchPersistentContext` → process all targets → `close`. Each cycle pays a ~5–10s cold-start cost. Acceptable at the default 15-minute interval, expensive if shortened. Reusing the context across cycles is doable but trades simplicity for a moving piece (a stuck/zombie context between cycles is harder to detect than one that's clearly torn down each time).
@@ -147,13 +138,37 @@ Follow-up:
 
 ## Raw Storage
 
-### No error classification on persistent storage failures
+### No alerting on persistent storage failures
 
-`RawStorage` write paths now propagate errors to the scheduler's per-target catch, which logs and continues to the next target. This is correct for transient/per-target issues, but a catastrophic failure (`SQLITE_CORRUPT`, `SQLITE_READONLY`, `SQLITE_FULL`) currently produces an endless stream of `Failed to fetch/save` log lines while the daemon keeps running. We deliberately do not crash on these — daemons that quit on a transient disk hiccup cause more pages than they prevent.
+`RawStorage` write paths propagate errors to the scheduler's per-target catch, which logs the failure and surfaces it in `scheduler_runs.details.perTarget[username].errorClass` for the Monitor view. A catastrophic failure (`SQLITE_CORRUPT`, `SQLITE_READONLY`, `SQLITE_FULL`) is now visible — but it produces an endless stream of identical failed runs while the daemon keeps running. We deliberately do not crash on these; daemons that quit on a transient disk hiccup cause more pages than they prevent.
+
+Follow-up (Phase 7):
+
+- Track a per-target consecutive-failure counter on top of the existing `scheduler_runs` data; mark a target unhealthy after N failures; trigger an alert; let the operator decide whether to intervene.
+
+### `scheduler_runs` pruning is manual
+
+`scheduler_runs` grows unbounded as the daemon runs. With the current 1- to 30-minute cadences, this is roughly 100–700 rows/day — fine for SQLite, harmless for the Monitor view's `LIMIT 50`. Manual pruning is available via `npm run reset:runs -- --older-than=30d`.
 
 Follow-up:
 
-- Surface persistent storage failures to the future Monitoring component (Component 7 in `ARCHITECTURE.md`) rather than killing the daemon. Track a per-target consecutive-failure counter; mark a target unhealthy after N failures; trigger an alert; let the operator decide whether to intervene.
+- Add a daily prune `ScheduledTask` if the table grows large enough to slow queries, or if a Phase 7 retention policy is needed for compliance/visibility reasons.
+
+### Monitor view computes per-target stats client-side
+
+The Monitor TUI scans the most recent `scheduler_runs` rows and groups by `details.perTarget` in TypeScript to compute "last success per target." This is fine for ~50 rows but will not scale to richer dashboards.
+
+Follow-up:
+
+- Promote per-target stats to a denormalized view or aggregate query when Phase 7 alerting needs server-side aggregation.
+
+### Resolution per-event failures are not persisted
+
+`EventResolver.processBatch` catches per-event errors and increments a `failed` counter that ends up in `scheduler_runs.details`. The failed event itself stays un-resolved and retries next cycle. There's no per-event error_class tagging like `raw_items` has.
+
+Follow-up:
+
+- If recurring resolver errors become a real signal (e.g., a code bug producing the same exception every cycle), promote to a similar `error_class`-tagged persistence shape. Ephemeral retry is fine for now.
 
 ### Optional indexes deferred until needed
 

@@ -95,16 +95,16 @@ export class RawStorage {
   }
 
   /** Mark an item as errored with details. */
-  async markError(itemId: string, errorMessage: string): Promise<void> {
+  async markError(itemId: string, errorMessage: string, errorClass?: string | null): Promise<void> {
     await this.db.update(rawItems)
-      .set({ status: "error", errorMessage })
+      .set({ status: "error", errorMessage, errorClass: errorClass ?? null })
       .where(eq(rawItems.id, itemId));
   }
 
   /** Put an item back on the extraction queue. */
   async markNew(itemId: string): Promise<void> {
     await this.db.update(rawItems)
-      .set({ status: "new", errorMessage: null })
+      .set({ status: "new", errorMessage: null, errorClass: null })
       .where(eq(rawItems.id, itemId));
   }
 

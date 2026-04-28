@@ -17,6 +17,7 @@
     "reset:normalized": "tsx src/scripts/resetDb.ts --normalized_events",
     "reset:decisions": "tsx src/scripts/resetDb.ts --resolution_decisions",
     "reset:resolution": "tsx src/scripts/resetDb.ts --resolution",
+    "reset:runs": "tsx src/scripts/resetDb.ts --scheduler_runs",
     "start:backend": "tsx src/daemon.ts",
     "typecheck": "tsc --noEmit",
     "test:unit": "node --import tsx/esm --test src/**/__tests__/**/*.test.ts",

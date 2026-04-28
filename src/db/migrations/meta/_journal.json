@@ -106,6 +106,13 @@
       "when": 1777196518265,
       "tag": "0014_nasty_lilith",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "6",
+      "when": 1777308487151,
+      "tag": "0015_legal_goblin_queen",
+      "breakpoints": true
     }
   ]
 }

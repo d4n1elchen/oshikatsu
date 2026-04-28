@@ -1,7 +1,7 @@
 # Phase 4: Monitoring & Observability
 
-> **Status:** Proposed.
-> **Follow-ups:** Alert dispatch, auto-recovery, and health-check CLI deferred to Phase 7 per the implementation plan.
+> **Status:** Landed. 11 new tests in `Scheduler.test.ts` and `SchedulerRunsRepo.test.ts` plus an extraction `error_class` capture test.
+> **Follow-ups:** Alert dispatch, auto-recovery, and health-check CLI deferred to Phase 7 per the implementation plan. Manual pruning + client-side per-target aggregation tracked in `TECH_DEBTS.md`.
 
 ## Overview
 

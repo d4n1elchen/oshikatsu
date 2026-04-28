@@ -1,4 +1,6 @@
 import { tagged } from "./logger";
+import { SchedulerRunsRepo } from "./SchedulerRunsRepo";
+import type { RunDetails } from "./types";
 
 const log = tagged("Scheduler");
 
@@ -12,8 +14,11 @@ export interface ScheduledTask {
    * continues. The signal is aborted when `stop()` is called — cooperative
    * code should observe it at natural boundaries (between targets, between
    * items, around long awaits) and bail out cleanly.
+   *
+   * Returning a `RunDetails` payload (or nothing) is allowed; the payload is
+   * persisted to `scheduler_runs.details` for the Monitor view.
    */
-  run: (signal: AbortSignal) => Promise<void>;
+  run: (signal: AbortSignal) => Promise<RunDetails | void>;
   /** When true, run once immediately on start instead of waiting one interval. Default true. */
   runImmediately?: boolean;
 }
@@ -38,10 +43,18 @@ type TaskState = {
  * Stop is graceful: it aborts the in-flight task's signal so cooperative code
  * can bail at the next checkpoint, then awaits any in-flight runs before
  * returning.
+ *
+ * Every tick records a row in `scheduler_runs` so the Monitor view can answer
+ * "is this task healthy?" without log archaeology.
  */
 export class Scheduler {
   private states: TaskState[] = [];
   private isStarted = false;
+  private runs: SchedulerRunsRepo;
+
+  constructor(runs: SchedulerRunsRepo = new SchedulerRunsRepo()) {
+    this.runs = runs;
+  }
 
   /**
    * Register a task. Must be called before `start()`. Returns `this` for
@@ -95,11 +108,7 @@ export class Scheduler {
 
     if (runNow) {
       state.controller = new AbortController();
-      state.inFlight = state.task.run(state.controller.signal).catch((e) => {
-        // Aborts during shutdown are expected; don't log them as errors.
-        if (isAbortError(e)) return;
-        log.error(`${state.task.name} run error:`, e);
-      });
+      state.inFlight = this.runOnce(state, state.controller.signal);
       await state.inFlight;
       state.inFlight = null;
       state.controller = null;
@@ -112,6 +121,80 @@ export class Scheduler {
       void this.tick(state, true);
     }, intervalMs);
   }
+
+  private async runOnce(state: TaskState, signal: AbortSignal): Promise<void> {
+    const startedAt = new Date();
+    let runId: string;
+    try {
+      runId = await this.runs.start(state.task.name, startedAt);
+    } catch (e) {
+      // Persistence failure for the start row shouldn't kill the task. Log
+      // and proceed without recording — the run will appear absent from the
+      // Monitor view but the work still happens.
+      log.error(`${state.task.name} failed to record run start:`, e);
+      // Run anyway, without persistence wiring.
+      try {
+        await state.task.run(signal);
+      } catch (taskErr) {
+        if (!isAbortError(taskErr)) log.error(`${state.task.name} run error:`, taskErr);
+      }
+      return;
+    }
+
+    try {
+      const details = (await state.task.run(signal)) ?? null;
+      const durationMs = Date.now() - startedAt.getTime();
+      logSummary(state.task.name, "completed", durationMs, details, null);
+      await this.runs.finish(runId, "completed", { details });
+    } catch (e) {
+      const durationMs = Date.now() - startedAt.getTime();
+      if (isAbortError(e)) {
+        logSummary(state.task.name, "aborted", durationMs, null, null);
+        await this.runs.finish(runId, "aborted");
+        return;
+      }
+      logSummary(state.task.name, "failed", durationMs, null, e);
+      log.error(`${state.task.name} run error:`, e);
+      await this.runs.finish(runId, "failed", { error: e });
+    }
+  }
+}
+
+function logSummary(
+  name: string,
+  status: "completed" | "failed" | "aborted",
+  durationMs: number,
+  details: RunDetails | null,
+  error: unknown
+): void {
+  const dur = formatDuration(durationMs);
+  const detailStr = details ? formatDetails(details) : "";
+  if (status === "completed") {
+    log.info(`${name} run completed in ${dur}${detailStr ? `; ${detailStr}` : ""}`);
+  } else if (status === "aborted") {
+    log.info(`${name} run aborted after ${dur}`);
+  } else {
+    const errStr = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    log.error(`${name} run failed after ${dur}: ${errStr}`);
+  }
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  const minutes = Math.floor(ms / 60_000);
+  const seconds = Math.floor((ms % 60_000) / 1000);
+  return `${minutes}m${seconds.toString().padStart(2, "0")}s`;
+}
+
+function formatDetails(details: RunDetails): string {
+  const parts: string[] = [];
+  for (const [key, value] of Object.entries(details)) {
+    if (typeof value === "number" || typeof value === "string" || typeof value === "boolean") {
+      parts.push(`${key}=${value}`);
+    }
+  }
+  return parts.join(", ");
 }
 
 function isAbortError(e: unknown): boolean {

@@ -1,6 +1,6 @@
 # Implementation Plan: Oshikatsu
 
-> **Status:** Active roadmap. Phases 1, 2, 2.1, and 3 (resolution + hierarchy) have landed. Phase 4 (Monitoring & Observability) is the next target — it was pulled forward from Phase 6 because typed errors and storage-failure signals are already accumulating without a consumer, and Phase 5 (Downstream Export) would otherwise ship a new silent-failure surface.
+> **Status:** Active roadmap. Phases 1, 2, 2.1, 3 (resolution + hierarchy), and 4 (Monitoring & Observability) have landed. Phase 5 (Downstream Export) is the next target.
 > **Follow-ups:** Future phases scoped inline as they're approached. Open work tracked in `TECH_DEBTS.md`.
 
 ## Overview

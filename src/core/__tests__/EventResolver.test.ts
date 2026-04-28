@@ -60,7 +60,8 @@ function createTestDb() {
       raw_data TEXT NOT NULL,
       fetched_at INTEGER NOT NULL,
       status TEXT NOT NULL DEFAULT 'new',
-      error_message TEXT
+      error_message TEXT,
+      error_class TEXT
     );
     CREATE TABLE extracted_events (
       id TEXT PRIMARY KEY,

@@ -1,4 +1,4 @@
-import { count, inArray } from "drizzle-orm";
+import { count, inArray, lt } from "drizzle-orm";
 import { db } from "../db";
 import {
   eventResolutionDecisions,
@@ -7,6 +7,7 @@ import {
   normalizedEventSources,
   normalizedEvents,
   rawItems,
+  schedulerRuns,
 } from "../db/schema";
 
 type Mode =
@@ -16,16 +17,20 @@ type Mode =
   | "normalized_events"
   | "resolution_decisions"
   | "resolution"
+  | "scheduler_runs"
   | "all";
 
 interface ResetArgs {
   mode: Mode;
   dryRun: boolean;
+  /** For scheduler_runs mode: only delete runs older than this. */
+  olderThanMs?: number;
 }
 
 function parseArgs(argv: string[]): ResetArgs {
   let mode: Mode | null = null;
   let dryRun = false;
+  let olderThanMs: number | undefined;
 
   const setMode = (m: Mode) => {
     if (mode && mode !== m) {
@@ -37,6 +42,8 @@ function parseArgs(argv: string[]): ResetArgs {
   for (const arg of argv) {
     if (arg === "--dry-run") {
       dryRun = true;
+    } else if (arg.startsWith("--older-than=")) {
+      olderThanMs = parseDurationToMs(arg.slice("--older-than=".length));
     } else if (arg === "--all") {
       setMode("all");
     } else if (arg === "--extracted_events" || arg === "--extracted-events") {
@@ -51,6 +58,8 @@ function parseArgs(argv: string[]): ResetArgs {
       setMode("resolution_decisions");
     } else if (arg === "--resolution") {
       setMode("resolution");
+    } else if (arg === "--scheduler_runs" || arg === "--scheduler-runs" || arg === "--runs") {
+      setMode("scheduler_runs");
     } else if (arg === "--help" || arg === "-h") {
       printUsage();
       process.exit(0);
@@ -61,11 +70,20 @@ function parseArgs(argv: string[]): ResetArgs {
 
   if (!mode) {
     throw new Error(
-      "Specify exactly one mode: --extracted_events, --extracted_links, --raw_items, --normalized_events, --resolution_decisions, --resolution, or --all.",
+      "Specify exactly one mode: --extracted_events, --extracted_links, --raw_items, --normalized_events, --resolution_decisions, --resolution, --scheduler_runs, or --all.",
     );
   }
 
-  return { mode, dryRun };
+  return { mode, dryRun, olderThanMs };
+}
+
+function parseDurationToMs(s: string): number {
+  const m = s.match(/^(\d+)([smhd])$/);
+  if (!m) throw new Error(`Invalid --older-than value "${s}"; expected e.g. 30d, 12h, 60m, 90s`);
+  const n = parseInt(m[1]!, 10);
+  const unit = m[2]!;
+  const factor = unit === "s" ? 1000 : unit === "m" ? 60_000 : unit === "h" ? 3_600_000 : 86_400_000;
+  return n * factor;
 }
 
 function printUsage(): void {
@@ -78,10 +96,12 @@ Modes (pick exactly one):
   --normalized_events    Delete all normalized events (cascades to normalized_event_sources; nulls decision matches).
   --resolution_decisions Delete all event resolution decisions.
   --resolution           Wipe the resolution layer only (normalized_events + decisions); leaves extracted_events intact for re-resolution.
-  --all                  Wipe everything below artists/watch_targets/venues: raw_items + extracted_events + resolution layer.
+  --scheduler_runs       Delete scheduler_runs rows (defaults to all; pair with --older-than to prune by age).
+  --all                  Wipe everything below artists/watch_targets/venues: raw_items + extracted_events + resolution layer + scheduler_runs.
 
 Options:
   --dry-run              Print the rows that would be touched without changing the database.
+  --older-than=DURATION  For --scheduler_runs only: delete runs older than DURATION. Examples: 30d, 12h, 60m.
   --help, -h             Show this help text.
 
 Notes:
@@ -227,6 +247,43 @@ async function resetResolutionDecisions(dryRun: boolean): Promise<void> {
   console.log("Done.");
 }
 
+async function resetSchedulerRuns(dryRun: boolean, olderThanMs?: number): Promise<void> {
+  const total = await tableCount(schedulerRuns);
+  let toDelete = total;
+  let cutoff: Date | null = null;
+  if (olderThanMs !== undefined) {
+    cutoff = new Date(Date.now() - olderThanMs);
+    const rows = await db
+      .select({ id: schedulerRuns.id })
+      .from(schedulerRuns)
+      .where(lt(schedulerRuns.startedAt, cutoff));
+    toDelete = rows.length;
+  }
+
+  if (cutoff) {
+    console.log(`Will delete ${toDelete} of ${total} scheduler run(s) (older than ${cutoff.toISOString()}).`);
+  } else {
+    console.log(`Will delete all ${total} scheduler run(s).`);
+  }
+
+  if (dryRun) {
+    console.log("Dry run; no changes made.");
+    return;
+  }
+
+  if (toDelete === 0) {
+    console.log("Nothing to do.");
+    return;
+  }
+
+  if (cutoff) {
+    await db.delete(schedulerRuns).where(lt(schedulerRuns.startedAt, cutoff));
+  } else {
+    await db.delete(schedulerRuns);
+  }
+  console.log("Done.");
+}
+
 async function resetResolutionLayer(dryRun: boolean): Promise<void> {
   const normCount = await tableCount(normalizedEvents);
   const sourceCount = await tableCount(normalizedEventSources);
@@ -263,10 +320,13 @@ async function main(): Promise<void> {
       await resetExtractedLinks(args.dryRun);
       return;
     case "raw_items":
-    case "all":
-      // --all is an alias for --raw_items; cascade handles extracted/links/sources/decisions,
-      // and we explicitly wipe normalized_events so nothing is left orphaned.
       await resetRawItems(args.dryRun);
+      return;
+    case "all":
+      // --all wipes raw_items (cascading to extracted/links/sources/decisions
+      // and explicitly normalized_events) plus scheduler_runs.
+      await resetRawItems(args.dryRun);
+      await resetSchedulerRuns(args.dryRun);
       return;
     case "normalized_events":
       await resetNormalizedEvents(args.dryRun);
@@ -276,6 +336,9 @@ async function main(): Promise<void> {
       return;
     case "resolution":
       await resetResolutionLayer(args.dryRun);
+      return;
+    case "scheduler_runs":
+      await resetSchedulerRuns(args.dryRun, args.olderThanMs);
       return;
   }
 }

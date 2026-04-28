@@ -39,7 +39,8 @@ function createTestDb() {
       id TEXT PRIMARY KEY, watch_target_id TEXT NOT NULL,
       source_name TEXT NOT NULL, source_id TEXT NOT NULL UNIQUE,
       raw_data TEXT NOT NULL, fetched_at INTEGER NOT NULL,
-      status TEXT NOT NULL DEFAULT 'new', error_message TEXT
+      status TEXT NOT NULL DEFAULT 'new', error_message TEXT,
+      error_class TEXT
     );
     CREATE TABLE venues (
       id TEXT PRIMARY KEY, name TEXT NOT NULL,
@@ -242,10 +243,33 @@ test("LLM failure marks the raw item as 'error' with the error message", async (
   const updated = await db.select().from(schema.rawItems).where(eq(schema.rawItems.id, id));
   assert.equal(updated[0]!.status, "error");
   assert.match(updated[0]!.errorMessage ?? "", /ollama is down/);
+  assert.equal(updated[0]!.errorClass, "Error", "error_class is captured from error.name");
 
   // No extracted event created.
   const events = await db.select().from(schema.extractedEvents);
   assert.equal(events.length, 0);
+});
+
+test("typed error names are captured into raw_items.error_class", async () => {
+  const db = createTestDb();
+  const id = insertRawTwitterItem(db);
+
+  class LLMTimeoutError extends Error {
+    constructor(msg: string) {
+      super(msg);
+      this.name = "LLMTimeoutError";
+    }
+  }
+
+  const llm = new FakeLLM(() => {
+    throw new LLMTimeoutError("ollama hung");
+  });
+  const engine = new ExtractionEngine(llm, { db: db as any });
+  const item = (await db.select().from(schema.rawItems))[0]!;
+  await engine.processItem(item);
+
+  const updated = await db.select().from(schema.rawItems).where(eq(schema.rawItems.id, id));
+  assert.equal(updated[0]!.errorClass, "LLMTimeoutError");
 });
 
 test("sanitization failure (empty title) also marks raw item as 'error'", async () => {

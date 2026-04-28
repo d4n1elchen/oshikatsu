@@ -30,8 +30,10 @@ export const rawItems = sqliteTable("raw_items", {
   fetchedAt: integer("fetched_at", { mode: "timestamp" }).notNull(),
   status: text("status", { enum: ["new", "processed", "error"] }).notNull().default("new"),
   errorMessage: text("error_message"),
+  errorClass: text("error_class"),
 }, (table) => [
   uniqueIndex("idx_source_dedup").on(table.sourceName, table.sourceId),
+  index("idx_raw_items_status").on(table.status),
 ]);
 
 export const venues = sqliteTable("venues", {
@@ -155,4 +157,18 @@ export const eventResolutionDecisions = sqliteTable("event_resolution_decisions"
   index("idx_resolution_decisions_extracted").on(table.candidateExtractedEventId),
   index("idx_resolution_decisions_normalized").on(table.matchedNormalizedEventId),
   index("idx_resolution_decisions_decision").on(table.decision),
+]);
+
+export const schedulerRuns = sqliteTable("scheduler_runs", {
+  id: text("id").primaryKey(),
+  taskName: text("task_name").notNull(),
+  startedAt: integer("started_at", { mode: "timestamp" }).notNull(),
+  finishedAt: integer("finished_at", { mode: "timestamp" }),
+  status: text("status", { enum: ["running", "completed", "failed", "aborted"] }).notNull(),
+  errorClass: text("error_class"),
+  errorMessage: text("error_message"),
+  details: text("details", { mode: "json" }).$type<Record<string, unknown>>(),
+}, (table) => [
+  index("idx_scheduler_runs_task_started").on(table.taskName, table.startedAt),
+  index("idx_scheduler_runs_status_started").on(table.status, table.startedAt),
 ]);

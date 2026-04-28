@@ -52,13 +52,8 @@ export class ExtractionEngine {
     const result: ProcessBatchResult = { processed: 0, failed: 0 };
     if (items.length === 0) return result;
 
-    log.info(`Processing batch of ${items.length} item(s)`);
-
     for (const item of items) {
-      if (signal?.aborted) {
-        log.info(`Aborted; ${result.processed} processed, ${result.failed} failed before bail-out`);
-        break;
-      }
+      if (signal?.aborted) break;
       if (await this.processItem(item)) {
         result.processed++;
       } else {
@@ -100,7 +95,8 @@ export class ExtractionEngine {
 
     } catch (e: any) {
       log.error(`Failed to extract item ${item.id}:`, e);
-      await this.rawStorage.markError(item.id, e.message || "Unknown LLM extraction error");
+      const errorClass = e instanceof Error ? e.name : "Error";
+      await this.rawStorage.markError(item.id, e.message || "Unknown LLM extraction error", errorClass);
       return false;
     }
   }
@@ -128,7 +124,15 @@ export class ExtractionEngine {
       return strategy.sanitize(item, context, extracted);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`LLM extraction or sanitization failed: ${message}`);
+      // Preserve the original error.name so the Monitor view can group by class
+      // (e.g., "ZodError", "LLMTimeoutError") instead of every failure
+      // collapsing under a generic "Error".
+      const wrapped = new Error(`LLM extraction or sanitization failed: ${message}`);
+      if (error instanceof Error) {
+        wrapped.name = error.name;
+        (wrapped as Error & { cause?: unknown }).cause = error;
+      }
+      throw wrapped;
     }
   }
 

@@ -3,8 +3,21 @@ import { RawStorage } from "./RawStorage";
 import { TwitterConnector } from "../connectors/twitter";
 import { getConfig } from "../config";
 import { tagged } from "./logger";
+import type { RunDetails } from "./types";
 
 const log = tagged("Ingestion");
+
+export interface IngestionRunDetails extends RunDetails {
+  totalTargets: number;
+  totalNewItems: number;
+  failedTargets: number;
+  perTarget: Record<string, {
+    items: number;
+    saved?: number;
+    status: "ok" | "failed" | "skipped";
+    errorClass?: string;
+  }>;
+}
 
 /**
  * Execute one full ingestion cycle: fetch active watch targets across each
@@ -21,71 +34,100 @@ export async function runIngestionCycle(
   wlm: WatchListManager = new WatchListManager(),
   storage: RawStorage = new RawStorage(),
   signal?: AbortSignal
-): Promise<void> {
-  log.info(`Cycle starting at ${new Date().toISOString()}`);
-
+): Promise<IngestionRunDetails> {
   const activeTwitterTargets = await wlm.getActiveTargets("twitter");
-  log.info(`Found ${activeTwitterTargets.length} active Twitter watch target(s)`);
 
-  if (activeTwitterTargets.length > 0) {
-    const globalConfig = getConfig();
+  const details: IngestionRunDetails = {
+    totalTargets: activeTwitterTargets.length,
+    totalNewItems: 0,
+    failedTargets: 0,
+    perTarget: {},
+  };
 
-    const twitterConnector = new TwitterConnector({
-      browser: {
-        userDataDir: globalConfig.paths.browserData,
-        headless: globalConfig.twitter.headless,
-      },
-      fetch: {
-        maxTweetsPerSource: globalConfig.twitter.maxTweetsPerSource,
-        scrollDelayMs: 1500,
-        pageLoadTimeoutMs: 15000,
-      },
-    });
-
-    try {
-      await twitterConnector.start();
-
-      // Process each target sequentially for safety (anti-bot).
-      const baseDelayMs = globalConfig.twitter.interTargetDelayMs;
-      for (let i = 0; i < activeTwitterTargets.length; i++) {
-        if (signal?.aborted) {
-          log.info("Ingestion aborted; skipping remaining targets");
-          break;
-        }
-        // Pace requests to reduce anti-bot risk. Skip before the first
-        // target. ±25% jitter so the cadence isn't perfectly periodic.
-        if (i > 0 && baseDelayMs > 0) {
-          const jitter = (Math.random() - 0.5) * 0.5 * baseDelayMs;
-          const delay = Math.max(0, Math.floor(baseDelayMs + jitter));
-          await sleep(delay, signal);
-          if (signal?.aborted) break;
-        }
-        const target = activeTwitterTargets[i]!;
-        log.info(`Fetching updates for @${target.sourceConfig.username}`);
-        try {
-          const items = await twitterConnector.fetchUpdates(target, signal);
-          log.info(`Fetched ${items.length} item(s) from @${target.sourceConfig.username}`);
-
-          if (items.length > 0) {
-            const newItemsCount = await storage.saveItems(
-              target.id,
-              "twitter",
-              items.map((i) => ({ sourceId: i.sourceId, rawData: i.rawData }))
-            );
-            log.info(`Saved ${newItemsCount} new item(s) to raw storage`);
-          }
-        } catch (e) {
-          log.error(`Failed to fetch/save watch target ${target.id}:`, e);
-        }
-      }
-    } catch (e) {
-      log.error("Failed to start Twitter connector:", e);
-    } finally {
-      await twitterConnector.stop();
-    }
+  if (activeTwitterTargets.length === 0) {
+    return details;
   }
 
-  log.info("Cycle complete");
+  const globalConfig = getConfig();
+
+  const twitterConnector = new TwitterConnector({
+    browser: {
+      userDataDir: globalConfig.paths.browserData,
+      headless: globalConfig.twitter.headless,
+    },
+    fetch: {
+      maxTweetsPerSource: globalConfig.twitter.maxTweetsPerSource,
+      scrollDelayMs: 1500,
+      pageLoadTimeoutMs: 15000,
+    },
+  });
+
+  try {
+    await twitterConnector.start();
+
+    // Process each target sequentially for safety (anti-bot).
+    const baseDelayMs = globalConfig.twitter.interTargetDelayMs;
+    for (let i = 0; i < activeTwitterTargets.length; i++) {
+      if (signal?.aborted) {
+        // Mark the remaining targets as skipped so the Monitor view can
+        // distinguish "we never tried this one" from "we tried and failed".
+        for (let j = i; j < activeTwitterTargets.length; j++) {
+          const t = activeTwitterTargets[j]!;
+          details.perTarget[t.sourceConfig.username] = { items: 0, status: "skipped" };
+        }
+        break;
+      }
+      // Pace requests to reduce anti-bot risk. Skip before the first
+      // target. ±25% jitter so the cadence isn't perfectly periodic.
+      if (i > 0 && baseDelayMs > 0) {
+        const jitter = (Math.random() - 0.5) * 0.5 * baseDelayMs;
+        const delay = Math.max(0, Math.floor(baseDelayMs + jitter));
+        await sleep(delay, signal);
+        if (signal?.aborted) {
+          for (let j = i; j < activeTwitterTargets.length; j++) {
+            const t = activeTwitterTargets[j]!;
+            details.perTarget[t.sourceConfig.username] = { items: 0, status: "skipped" };
+          }
+          break;
+        }
+      }
+      const target = activeTwitterTargets[i]!;
+      const username = target.sourceConfig.username as string;
+      try {
+        const items = await twitterConnector.fetchUpdates(target, signal);
+
+        let saved = 0;
+        if (items.length > 0) {
+          saved = await storage.saveItems(
+            target.id,
+            "twitter",
+            items.map((i) => ({ sourceId: i.sourceId, rawData: i.rawData }))
+          );
+        }
+        details.perTarget[username] = { items: items.length, saved, status: "ok" };
+        details.totalNewItems += saved;
+      } catch (e) {
+        const errClass = e instanceof Error ? e.name : "Error";
+        log.error(`Failed to fetch/save watch target ${target.id}:`, e);
+        details.perTarget[username] = { items: 0, status: "failed", errorClass: errClass };
+        details.failedTargets++;
+      }
+    }
+  } catch (e) {
+    log.error("Failed to start Twitter connector:", e);
+    // Counts every active target as failed since we never got a chance.
+    for (const t of activeTwitterTargets) {
+      const u = t.sourceConfig.username as string;
+      if (!details.perTarget[u]) {
+        details.perTarget[u] = { items: 0, status: "failed", errorClass: e instanceof Error ? e.name : "Error" };
+      }
+    }
+    details.failedTargets = Object.values(details.perTarget).filter((p) => p.status === "failed").length;
+  } finally {
+    await twitterConnector.stop();
+  }
+
+  return details;
 }
 
 /**
