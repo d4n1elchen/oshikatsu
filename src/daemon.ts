@@ -5,6 +5,7 @@ import { EventResolver } from "./core/EventResolver";
 import { ExportQueueRepo } from "./core/ExportQueueRepo";
 import { ExportRunner } from "./core/ExportRunner";
 import type { Consumer } from "./core/Consumer";
+import { ICalConsumer } from "./core/consumers/ICalConsumer";
 import { OllamaProvider } from "./core/LLMProvider";
 import { tagged } from "./core/logger";
 import { getConfig } from "./config";
@@ -23,10 +24,13 @@ async function main() {
   const exportQueueRepo = config.export.enabled ? new ExportQueueRepo() : null;
   const resolver = new EventResolver(undefined, undefined, exportQueueRepo);
 
-  // Real consumers (calendar, webhook, notification dispatch, etc.) are added
-  // here as separate follow-ups once the protocol lands. Until one is
-  // registered, the runner is a no-op and the queue accumulates harmlessly.
   const consumers: Consumer[] = [];
+  if (config.export.ical.enabled) {
+    consumers.push(new ICalConsumer({
+      outputDir: config.export.ical.outputDir,
+      calendarPrefix: config.export.ical.calendarPrefix,
+    }));
+  }
 
   log.info("Starting backend daemon");
 

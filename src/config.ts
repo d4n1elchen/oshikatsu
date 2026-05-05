@@ -31,6 +31,11 @@ export interface OshikatsuConfig {
   };
   export: {
     enabled: boolean;
+    ical: {
+      enabled: boolean;
+      outputDir: string;
+      calendarPrefix: string;
+    };
   };
 }
 
@@ -63,6 +68,11 @@ const DEFAULT_CONFIG: OshikatsuConfig = {
   },
   export: {
     enabled: false,
+    ical: {
+      enabled: false,
+      outputDir: "./data/ical",
+      calendarPrefix: "Oshikatsu",
+    },
   },
 };
 
@@ -106,12 +116,20 @@ export function getConfig(): OshikatsuConfig {
     twitter: { ...DEFAULT_CONFIG.twitter, ...userConfig.twitter },
     paths: { ...DEFAULT_CONFIG.paths, ...userConfig.paths },
     resolution: { ...DEFAULT_CONFIG.resolution, ...(userConfig as any).resolution },
-    export: { ...DEFAULT_CONFIG.export, ...(userConfig as any).export },
+    export: {
+      ...DEFAULT_CONFIG.export,
+      ...((userConfig as any).export ?? {}),
+      ical: {
+        ...DEFAULT_CONFIG.export.ical,
+        ...(((userConfig as any).export ?? {}).ical ?? {}),
+      },
+    },
   };
 
   // Resolve relative paths based on CWD
   cachedConfig.paths.browserData = path.resolve(process.cwd(), cachedConfig.paths.browserData);
   cachedConfig.paths.database = path.resolve(process.cwd(), cachedConfig.paths.database);
+  cachedConfig.export.ical.outputDir = path.resolve(process.cwd(), cachedConfig.export.ical.outputDir);
 
   return cachedConfig;
 }

@@ -32,7 +32,10 @@ resolution:
 
 # Phase 5: downstream export. When enabled, the resolver enqueues canonical
 # event changes into export_queue and the daemon registers an Export task
-# that drives registered consumers. Disabled by default — turn on once at
-# least one consumer is wired in src/daemon.ts.
+# that drives registered consumers.
 export:
   enabled: false
+  ical:
+    enabled: false
+    outputDir: "./data/ical"   # one <artist-id>.ics file per artist
+    calendarPrefix: "Oshikatsu" # X-WR-CALNAME prefix; full name is "<prefix> — <artist name>"
