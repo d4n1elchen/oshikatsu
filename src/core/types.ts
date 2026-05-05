@@ -1,4 +1,4 @@
-import { artists, watchTargets, rawItems, venues, venueAliases, extractedEvents, extractedEventRelatedLinks, normalizedEvents, normalizedEventSources, eventResolutionDecisions, schedulerRuns } from "../db/schema";
+import { artists, watchTargets, rawItems, venues, venueAliases, extractedEvents, extractedEventRelatedLinks, normalizedEvents, normalizedEventSources, eventResolutionDecisions, schedulerRuns, exportQueue, exportCursors } from "../db/schema";
 
 // Extract TypeScript types directly from Drizzle schemas
 export type Artist = typeof artists.$inferSelect;
@@ -50,3 +50,53 @@ export type SchedulerRun = typeof schedulerRuns.$inferSelect;
 export type NewSchedulerRun = typeof schedulerRuns.$inferInsert;
 export type SchedulerRunStatus = "running" | "completed" | "failed" | "aborted";
 export type RunDetails = Record<string, unknown>;
+
+export type ExportQueueEntry = typeof exportQueue.$inferSelect;
+export type NewExportQueueEntry = typeof exportQueue.$inferInsert;
+export type ExportChangeType = "created" | "updated" | "cancelled";
+
+export type ExportCursor = typeof exportCursors.$inferSelect;
+export type NewExportCursor = typeof exportCursors.$inferInsert;
+
+/**
+ * Consumer-facing projection of a canonical event. Plain-serializable: this
+ * shape crosses any boundary (process, network, language) cleanly, which is a
+ * deliberate choice for forward-compatibility with a future plugin system.
+ *
+ * Additive evolution only — never remove or rename a field. Consumers may
+ * ignore fields they don't care about.
+ */
+export type ExportRecord = {
+  id: string;
+  version: number;
+  changeType: ExportChangeType;
+  parentId: string | null;
+  artist: { id: string; name: string } | null;
+  title: string;
+  description: string;
+  startTime: string | null;
+  endTime: string | null;
+  venue: {
+    id: string | null;
+    name: string | null;
+    url: string | null;
+  };
+  type: string;
+  isCancelled: boolean;
+  tags: string[];
+  sources: {
+    sourceUrl: string;
+    publishTime: string;
+    author: string;
+  }[];
+  emittedAt: string;
+};
+
+export type DeliveryResult = {
+  /** IDs the consumer durably accepted; cursor advances past these. */
+  delivered: string[];
+  /** IDs the consumer rejected permanently (will not be retried). */
+  rejected?: { id: string; reason: string }[];
+  /** IDs the consumer wants retried next tick. Anything not in delivered/rejected is implicitly retried. */
+  retry?: string[];
+};

@@ -7,6 +7,7 @@ export interface OshikatsuConfig {
     ingestionIntervalMinutes: number;
     extractionIntervalMinutes: number;
     resolutionIntervalMinutes: number;
+    exportIntervalMinutes: number;
   };
   llm: {
     provider: "ollama" | string;
@@ -28,6 +29,9 @@ export interface OshikatsuConfig {
     needsReviewScoreThreshold: number;
     candidateWindowHours: number;
   };
+  export: {
+    enabled: boolean;
+  };
 }
 
 const DEFAULT_CONFIG: OshikatsuConfig = {
@@ -35,6 +39,7 @@ const DEFAULT_CONFIG: OshikatsuConfig = {
     ingestionIntervalMinutes: 15,
     extractionIntervalMinutes: 5,
     resolutionIntervalMinutes: 2,
+    exportIntervalMinutes: 5,
   },
   llm: {
     provider: "ollama",
@@ -55,6 +60,9 @@ const DEFAULT_CONFIG: OshikatsuConfig = {
     autoMergeScoreThreshold: 0.7,
     needsReviewScoreThreshold: 0.25,
     candidateWindowHours: 48,
+  },
+  export: {
+    enabled: false,
   },
 };
 
@@ -98,6 +106,7 @@ export function getConfig(): OshikatsuConfig {
     twitter: { ...DEFAULT_CONFIG.twitter, ...userConfig.twitter },
     paths: { ...DEFAULT_CONFIG.paths, ...userConfig.paths },
     resolution: { ...DEFAULT_CONFIG.resolution, ...(userConfig as any).resolution },
+    export: { ...DEFAULT_CONFIG.export, ...(userConfig as any).export },
   };
 
   // Resolve relative paths based on CWD

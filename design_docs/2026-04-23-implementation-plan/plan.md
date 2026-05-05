@@ -1,6 +1,6 @@
 # Implementation Plan: Oshikatsu
 
-> **Status:** Active roadmap. Phases 1, 2, 2.1, 3 (resolution + hierarchy), and 4 (Monitoring & Observability) have landed. Phase 5 (Downstream Export) is the next target.
+> **Status:** Active roadmap. Phases 1, 2, 2.1, 3 (resolution + hierarchy), 4 (Monitoring & Observability), and 5 (Downstream Export Protocol) have landed. Phase 6 (Multi-Source Support) is the next target.
 > **Follow-ups:** Future phases scoped inline as they're approached. Open work tracked in `TECH_DEBTS.md`.
 
 ## Overview
@@ -113,18 +113,27 @@ This plan outlines the phased implementation of the Oshikatsu platform, starting
 - Health-check CLI command for external monitoring.
 - External monitoring integrations (Prometheus, OpenTelemetry, etc.).
 
-## Phase 5: Downstream Export
+## Phase 5: Downstream Export Protocol
 
-**Goal**: Expose normalized events to downstream consumers.
+**Goal**: Build a generic export protocol so downstream consumers (calendar, notification, webhook, etc.) can be added one at a time without touching the core. No specific consumer is built in this phase — only the substrate.
 
 **Deliverables**:
 
-- Export interface for calendar integration
-- Export interface for notification dispatch
-- Configurable export triggers (on new event, on update)
-- TUI for managing export configuration and viewing export status
+- `Consumer` interface defining `deliver(batch)` with partial-success / retry semantics.
+- `ExportRunner` registered as a `ScheduledTask` so the existing Phase 4 Monitor view shows export health for free.
+- `export_queue` table populated by `EventResolver` whenever a normalized event is created / updated / cancelled.
+- `export_cursors` table tracking per-consumer delivery position.
+- Queue compaction so a lagging consumer sees the latest state per event, not the full edit history.
+- Defined contracts for sub-events (delivered as independent records with `parentId`), updates (`changeType="updated"` with bumped `version`), and cancellations (`changeType="cancelled"`, never deletes).
+- `NoopConsumer` reference implementation used in tests.
 
-**Working product**: Normalized events are exported to a calendar and/or notification system. Export runs surface in the Phase 4 monitoring view alongside ingestion/extraction/resolution.
+**Working product**: Adding a new downstream sink is a self-contained follow-up — implement `Consumer`, register in `daemon.ts`, done. Until a real consumer is registered, the runner is a no-op. Design: `design_docs/2026-05-04-phase5-downstream-export/`.
+
+**Out of scope** (each becomes its own follow-up):
+
+- Specific consumer implementations (iCal file, Google Calendar, Discord/Slack webhook, email, push).
+- Web/HTTP pull API (Phase 8).
+- Consumer-failure alerting (Phase 7, builds on the same `scheduler_runs` substrate).
 
 ## Phase 6: Multi-Source Support
 

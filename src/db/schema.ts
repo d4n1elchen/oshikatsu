@@ -159,6 +159,22 @@ export const eventResolutionDecisions = sqliteTable("event_resolution_decisions"
   index("idx_resolution_decisions_decision").on(table.decision),
 ]);
 
+export const exportQueue = sqliteTable("export_queue", {
+  position: integer("position").primaryKey({ autoIncrement: true }),
+  normalizedEventId: text("normalized_event_id").notNull().references(() => normalizedEvents.id, { onDelete: "cascade" }),
+  changeType: text("change_type", { enum: ["created", "updated", "cancelled"] }).notNull(),
+  version: integer("version").notNull(),
+  enqueuedAt: integer("enqueued_at", { mode: "timestamp" }).notNull(),
+}, (table) => [
+  index("idx_export_queue_event_position").on(table.normalizedEventId, table.position),
+]);
+
+export const exportCursors = sqliteTable("export_cursors", {
+  consumerName: text("consumer_name").primaryKey(),
+  cursorPosition: integer("cursor_position").notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+});
+
 export const schedulerRuns = sqliteTable("scheduler_runs", {
   id: text("id").primaryKey(),
   taskName: text("task_name").notNull(),

@@ -2,6 +2,9 @@ import { Scheduler } from "./core/Scheduler";
 import { runIngestionCycle } from "./core/ingestion";
 import { ExtractionEngine } from "./core/ExtractionEngine";
 import { EventResolver } from "./core/EventResolver";
+import { ExportQueueRepo } from "./core/ExportQueueRepo";
+import { ExportRunner } from "./core/ExportRunner";
+import type { Consumer } from "./core/Consumer";
 import { OllamaProvider } from "./core/LLMProvider";
 import { tagged } from "./core/logger";
 import { getConfig } from "./config";
@@ -13,7 +16,17 @@ async function main() {
 
   const llm = new OllamaProvider();
   const extractor = new ExtractionEngine(llm);
-  const resolver = new EventResolver();
+
+  // Phase 5: when export is enabled, the resolver enqueues consumer-visible
+  // changes into export_queue inside its existing write transactions. When
+  // disabled, no queue rows are written and the runner is not registered.
+  const exportQueueRepo = config.export.enabled ? new ExportQueueRepo() : null;
+  const resolver = new EventResolver(undefined, undefined, exportQueueRepo);
+
+  // Real consumers (calendar, webhook, notification dispatch, etc.) are added
+  // here as separate follow-ups once the protocol lands. Until one is
+  // registered, the runner is a no-op and the queue accumulates harmlessly.
+  const consumers: Consumer[] = [];
 
   log.info("Starting backend daemon");
 
@@ -46,11 +59,23 @@ async function main() {
       },
     });
 
+  let exportRunner: ExportRunner | null = null;
+  if (config.export.enabled && consumers.length > 0) {
+    exportRunner = new ExportRunner(consumers);
+    await exportRunner.start();
+    scheduler.add({
+      name: "Export",
+      intervalMinutes: config.scheduler.exportIntervalMinutes,
+      run: (signal) => exportRunner!.tick(signal),
+    });
+  }
+
   scheduler.start();
 
   process.on("SIGINT", async () => {
     log.info("Shutting down gracefully");
     await scheduler.stop();
+    if (exportRunner) await exportRunner.stop();
     process.exit(0);
   });
 }

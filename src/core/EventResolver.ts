@@ -8,6 +8,7 @@ import {
   normalizedEvents,
   normalizedEventSources,
 } from "../db/schema";
+import { ExportQueueRepo } from "./ExportQueueRepo";
 import { titleSimilarity } from "./titleSimilarity";
 import type { ResolutionSignals, ResolutionDecisionType } from "./types";
 import { getConfig } from "../config";
@@ -48,10 +49,16 @@ type ResolutionResult = {
 export class EventResolver {
   private db: DbInstance;
   private thresholds: EventResolverThresholds;
+  private exportQueue: ExportQueueRepo | null;
 
-  constructor(db: DbInstance = defaultDb, thresholds?: Partial<EventResolverThresholds>) {
+  constructor(
+    db: DbInstance = defaultDb,
+    thresholds?: Partial<EventResolverThresholds>,
+    exportQueue: ExportQueueRepo | null = null
+  ) {
     this.db = db;
     this.thresholds = { ...defaultThresholds(), ...thresholds };
+    this.exportQueue = exportQueue;
   }
   /**
    * Resolve a single extracted event: match against existing normalized events,
@@ -616,6 +623,8 @@ export class EventResolver {
           reason: decision === "new" ? reason : `No strong signals (score ${score.toFixed(2)}); created as new.`,
           createdAt: new Date(),
         }).run();
+
+        this.exportQueue?.enqueueSync(tx, newNormId, candidate.isCancelled ? "cancelled" : "created");
       });
 
       log.info(`Created new normalized event ${newNormId} for extracted ${candidate.id}`);
@@ -662,6 +671,8 @@ export class EventResolver {
           reason,
           createdAt: new Date(),
         }).run();
+
+        this.exportQueue?.enqueueSync(tx, subId, candidate.isCancelled ? "cancelled" : "created");
       });
 
       log.info(`Linked extracted ${candidate.id} as sub-event ${subId} of ${normalizedEventId}`);
@@ -678,12 +689,22 @@ export class EventResolver {
           createdAt: new Date(),
         }).onConflictDoNothing().run();
 
-        // Merge cancellation flag
+        // Merge cancellation flag — only enqueue if the canonical flag
+        // actually flips, to avoid sending consumers redundant cancellations.
+        let cancellationFlipped = false;
         if (candidate.isCancelled) {
-          tx.update(normalizedEvents)
-            .set({ isCancelled: true, updatedAt: new Date() })
+          const existing = tx
+            .select({ isCancelled: normalizedEvents.isCancelled })
+            .from(normalizedEvents)
             .where(eq(normalizedEvents.id, normalizedEventId))
-            .run();
+            .all();
+          if (existing[0] && !existing[0].isCancelled) {
+            cancellationFlipped = true;
+            tx.update(normalizedEvents)
+              .set({ isCancelled: true, updatedAt: new Date() })
+              .where(eq(normalizedEvents.id, normalizedEventId))
+              .run();
+          }
         }
 
         tx.insert(eventResolutionDecisions).values({
@@ -696,6 +717,10 @@ export class EventResolver {
           reason,
           createdAt: new Date(),
         }).run();
+
+        if (cancellationFlipped) {
+          this.exportQueue?.enqueueSync(tx, normalizedEventId, "cancelled");
+        }
       });
 
       // Copy related links (deduped by URL) outside transaction for simplicity

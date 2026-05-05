@@ -5,6 +5,7 @@ scheduler:
   ingestionIntervalMinutes: 60      # how often to fetch new raw items from sources
   extractionIntervalMinutes: 5      # how often to run LLM extraction over unprocessed raw items
   resolutionIntervalMinutes: 2      # how often to resolve newly extracted events into normalized events
+  exportIntervalMinutes: 5          # how often to push canonical events to registered consumers (Phase 5)
 
 llm:
   provider: "ollama"
@@ -28,3 +29,10 @@ resolution:
   autoMergeScoreThreshold: 0.7    # aggregate score required to auto-merge
   needsReviewScoreThreshold: 0.25 # below auto-merge but above this → review queue
   candidateWindowHours: 48        # ± window for considering events the same
+
+# Phase 5: downstream export. When enabled, the resolver enqueues canonical
+# event changes into export_queue and the daemon registers an Export task
+# that drives registered consumers. Disabled by default — turn on once at
+# least one consumer is wired in src/daemon.ts.
+export:
+  enabled: false

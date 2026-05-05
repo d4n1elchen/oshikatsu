@@ -113,6 +113,13 @@
       "when": 1777308487151,
       "tag": "0015_legal_goblin_queen",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1777945843989,
+      "tag": "0016_cuddly_spirit",
+      "breakpoints": true
     }
   ]
 }
