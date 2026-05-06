@@ -1,24 +1,42 @@
 import { count, inArray, lt } from "drizzle-orm";
 import { db } from "../db";
 import {
+  artists,
   eventResolutionDecisions,
+  exportCursors,
+  exportQueue,
   extractedEventRelatedLinks,
   extractedEvents,
   normalizedEventSources,
   normalizedEvents,
   rawItems,
   schedulerRuns,
+  venueAliases,
+  venues,
+  watchTargets,
 } from "../db/schema";
 
 type Mode =
+  // Per-table modes — one flag per table in the schema.
+  | "artists"
+  | "watch_targets"
+  | "raw_items"
+  | "venues"
+  | "venue_aliases"
   | "extracted_events"
   | "extracted_links"
-  | "raw_items"
   | "normalized_events"
+  | "normalized_event_sources"
   | "resolution_decisions"
-  | "resolution"
   | "scheduler_runs"
-  | "all";
+  | "export_queue"
+  | "export_cursors"
+  // Convenience combos.
+  | "resolution"
+  | "export"
+  | "watchlist"
+  | "all"
+  | "everything";
 
 interface ResetArgs {
   mode: Mode;
@@ -39,39 +57,58 @@ function parseArgs(argv: string[]): ResetArgs {
     mode = m;
   };
 
+  // Map of (--flag, alias --flag-with-hyphens) → mode.
+  const flagToMode: Record<string, Mode> = {
+    "--artists": "artists",
+    "--watch_targets": "watch_targets",
+    "--watch-targets": "watch_targets",
+    "--targets": "watch_targets",
+    "--raw_items": "raw_items",
+    "--raw-items": "raw_items",
+    "--venues": "venues",
+    "--venue_aliases": "venue_aliases",
+    "--venue-aliases": "venue_aliases",
+    "--extracted_events": "extracted_events",
+    "--extracted-events": "extracted_events",
+    "--extracted_links": "extracted_links",
+    "--extracted-links": "extracted_links",
+    "--normalized_events": "normalized_events",
+    "--normalized-events": "normalized_events",
+    "--normalized_event_sources": "normalized_event_sources",
+    "--normalized-event-sources": "normalized_event_sources",
+    "--resolution_decisions": "resolution_decisions",
+    "--resolution-decisions": "resolution_decisions",
+    "--scheduler_runs": "scheduler_runs",
+    "--scheduler-runs": "scheduler_runs",
+    "--runs": "scheduler_runs",
+    "--export_queue": "export_queue",
+    "--export-queue": "export_queue",
+    "--export_cursors": "export_cursors",
+    "--export-cursors": "export_cursors",
+    "--resolution": "resolution",
+    "--export": "export",
+    "--watchlist": "watchlist",
+    "--all": "all",
+    "--everything": "everything",
+  };
+
   for (const arg of argv) {
     if (arg === "--dry-run") {
       dryRun = true;
     } else if (arg.startsWith("--older-than=")) {
       olderThanMs = parseDurationToMs(arg.slice("--older-than=".length));
-    } else if (arg === "--all") {
-      setMode("all");
-    } else if (arg === "--extracted_events" || arg === "--extracted-events") {
-      setMode("extracted_events");
-    } else if (arg === "--extracted_links" || arg === "--extracted-links") {
-      setMode("extracted_links");
-    } else if (arg === "--raw_items" || arg === "--raw-items") {
-      setMode("raw_items");
-    } else if (arg === "--normalized_events" || arg === "--normalized-events") {
-      setMode("normalized_events");
-    } else if (arg === "--resolution_decisions" || arg === "--resolution-decisions") {
-      setMode("resolution_decisions");
-    } else if (arg === "--resolution") {
-      setMode("resolution");
-    } else if (arg === "--scheduler_runs" || arg === "--scheduler-runs" || arg === "--runs") {
-      setMode("scheduler_runs");
     } else if (arg === "--help" || arg === "-h") {
       printUsage();
       process.exit(0);
+    } else if (flagToMode[arg]) {
+      setMode(flagToMode[arg]!);
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
   }
 
   if (!mode) {
-    throw new Error(
-      "Specify exactly one mode: --extracted_events, --extracted_links, --raw_items, --normalized_events, --resolution_decisions, --resolution, --scheduler_runs, or --all.",
-    );
+    throw new Error("Specify exactly one mode. Run with --help for the full list.");
   }
 
   return { mode, dryRun, olderThanMs };
@@ -89,33 +126,118 @@ function parseDurationToMs(s: string): number {
 function printUsage(): void {
   console.log(`Usage: tsx src/scripts/resetDb.ts <mode> [--dry-run]
 
-Modes (pick exactly one):
-  --extracted_events     Delete all extracted events (cascades to resolution layer); reset linked raw items to status='new'.
-  --extracted_links      Delete all extracted event related links.
-  --raw_items            Delete all raw items (cascades to extracted events, related links, and resolution layer).
-  --normalized_events    Delete all normalized events (cascades to normalized_event_sources; nulls decision matches).
-  --resolution_decisions Delete all event resolution decisions.
-  --resolution           Wipe the resolution layer only (normalized_events + decisions); leaves extracted_events intact for re-resolution.
-  --scheduler_runs       Delete scheduler_runs rows (defaults to all; pair with --older-than to prune by age).
-  --all                  Wipe everything below artists/watch_targets/venues: raw_items + extracted_events + resolution layer + scheduler_runs.
+Per-table modes:
+  --artists                   Delete all artists. Cascades to watch_targets, raw_items, extracted/normalized layers.
+  --watch_targets             Delete all watch targets. Cascades to raw_items + downstream.
+  --raw_items                 Delete all raw items. Cascades to extracted/normalized layers.
+  --venues                    Delete all venues. Cascades to venue_aliases; extracted/normalized venue_id set NULL.
+  --venue_aliases             Delete all venue aliases.
+  --extracted_events          Delete all extracted events; reset linked raw items to status='new'.
+  --extracted_links           Delete all extracted event related links.
+  --normalized_events         Delete all normalized events. Cascades to normalized_event_sources + export_queue.
+  --normalized_event_sources  Delete all normalized_event_sources entries.
+  --resolution_decisions      Delete all event resolution decisions.
+  --scheduler_runs            Delete scheduler_runs rows (pair with --older-than to prune by age).
+  --export_queue              Delete all export_queue entries.
+  --export_cursors            Delete all export_cursors.
+
+Convenience combos:
+  --resolution                Wipe normalized_events + resolution_decisions; leaves extracted_events for re-resolution.
+  --export                    Wipe export_queue + export_cursors.
+  --watchlist                 Wipe artists + watch_targets + venues + venue_aliases. Cascades to all downstream data.
+  --all                       Wipe operational data: raw_items + downstream + scheduler_runs + export tables.
+                              Preserves watchlist (artists/targets/venues).
+  --everything                Wipe absolutely every row. Schema only survives.
 
 Options:
-  --dry-run              Print the rows that would be touched without changing the database.
-  --older-than=DURATION  For --scheduler_runs only: delete runs older than DURATION. Examples: 30d, 12h, 60m.
-  --help, -h             Show this help text.
+  --dry-run                   Print the rows that would be touched without changing the database.
+  --older-than=DURATION       For --scheduler_runs only: delete runs older than DURATION (e.g. 30d, 12h, 60m).
+  --help, -h                  Show this help text.
 
 Notes:
   - Hyphenated flag forms are also accepted (e.g. --extracted-events).
-  - Artists, watch targets, venues, and venue aliases are never touched by this script.
   - Cascade rules: deleting raw_items deletes extracted_events; deleting extracted_events deletes
-    normalized_event_sources and event_resolution_decisions; deleting normalized_events deletes
-    normalized_event_sources and nulls matched_normalized_event_id on decisions.
+    normalized_event_sources, event_resolution_decisions; deleting normalized_events deletes
+    normalized_event_sources, export_queue rows, and nulls matched_normalized_event_id on decisions.
   - --extracted_events also wipes normalized_events so the resolution layer doesn't end up orphaned.`);
 }
 
 async function tableCount(table: any): Promise<number> {
   const [row] = await db.select({ value: count() }).from(table);
   return row?.value ?? 0;
+}
+
+// --- Per-table reset functions ---
+
+async function resetArtists(dryRun: boolean): Promise<void> {
+  const artistCount = await tableCount(artists);
+  const targetCount = await tableCount(watchTargets);
+  const rawCount = await tableCount(rawItems);
+  const eventCount = await tableCount(extractedEvents);
+  const normCount = await tableCount(normalizedEvents);
+
+  console.log(`Will delete ${artistCount} artist(s).`);
+  console.log(
+    `Cascade will also delete: ${targetCount} watch target(s), ${rawCount} raw item(s), ${eventCount} extracted event(s), ${normCount} normalized event(s) and all dependent rows.`,
+  );
+
+  if (dryRun) {
+    console.log("Dry run; no changes made.");
+    return;
+  }
+  if (artistCount === 0) {
+    console.log("Nothing to do.");
+    return;
+  }
+  await db.delete(artists);
+  console.log("Done.");
+}
+
+async function resetWatchTargets(dryRun: boolean): Promise<void> {
+  const targetCount = await tableCount(watchTargets);
+  const rawCount = await tableCount(rawItems);
+
+  console.log(`Will delete ${targetCount} watch target(s).`);
+  console.log(`Cascade will also delete: ${rawCount} raw item(s) and all dependent rows.`);
+
+  if (dryRun) {
+    console.log("Dry run; no changes made.");
+    return;
+  }
+  if (targetCount === 0) {
+    console.log("Nothing to do.");
+    return;
+  }
+  await db.delete(watchTargets);
+  console.log("Done.");
+}
+
+async function resetVenues(dryRun: boolean): Promise<void> {
+  const venueCount = await tableCount(venues);
+  const aliasCount = await tableCount(venueAliases);
+
+  console.log(`Will delete ${venueCount} venue(s).`);
+  console.log(`Cascade will also delete: ${aliasCount} venue alias(es). venue_id on extracted/normalized events will be set NULL.`);
+
+  if (dryRun) {
+    console.log("Dry run; no changes made.");
+    return;
+  }
+  if (venueCount === 0) {
+    console.log("Nothing to do.");
+    return;
+  }
+  await db.delete(venues);
+  console.log("Done.");
+}
+
+async function resetVenueAliases(dryRun: boolean): Promise<void> {
+  const aliasCount = await tableCount(venueAliases);
+  console.log(`Will delete ${aliasCount} venue alias(es).`);
+  if (dryRun) { console.log("Dry run; no changes made."); return; }
+  if (aliasCount === 0) { console.log("Nothing to do."); return; }
+  await db.delete(venueAliases);
+  console.log("Done.");
 }
 
 async function resetExtractedEvents(dryRun: boolean): Promise<void> {
@@ -159,19 +281,9 @@ async function resetExtractedEvents(dryRun: boolean): Promise<void> {
 
 async function resetExtractedLinks(dryRun: boolean): Promise<void> {
   const linkCount = await tableCount(extractedEventRelatedLinks);
-
   console.log(`Will delete ${linkCount} extracted event related link(s).`);
-
-  if (dryRun) {
-    console.log("Dry run; no changes made.");
-    return;
-  }
-
-  if (linkCount === 0) {
-    console.log("Nothing to do.");
-    return;
-  }
-
+  if (dryRun) { console.log("Dry run; no changes made."); return; }
+  if (linkCount === 0) { console.log("Nothing to do."); return; }
   await db.delete(extractedEventRelatedLinks);
   console.log("Done.");
 }
@@ -209,9 +321,10 @@ async function resetRawItems(dryRun: boolean): Promise<void> {
 async function resetNormalizedEvents(dryRun: boolean): Promise<void> {
   const normCount = await tableCount(normalizedEvents);
   const sourceCount = await tableCount(normalizedEventSources);
+  const queueCount = await tableCount(exportQueue);
 
   console.log(`Will delete ${normCount} normalized event(s).`);
-  console.log(`Cascade will also delete: ${sourceCount} normalized event source link(s).`);
+  console.log(`Cascade will also delete: ${sourceCount} normalized_event_sources row(s), ${queueCount} export_queue row(s).`);
   console.log(`Resolution decisions will have matched_normalized_event_id set to NULL.`);
 
   if (dryRun) {
@@ -228,21 +341,20 @@ async function resetNormalizedEvents(dryRun: boolean): Promise<void> {
   console.log("Done.");
 }
 
+async function resetNormalizedEventSources(dryRun: boolean): Promise<void> {
+  const c = await tableCount(normalizedEventSources);
+  console.log(`Will delete ${c} normalized_event_sources row(s).`);
+  if (dryRun) { console.log("Dry run; no changes made."); return; }
+  if (c === 0) { console.log("Nothing to do."); return; }
+  await db.delete(normalizedEventSources);
+  console.log("Done.");
+}
+
 async function resetResolutionDecisions(dryRun: boolean): Promise<void> {
   const decisionCount = await tableCount(eventResolutionDecisions);
-
   console.log(`Will delete ${decisionCount} event resolution decision(s).`);
-
-  if (dryRun) {
-    console.log("Dry run; no changes made.");
-    return;
-  }
-
-  if (decisionCount === 0) {
-    console.log("Nothing to do.");
-    return;
-  }
-
+  if (dryRun) { console.log("Dry run; no changes made."); return; }
+  if (decisionCount === 0) { console.log("Nothing to do."); return; }
   await db.delete(eventResolutionDecisions);
   console.log("Done.");
 }
@@ -284,6 +396,26 @@ async function resetSchedulerRuns(dryRun: boolean, olderThanMs?: number): Promis
   console.log("Done.");
 }
 
+async function resetExportQueue(dryRun: boolean): Promise<void> {
+  const c = await tableCount(exportQueue);
+  console.log(`Will delete ${c} export_queue row(s).`);
+  if (dryRun) { console.log("Dry run; no changes made."); return; }
+  if (c === 0) { console.log("Nothing to do."); return; }
+  await db.delete(exportQueue);
+  console.log("Done.");
+}
+
+async function resetExportCursors(dryRun: boolean): Promise<void> {
+  const c = await tableCount(exportCursors);
+  console.log(`Will delete ${c} export_cursors row(s).`);
+  if (dryRun) { console.log("Dry run; no changes made."); return; }
+  if (c === 0) { console.log("Nothing to do."); return; }
+  await db.delete(exportCursors);
+  console.log("Done.");
+}
+
+// --- Combo modes ---
+
 async function resetResolutionLayer(dryRun: boolean): Promise<void> {
   const normCount = await tableCount(normalizedEvents);
   const sourceCount = await tableCount(normalizedEventSources);
@@ -309,37 +441,53 @@ async function resetResolutionLayer(dryRun: boolean): Promise<void> {
   console.log("Done.");
 }
 
+async function resetExportTables(dryRun: boolean): Promise<void> {
+  await resetExportQueue(dryRun);
+  await resetExportCursors(dryRun);
+}
+
+async function resetWatchlist(dryRun: boolean): Promise<void> {
+  // Order matters: artists cascade-deletes watch_targets and (transitively)
+  // raw_items + downstream. Venues are independent and just need their
+  // aliases removed via cascade.
+  await resetArtists(dryRun);
+  await resetVenues(dryRun);
+}
+
+async function resetAll(dryRun: boolean): Promise<void> {
+  // Operational data only — preserves watchlist (artists/targets/venues).
+  await resetRawItems(dryRun);
+  await resetSchedulerRuns(dryRun);
+  await resetExportTables(dryRun);
+}
+
+async function resetEverything(dryRun: boolean): Promise<void> {
+  await resetAll(dryRun);
+  await resetWatchlist(dryRun);
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
 
   switch (args.mode) {
-    case "extracted_events":
-      await resetExtractedEvents(args.dryRun);
-      return;
-    case "extracted_links":
-      await resetExtractedLinks(args.dryRun);
-      return;
-    case "raw_items":
-      await resetRawItems(args.dryRun);
-      return;
-    case "all":
-      // --all wipes raw_items (cascading to extracted/links/sources/decisions
-      // and explicitly normalized_events) plus scheduler_runs.
-      await resetRawItems(args.dryRun);
-      await resetSchedulerRuns(args.dryRun);
-      return;
-    case "normalized_events":
-      await resetNormalizedEvents(args.dryRun);
-      return;
-    case "resolution_decisions":
-      await resetResolutionDecisions(args.dryRun);
-      return;
-    case "resolution":
-      await resetResolutionLayer(args.dryRun);
-      return;
-    case "scheduler_runs":
-      await resetSchedulerRuns(args.dryRun, args.olderThanMs);
-      return;
+    case "artists": return resetArtists(args.dryRun);
+    case "watch_targets": return resetWatchTargets(args.dryRun);
+    case "raw_items": return resetRawItems(args.dryRun);
+    case "venues": return resetVenues(args.dryRun);
+    case "venue_aliases": return resetVenueAliases(args.dryRun);
+    case "extracted_events": return resetExtractedEvents(args.dryRun);
+    case "extracted_links": return resetExtractedLinks(args.dryRun);
+    case "normalized_events": return resetNormalizedEvents(args.dryRun);
+    case "normalized_event_sources": return resetNormalizedEventSources(args.dryRun);
+    case "resolution_decisions": return resetResolutionDecisions(args.dryRun);
+    case "scheduler_runs": return resetSchedulerRuns(args.dryRun, args.olderThanMs);
+    case "export_queue": return resetExportQueue(args.dryRun);
+    case "export_cursors": return resetExportCursors(args.dryRun);
+    case "resolution": return resetResolutionLayer(args.dryRun);
+    case "export": return resetExportTables(args.dryRun);
+    case "watchlist": return resetWatchlist(args.dryRun);
+    case "all": return resetAll(args.dryRun);
+    case "everything": return resetEverything(args.dryRun);
   }
 }
 
