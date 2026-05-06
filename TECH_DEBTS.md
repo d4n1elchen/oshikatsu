@@ -6,10 +6,10 @@ This document tracks known technical debts, follow-up decisions, and intentional
 
 ### Test coverage gaps
 
-The full test suite covers 111 cases across `EventResolver`, `titleSimilarity`, `canonicalizeUrl`, `VenueResolver`, `TwitterConnector`, `ExtractionStrategy`, `ExtractionEngine`, `Scheduler`, and `SchedulerRunsRepo`. Areas without coverage:
+The full test suite covers 149 cases across `EventResolver`, `titleSimilarity`, `canonicalizeUrl`, `VenueResolver`, `TwitterConnector`, `ExtractionStrategy`, `ExtractionEngine`, `Scheduler`, `SchedulerRunsRepo`, `ExportRunner`, `ICalConsumer`, `icalSerialize`, `validateHandle`, and `WatchListManager` (handle behavior). Areas without coverage:
 
 - LLM provider implementations (`OllamaProvider`) — currently only exercised through the fake in `ExtractionEngine.test.ts`.
-- TUI views (`RawItems`, `ExtractedEvents`, `NormalizedEvents`, `ReviewQueue`, `WatchList`).
+- TUI views (`RawItems`, `ExtractedEvents`, `NormalizedEvents`, `ReviewQueue`, `WatchList`, `Monitor`).
 - Daemon wiring.
 
 Follow-up:
@@ -196,6 +196,40 @@ Follow-up:
 Follow-up:
 
 - Review the list quarterly or whenever an `AntiBotError` rate spike is observed.
+
+## Phase 5 Downstream Export
+
+### Monitor TUI hardcodes the task-name list
+
+`src/tui/views/Monitor.tsx` keys its per-task cards on a literal `["Ingestion", "Extraction", "Resolution"]`. Export ticks land in `scheduler_runs` and show up in the bottom recent-runs list, but no per-task card renders for them. The same gap will hit Phase 6 multi-source ingestion and any future `ScheduledTask`.
+
+Follow-up:
+
+- Derive task names from `SELECT DISTINCT task_name FROM scheduler_runs`, falling back to a baseline list when the table is empty.
+
+### iCal `SEQUENCE` is timestamp-derived, not consecutive
+
+`ICalConsumer` emits `SEQUENCE: floor(updated_at / 1000)`. Calendars only require a monotonic non-negative integer per UID, so this works, but values are large (≈10-digit Unix seconds) rather than the conventional small counter. Cosmetic only.
+
+Follow-up:
+
+- If a calendar client rejects the values, switch to a per-UID counter persisted on `normalized_events` or derived from `export_queue.version`.
+
+### Stale iCal files are not swept on artist rename or delete
+
+Artist handles can change via the TUI; an old `<old-handle>.ics` file is not removed. Same for artist deletion. The user explicitly opted out of sweep logic during development.
+
+Follow-up:
+
+- If the project gains real subscribers, add a sweep that lists `outputDir`, compares to the current artist handle set, and removes orphans. Until then, the operator clears the directory manually.
+
+### Export-protocol follow-ups deferred per design doc
+
+The Phase 5 design doc lists items intentionally out of scope: a `Consumer.transform()` hook for parent+sub-event bundling, an `export_rejections` table for operator review of permanently-rejected records, registration-time consumer filters, cross-tick rate limiting. None block any current consumer.
+
+Follow-up:
+
+- Promote each only when a concrete consumer needs it.
 
 ## TUI / Developer Workflow
 

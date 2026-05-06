@@ -1,7 +1,7 @@
 # Phase 5: Downstream Export Protocol
 
-> **Status:** Landed. New tests in `ExportRunner.test.ts` (7) and `EventResolverExport.test.ts` (4); all 122 unit tests pass.
-> **Follow-ups:** Specific consumer implementations (iCal, webhook, notification dispatch, etc.) are out of scope for this phase and tracked in `TECH_DEBTS.md`.
+> **Status:** Landed. Protocol substrate and the first concrete consumer (per-artist iCal) are in place. `artists.handle` was added as the stable per-artist identifier the iCal consumer keys on; future operator-facing URLs will use the same column. Test coverage: `ExportRunner.test.ts`, `EventResolverExport.test.ts`, `ICalConsumer.test.ts`, `icalSerialize.test.ts`, `validateHandle.test.ts`, `WatchListManager.test.ts` — 149 unit tests in total.
+> **Follow-ups:** Additional consumers (webhook, notification dispatch, etc.) are independent commits. Monitor-tab task list is hardcoded today; deferred items tracked in `TECH_DEBTS.md`.
 
 ## Overview
 

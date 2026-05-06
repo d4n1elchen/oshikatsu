@@ -94,10 +94,12 @@ Operating notes:
 
 ### 5. Downstream Integration
 
-Exposes standardized records to automation workflows.
+Exposes canonical events to automation workflows through a generic export protocol.
 
-- Exposes `export(record)` to push data to downstream pipelines
-- Supports calendar updates, notification dispatch, and other integrations
+- A persistent **export queue** captures every consumer-visible mutation to a normalized event (created, updated, cancelled), written by the resolver inside the same transaction that mutates the canonical row.
+- A pluggable **`Consumer` interface** lets each downstream sink (calendar, notification, webhook, ...) accept records independently. Per-consumer cursors track delivery position so each consumer advances at its own pace; one consumer's failure doesn't block another's progress.
+- Records the consumer sees are a stable, plain-serializable projection (`ExportRecord`) decoupled from the internal DB schema, so consumer implementations and the protocol can evolve independently.
+- The export task runs through the same Scheduler/`scheduler_runs` instrumentation as ingestion/extraction/resolution, so health is visible in the Monitor view automatically.
 
 ### 6. Scheduler
 
@@ -128,10 +130,11 @@ Handles persistence of data across the pipeline. The names below describe logica
 
 - **Watch List**: Persists which artists are actively monitored, the watch targets that describe how each artist is monitored, and the per-artist and per-target enable/disable toggles. References artist identities from the Artist Database rather than holding them.
 - **Raw Storage**: Persists raw payloads fetched from sources before normalization, along with metadata (source identifier, fetch timestamps, processing status).
-- **Artist Database**: Owns the canonical artist identity — display name, categories, groups, known handles and channels. Consumed by the Watch List (to identify which artist a watch target belongs to), by Extraction (to link extracted events to known artists), and by downstream consumers for display and enrichment.
+- **Artist Database**: Owns the canonical artist identity — display name, an operator-curated stable `handle` (used as the iCal filename and reserved for any future operator-facing URL), categories, groups, known social-media handles and channels. Consumed by the Watch List (to identify which artist a watch target belongs to), by Extraction (to link extracted events to known artists), and by downstream consumers for display and enrichment.
 - **Venue Database**: Reference database of physical and virtual venue information and aliases. Extracted events may reference a canonical venue through `venue_id`, which is used as a conservative signal during event resolution.
 - **Extracted Event Storage**: Persists one extracted event candidate per raw item, plus extracted related links and source provenance.
 - **Normalized Storage**: Persists canonical event records after event resolution (identity, merge, and hierarchy). These are the records downstream consumers should treat as the event timeline.
+- **Export Pipeline State**: Two tables backing Downstream Integration. An append-only queue records every consumer-visible mutation to a normalized event; a per-consumer cursor table tracks how far each registered sink has caught up.
 
 ## Data Model
 
@@ -185,8 +188,8 @@ Handles persistence of data across the pipeline. The names below describe logica
   "is_cancelled": "boolean flag for cancelled events",
   "artist": {
     "id": "unique artist identifier",
+    "handle": "operator-curated stable identifier, used as the iCal filename and reserved for future operator-facing URLs (unique, required)",
     "name": "display name",
-    "handle": "social media handle (e.g., Twitter/X username)",
     "profile_url": "link to artist profile",
     "categories": "artist type (e.g., singer, Vtuber, idol, voice actor)",
     "groups": "associated groups or units (if applicable)"
@@ -225,7 +228,7 @@ All components expose stable, abstract interfaces:
 - `extract(raw)` — convert one raw source item into one extracted event candidate
 - `resolve(extracted)` — resolve an extracted event against canonical normalized events: identify it as new, merge it into an existing event, or link it as a sub-event of an existing main event
 - `save(record)` — persist extracted or normalized records depending on component boundary
-- `export(record)` — expose records to downstream pipelines
+- `Consumer.deliver(batch)` — downstream sink interface; consumers accept a batch of `ExportRecord`s, return per-record delivery outcomes, and may be added without touching the export pipeline core
 
 ## User Interface
 
