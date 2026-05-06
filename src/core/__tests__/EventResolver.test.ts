@@ -20,6 +20,7 @@ function createTestDb() {
   sqlite.exec(`
     CREATE TABLE artists (
       id TEXT PRIMARY KEY,
+      handle TEXT NOT NULL UNIQUE,
       name TEXT NOT NULL,
       categories TEXT NOT NULL,
       groups TEXT NOT NULL,
@@ -144,6 +145,7 @@ const NOW = new Date("2025-06-01T12:00:00Z");
 function insertArtist(db: TestDb, id = "artist-1") {
   db.insert(schema.artists).values({
     id,
+    handle: id,
     name: "Test Artist",
     categories: [],
     groups: [],

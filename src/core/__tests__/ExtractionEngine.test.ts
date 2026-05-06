@@ -24,7 +24,7 @@ function createTestDb() {
 
   sqlite.exec(`
     CREATE TABLE artists (
-      id TEXT PRIMARY KEY, name TEXT NOT NULL,
+      id TEXT PRIMARY KEY, handle TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
       categories TEXT NOT NULL, groups TEXT NOT NULL,
       enabled INTEGER NOT NULL DEFAULT 1,
       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
@@ -358,6 +358,7 @@ test("artist_id is populated when the raw item's watch target has an artist", as
   // Seed an artist + watch target.
   db.insert(schema.artists).values({
     id: "artist-1",
+    handle: "artist-1",
     name: "Test Artist",
     categories: [],
     groups: [],

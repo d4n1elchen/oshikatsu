@@ -22,13 +22,13 @@ export type ICalConsumerOptions = {
 };
 
 /**
- * Per-artist iCal file consumer. Each artist gets `<artist-name-slug>.ics`
- * in `outputDir`; users subscribe per artist. Sub-events are emitted as
- * separate VEVENT entries with `[Parent Title] ` prefixed onto SUMMARY,
- * since calendars don't model parent/child natively.
+ * Per-artist iCal file consumer. Each artist gets `<handle>.ics` in
+ * `outputDir`; users subscribe per artist. The handle is the
+ * operator-curated identifier on `artists.handle`, so filenames are
+ * stable across renames and unique by construction.
  *
- * When two artists slugify to the same name, the colliding ones get a
- * short id suffix — stable per artist so subscription URLs don't shuffle.
+ * Sub-events are emitted as separate VEVENT entries with `[Parent Title] `
+ * prefixed onto SUMMARY, since calendars don't model parent/child natively.
  *
  * Delivery model: rebuild each affected artist's file from scratch by
  * querying current state of `normalized_events`. Cheap at our scale (<<
@@ -68,16 +68,10 @@ export class ICalConsumer implements Consumer {
       }
     }
 
-    // Build the id→filename map for every artist so collisions are detected
-    // even when only some of the colliding artists were touched this tick.
-    const filenameByArtistId = await this.computeFilenameMap();
-
     const errors: { id: string; reason: string }[] = [];
     for (const artistId of affectedArtistIds) {
-      const filename = filenameByArtistId.get(artistId);
-      if (!filename) continue; // Artist row gone since the record was queued.
       try {
-        await this.rebuildArtistFile(artistId, filename);
+        await this.rebuildArtistFile(artistId);
       } catch (e) {
         const reason = e instanceof Error ? e.message : String(e);
         log.error(`Failed to rebuild feed for artist ${artistId}:`, e);
@@ -111,38 +105,7 @@ export class ICalConsumer implements Consumer {
     return { delivered };
   }
 
-  /**
-   * Compute the full id→filename map for every artist in the database.
-   * Filenames use a slugified name; ids that slugify to the same value get
-   * a short id suffix to disambiguate, applied in id-sort order so each
-   * artist's filename is stable across runs.
-   */
-  private async computeFilenameMap(): Promise<Map<string, string>> {
-    const rows = await this.db.select({ id: artists.id, name: artists.name }).from(artists);
-
-    const groups = new Map<string, { id: string; name: string }[]>();
-    for (const row of rows) {
-      const slug = slugifyArtistName(row.name) || row.id;
-      const list = groups.get(slug) ?? [];
-      list.push(row);
-      groups.set(slug, list);
-    }
-
-    const result = new Map<string, string>();
-    for (const [slug, group] of groups) {
-      if (group.length === 1) {
-        result.set(group[0]!.id, `${slug}.ics`);
-        continue;
-      }
-      group.sort((a, b) => a.id.localeCompare(b.id));
-      for (const artist of group) {
-        result.set(artist.id, `${slug}-${artist.id.slice(0, 8)}.ics`);
-      }
-    }
-    return result;
-  }
-
-  private async rebuildArtistFile(artistId: string, filename: string): Promise<void> {
+  private async rebuildArtistFile(artistId: string): Promise<void> {
     const [artistRow] = await this.db
       .select()
       .from(artists)
@@ -194,33 +157,9 @@ export class ICalConsumer implements Consumer {
     const calendarName = `${this.calendarPrefix} — ${artistRow.name}`;
     const body = serializeCalendar(calendarName, icalEvents);
 
-    const finalPath = path.join(this.outputDir, filename);
+    const finalPath = path.join(this.outputDir, `${artistRow.handle}.ics`);
     const tempPath = `${finalPath}.tmp`;
     await fs.writeFile(tempPath, body, "utf8");
     await fs.rename(tempPath, finalPath);
   }
-}
-
-/**
- * Convert an artist name into a filesystem-safe filename stem.
- *
- * Rules:
- *  - Strip control chars.
- *  - Replace `/ \ : * ? " < > |` with `_` (Windows-unsafe set, plus path
- *    separators on POSIX).
- *  - Collapse internal whitespace to single `-`.
- *  - Trim leading/trailing whitespace, dots, hyphens, and underscores so the
- *    result is neither hidden (`.foo`) nor confuses extension parsing.
- *  - Preserve Unicode (Japanese, etc.) — modern filesystems handle UTF-8.
- *
- * Returns an empty string if nothing usable remains; callers should fall
- * back to the artist id in that case.
- */
-export function slugifyArtistName(name: string): string {
-  const collapsed = name.replace(/\s+/g, "-");
-  // eslint-disable-next-line no-control-regex
-  const noControl = collapsed.replace(/[\u0000-\u001F\u007F]/g, "");
-  const safeChars = noControl.replace(/[\\/:*?"<>|]/g, "_");
-  const trimmed = safeChars.replace(/^[.\-_]+|[.\-_]+$/g, "");
-  return trimmed;
 }

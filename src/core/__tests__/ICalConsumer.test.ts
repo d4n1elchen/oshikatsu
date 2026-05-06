@@ -1,6 +1,6 @@
 /**
- * ICalConsumer integration: per-artist file rebuild, sub-event prefix,
- * cancellation, atomic write.
+ * ICalConsumer integration: per-artist file rebuild keyed by artists.handle,
+ * sub-event prefix, cancellation, atomic write.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -11,35 +11,8 @@ import { randomUUID } from "crypto";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import * as schema from "../../db/schema";
-import { ICalConsumer, slugifyArtistName } from "../consumers/ICalConsumer";
+import { ICalConsumer } from "../consumers/ICalConsumer";
 import type { ExportRecord } from "../types";
-
-test("slugifyArtistName replaces whitespace runs with hyphen", () => {
-  assert.equal(slugifyArtistName("Artist A"), "Artist-A");
-  assert.equal(slugifyArtistName("  trim  me  "), "trim-me");
-  assert.equal(slugifyArtistName("multi\t\twhite space"), "multi-white-space");
-});
-
-test("slugifyArtistName replaces filesystem-unsafe chars with underscore", () => {
-  assert.equal(slugifyArtistName("a/b\\c:d*e?f\"g<h>i|j"), "a_b_c_d_e_f_g_h_i_j");
-});
-
-test("slugifyArtistName preserves unicode", () => {
-  assert.equal(slugifyArtistName("嵐"), "嵐");
-  assert.equal(slugifyArtistName("乃木坂46"), "乃木坂46");
-});
-
-test("slugifyArtistName trims leading/trailing dots, hyphens, underscores", () => {
-  assert.equal(slugifyArtistName("...foo..."), "foo");
-  assert.equal(slugifyArtistName("--bar--"), "bar");
-  assert.equal(slugifyArtistName("__baz__"), "baz");
-});
-
-test("slugifyArtistName returns empty string when nothing usable remains", () => {
-  assert.equal(slugifyArtistName("..."), "");
-  assert.equal(slugifyArtistName("   "), "");
-  assert.equal(slugifyArtistName(""), "");
-});
 
 function createTestDb() {
   const sqlite = new Database(":memory:");
@@ -47,6 +20,7 @@ function createTestDb() {
   sqlite.exec(`
     CREATE TABLE artists (
       id TEXT PRIMARY KEY,
+      handle TEXT NOT NULL UNIQUE,
       name TEXT NOT NULL,
       categories TEXT NOT NULL,
       groups TEXT NOT NULL,
@@ -72,9 +46,9 @@ function createTestDb() {
 const NOW = new Date("2026-05-04T12:00:00Z");
 type TestDb = ReturnType<typeof createTestDb>;
 
-function insertArtist(db: TestDb, id: string, name: string) {
+function insertArtist(db: TestDb, id: string, handle: string, name: string) {
   db.insert(schema.artists).values({
-    id, name, categories: [], groups: [],
+    id, handle, name, categories: [], groups: [],
     enabled: true, createdAt: NOW, updatedAt: NOW,
   }).run();
 }
@@ -122,10 +96,10 @@ async function tempDir(): Promise<string> {
   return await fs.mkdtemp(path.join(os.tmpdir(), "ical-test-"));
 }
 
-test("writes one .ics per affected artist with slugified names", async () => {
+test("writes <handle>.ics for each affected artist", async () => {
   const db = createTestDb();
-  insertArtist(db, "artist-a", "Artist A");
-  insertArtist(db, "artist-b", "Artist B");
+  insertArtist(db, "artist-a", "arashi", "嵐");
+  insertArtist(db, "artist-b", "nogizaka46", "乃木坂46");
   const evA = insertEvent(db, { artistId: "artist-a", title: "A's show" });
   const evB = insertEvent(db, { artistId: "artist-b", title: "B's show" });
 
@@ -134,34 +108,34 @@ test("writes one .ics per affected artist with slugified names", async () => {
   await consumer.start();
 
   const result = await consumer.deliver([
-    makeRecord(evA, "artist-a", "Artist A"),
-    makeRecord(evB, "artist-b", "Artist B"),
+    makeRecord(evA, "artist-a", "嵐"),
+    makeRecord(evB, "artist-b", "乃木坂46"),
   ]);
 
   assert.deepEqual(result.delivered.sort(), [evA, evB].sort());
   const files = (await fs.readdir(dir)).sort();
-  assert.deepEqual(files, ["Artist-A.ics", "Artist-B.ics"]);
+  assert.deepEqual(files, ["arashi.ics", "nogizaka46.ics"]);
 
-  const aBody = await fs.readFile(path.join(dir, "Artist-A.ics"), "utf8");
+  const aBody = await fs.readFile(path.join(dir, "arashi.ics"), "utf8");
   assert.match(aBody, /SUMMARY:A's show/);
-  assert.match(aBody, /X-WR-CALNAME:Oshikatsu — Artist A/);
+  assert.match(aBody, /X-WR-CALNAME:Oshikatsu — 嵐/);
   assert.doesNotMatch(aBody, /B's show/);
 });
 
 test("a single record rewrites the artist's full event set", async () => {
   const db = createTestDb();
-  insertArtist(db, "artist-a", "Artist A");
+  insertArtist(db, "artist-a", "arashi", "嵐");
   const evA1 = insertEvent(db, { artistId: "artist-a", title: "Show 1" });
-  const evA2 = insertEvent(db, { artistId: "artist-a", title: "Show 2" });
+  insertEvent(db, { artistId: "artist-a", title: "Show 2" });
 
   const dir = await tempDir();
   const consumer = new ICalConsumer({ outputDir: dir, db: db as any });
   await consumer.start();
 
   // Even though the batch only mentions evA1, the .ics contains both events.
-  await consumer.deliver([makeRecord(evA1, "artist-a", "Artist A")]);
+  await consumer.deliver([makeRecord(evA1, "artist-a", "嵐")]);
 
-  const body = await fs.readFile(path.join(dir, "Artist-A.ics"), "utf8");
+  const body = await fs.readFile(path.join(dir, "arashi.ics"), "utf8");
   assert.match(body, /SUMMARY:Show 1/);
   assert.match(body, /SUMMARY:Show 2/);
   assert.equal(body.match(/BEGIN:VEVENT/g)!.length, 2);
@@ -169,31 +143,31 @@ test("a single record rewrites the artist's full event set", async () => {
 
 test("sub-events get [Parent] prefix in SUMMARY", async () => {
   const db = createTestDb();
-  insertArtist(db, "artist-a", "Artist A");
+  insertArtist(db, "artist-a", "arashi", "嵐");
   const main = insertEvent(db, { artistId: "artist-a", title: "Tokyo Dome Concert" });
   insertEvent(db, { artistId: "artist-a", title: "Pre-show meet & greet", parentEventId: main });
 
   const dir = await tempDir();
   const consumer = new ICalConsumer({ outputDir: dir, db: db as any });
   await consumer.start();
-  await consumer.deliver([makeRecord(main, "artist-a", "Artist A")]);
+  await consumer.deliver([makeRecord(main, "artist-a", "嵐")]);
 
-  const body = await fs.readFile(path.join(dir, "Artist-A.ics"), "utf8");
+  const body = await fs.readFile(path.join(dir, "arashi.ics"), "utf8");
   assert.match(body, /SUMMARY:Tokyo Dome Concert/);
   assert.match(body, /SUMMARY:\[Tokyo Dome Concert\] Pre-show meet & greet/);
 });
 
 test("cancelled events emit STATUS:CANCELLED", async () => {
   const db = createTestDb();
-  insertArtist(db, "artist-a", "Artist A");
+  insertArtist(db, "artist-a", "arashi", "嵐");
   const evA = insertEvent(db, { artistId: "artist-a", title: "Cancelled Show", isCancelled: true });
 
   const dir = await tempDir();
   const consumer = new ICalConsumer({ outputDir: dir, db: db as any });
   await consumer.start();
-  await consumer.deliver([makeRecord(evA, "artist-a", "Artist A", "cancelled")]);
+  await consumer.deliver([makeRecord(evA, "artist-a", "嵐", "cancelled")]);
 
-  const body = await fs.readFile(path.join(dir, "Artist-A.ics"), "utf8");
+  const body = await fs.readFile(path.join(dir, "arashi.ics"), "utf8");
   assert.match(body, /STATUS:CANCELLED/);
   assert.doesNotMatch(body, /STATUS:CONFIRMED/);
 });
@@ -208,72 +182,4 @@ test("records without an artist are reported delivered but write nothing", async
   assert.deepEqual(result.delivered, ["orphan-1"]);
   const files = await fs.readdir(dir);
   assert.equal(files.length, 0);
-});
-
-test("collisions get a stable -<short-id> suffix; non-colliding artists keep bare slug", async () => {
-  const db = createTestDb();
-  insertArtist(db, "11111111-aaaa", "Same Name");
-  insertArtist(db, "22222222-bbbb", "Same Name");
-  insertArtist(db, "33333333-cccc", "Unique");
-  const ev1 = insertEvent(db, { artistId: "11111111-aaaa", title: "show 1" });
-  const ev2 = insertEvent(db, { artistId: "22222222-bbbb", title: "show 2" });
-  const ev3 = insertEvent(db, { artistId: "33333333-cccc", title: "show 3" });
-
-  const dir = await tempDir();
-  const consumer = new ICalConsumer({ outputDir: dir, db: db as any });
-  await consumer.start();
-  await consumer.deliver([
-    makeRecord(ev1, "11111111-aaaa", "Same Name"),
-    makeRecord(ev2, "22222222-bbbb", "Same Name"),
-    makeRecord(ev3, "33333333-cccc", "Unique"),
-  ]);
-
-  const files = (await fs.readdir(dir)).sort();
-  assert.deepEqual(files, [
-    "Same-Name-11111111.ics",
-    "Same-Name-22222222.ics",
-    "Unique.ics",
-  ]);
-});
-
-test("unicode artist names are preserved in filenames", async () => {
-  const db = createTestDb();
-  insertArtist(db, "artist-jp", "嵐");
-  const evA = insertEvent(db, { artistId: "artist-jp", title: "コンサート" });
-
-  const dir = await tempDir();
-  const consumer = new ICalConsumer({ outputDir: dir, db: db as any });
-  await consumer.start();
-  await consumer.deliver([makeRecord(evA, "artist-jp", "嵐")]);
-
-  const files = await fs.readdir(dir);
-  assert.deepEqual(files, ["嵐.ics"]);
-});
-
-test("filesystem-unsafe characters are replaced with underscores", async () => {
-  const db = createTestDb();
-  insertArtist(db, "artist-bad", "A/B:C");
-  const evA = insertEvent(db, { artistId: "artist-bad", title: "show" });
-
-  const dir = await tempDir();
-  const consumer = new ICalConsumer({ outputDir: dir, db: db as any });
-  await consumer.start();
-  await consumer.deliver([makeRecord(evA, "artist-bad", "A/B:C")]);
-
-  const files = await fs.readdir(dir);
-  assert.deepEqual(files, ["A_B_C.ics"]);
-});
-
-test("artist with name that slugifies to empty falls back to id-based filename", async () => {
-  const db = createTestDb();
-  insertArtist(db, "artist-empty", "...");
-  const evA = insertEvent(db, { artistId: "artist-empty", title: "show" });
-
-  const dir = await tempDir();
-  const consumer = new ICalConsumer({ outputDir: dir, db: db as any });
-  await consumer.start();
-  await consumer.deliver([makeRecord(evA, "artist-empty", "...")]);
-
-  const files = await fs.readdir(dir);
-  assert.deepEqual(files, ["artist-empty.ics"]);
 });

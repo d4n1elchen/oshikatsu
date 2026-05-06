@@ -17,6 +17,7 @@ function createTestDb() {
   sqlite.exec(`
     CREATE TABLE artists (
       id TEXT PRIMARY KEY,
+      handle TEXT NOT NULL UNIQUE,
       name TEXT NOT NULL,
       categories TEXT NOT NULL,
       groups TEXT NOT NULL,
@@ -97,7 +98,7 @@ type TestDb = ReturnType<typeof createTestDb>;
 
 function insertArtist(db: TestDb, id = "artist-1") {
   db.insert(schema.artists).values({
-    id, name: "Test", categories: [], groups: [],
+    id, handle: id, name: "Test", categories: [], groups: [],
     enabled: true, createdAt: NOW, updatedAt: NOW,
   }).run();
   return id;

@@ -2,13 +2,22 @@ import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-or
 
 export const artists = sqliteTable("artists", {
   id: text("id").primaryKey(),
+  /**
+   * Stable, human-readable identifier (e.g. "arashi", "nogizaka46"). Used as
+   * the iCal filename and any future operator-facing URL. Auto-derived from
+   * `name` on insert via slugifyHandle, with numeric suffix to avoid
+   * collisions; operators can override later.
+   */
+  handle: text("handle").notNull(),
   name: text("name").notNull(),
   categories: text("categories", { mode: "json" }).$type<string[]>().notNull(),
   groups: text("groups", { mode: "json" }).$type<string[]>().notNull(),
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
-});
+}, (table) => [
+  uniqueIndex("idx_artists_handle").on(table.handle),
+]);
 
 export const watchTargets = sqliteTable("watch_targets", {
   id: text("id").primaryKey(),

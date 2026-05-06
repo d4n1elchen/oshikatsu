@@ -20,6 +20,7 @@ function createTestDb() {
   sqlite.exec(`
     CREATE TABLE artists (
       id TEXT PRIMARY KEY,
+      handle TEXT NOT NULL UNIQUE,
       name TEXT NOT NULL,
       categories TEXT NOT NULL,
       groups TEXT NOT NULL,

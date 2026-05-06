@@ -1,7 +1,8 @@
 import React, { useState, useCallback } from "react";
 import { Box, Text, useInput } from "ink";
 import { TextInput } from "@inkjs/ui";
-import { WatchListManager } from "../../core/WatchListManager";
+import { WatchListManager, HandleInUseError, InvalidHandleError } from "../../core/WatchListManager";
+import { validateHandle } from "../../core/validateHandle";
 import type { Artist, WatchTarget } from "../../core/types";
 
 type Mode = "browse" | "add-artist" | "edit-artist" | "add-target";
@@ -148,20 +149,30 @@ export default function WatchList() {
     return (
       <ArtistForm
         initialName={selectedArtist?.name || ""}
+        initialHandle={selectedArtist?.handle || ""}
         initialCategories={selectedArtist?.categories.join(", ") || ""}
         initialGroups={selectedArtist?.groups.join(", ") || ""}
         isEdit={isEdit}
-        onDone={async (name, categories, groups) => {
+        existingHandles={artists.map((a) => a.handle).filter((h) => h !== selectedArtist?.handle)}
+        onDone={async (name, handle, categories, groups) => {
           if (name.trim()) {
             const cats = categories.split(",").map(s => s.trim()).filter(Boolean);
             const grps = groups.split(",").map(s => s.trim()).filter(Boolean);
-            
-            if (isEdit && selectedArtist) {
-              await wlm.updateArtist(selectedArtist.id, { name: name.trim(), categories: cats, groups: grps });
-              flash(`Updated ${name.trim()}`);
-            } else {
-              await wlm.addArtist(name.trim(), cats, grps);
-              flash(`Added ${name.trim()}`);
+
+            try {
+              if (isEdit && selectedArtist) {
+                await wlm.updateArtist(selectedArtist.id, { name: name.trim(), handle: handle.trim(), categories: cats, groups: grps });
+                flash(`Updated ${name.trim()}`);
+              } else {
+                await wlm.addArtist(name.trim(), handle.trim(), cats, grps);
+                flash(`Added ${name.trim()}`);
+              }
+            } catch (e) {
+              if (e instanceof HandleInUseError || e instanceof InvalidHandleError) {
+                flash(e.message);
+              } else {
+                throw e;
+              }
             }
           }
           setMode("browse");
@@ -268,17 +279,21 @@ export default function WatchList() {
 
 // --- Sub-components ---
 
-function ArtistForm({ initialName = "", initialCategories = "", initialGroups = "", isEdit, onDone, onCancel }: {
+function ArtistForm({ initialName = "", initialHandle = "", initialCategories = "", initialGroups = "", isEdit, existingHandles = [], onDone, onCancel }: {
   initialName?: string;
+  initialHandle?: string;
   initialCategories?: string;
   initialGroups?: string;
   isEdit: boolean;
-  onDone: (name: string, categories: string, groups: string) => void;
+  existingHandles?: string[];
+  onDone: (name: string, handle: string, categories: string, groups: string) => void;
   onCancel: () => void;
 }) {
   const [step, setStep] = useState(0);
   const [name, setName] = useState(initialName);
+  const [handle, setHandle] = useState(initialHandle);
   const [categories, setCategories] = useState(initialCategories);
+  const [handleError, setHandleError] = useState<string | null>(null);
 
   useInput((_input, key) => {
     if (key.escape) onCancel();
@@ -297,6 +312,7 @@ function ArtistForm({ initialName = "", initialCategories = "", initialGroups = 
             placeholder="Artist name..."
             defaultValue={name}
             onSubmit={(value: string) => {
+              if (!value.trim()) return;
               setName(value);
               setStep(1);
             }}
@@ -312,6 +328,39 @@ function ArtistForm({ initialName = "", initialCategories = "", initialGroups = 
       <Box flexDirection="column">
         <Text bold color="cyan">{title}: {name}</Text>
         <Box marginTop={1}>
+          <Text>Handle (required, used as iCal filename): </Text>
+          <TextInput
+            key={`artist-handle-${isEdit}`}
+            placeholder="e.g. arashi"
+            defaultValue={handle}
+            onSubmit={(value: string) => {
+              const trimmed = value.trim();
+              const validation = validateHandle(trimmed);
+              if (!validation.valid) {
+                setHandleError(validation.reason);
+                return;
+              }
+              if (existingHandles.includes(trimmed)) {
+                setHandleError(`Handle "${trimmed}" is already in use.`);
+                return;
+              }
+              setHandleError(null);
+              setHandle(trimmed);
+              setStep(2);
+            }}
+          />
+        </Box>
+        {handleError ? <Text color="red">{handleError}</Text> : null}
+        <Text dimColor>Press Esc to cancel</Text>
+      </Box>
+    );
+  }
+
+  if (step === 2) {
+    return (
+      <Box flexDirection="column">
+        <Text bold color="cyan">{title}: {name}</Text>
+        <Box marginTop={1}>
           <Text>Categories (comma-separated): </Text>
           <TextInput
             key={`artist-categories-${isEdit}`}
@@ -319,7 +368,7 @@ function ArtistForm({ initialName = "", initialCategories = "", initialGroups = 
             defaultValue={categories}
             onSubmit={(value: string) => {
               setCategories(value);
-              setStep(2);
+              setStep(3);
             }}
           />
         </Box>
@@ -338,7 +387,7 @@ function ArtistForm({ initialName = "", initialCategories = "", initialGroups = 
           placeholder="hololive, nijisanji..."
           defaultValue={initialGroups}
           onSubmit={(value: string) => {
-            onDone(name, categories, value);
+            onDone(name, handle, categories, value);
           }}
         />
       </Box>
