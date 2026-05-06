@@ -92,6 +92,11 @@ export class ICalConsumer implements Consumer {
       log.info(`${orphanedIds.length} record(s) had no artist; skipping iCal output`);
     }
 
+    const rewrittenCount = affectedArtistIds.size - new Set(errors.map((e) => batch.find((r) => r.id === e.id)?.artist?.id).filter(Boolean)).size;
+    if (rewrittenCount > 0) {
+      log.info(`Rewrote ${rewrittenCount} artist feed(s) (${batch.length} record(s) in batch)`);
+    }
+
     return { delivered };
   }
 

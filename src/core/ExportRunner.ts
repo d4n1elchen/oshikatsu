@@ -168,6 +168,12 @@ export class ExportRunner {
       await this.cursors.advance(consumer.name, newCursor);
     }
 
+    if (summary.delivered > 0 || summary.rejected > 0 || summary.retried > 0) {
+      log.info(
+        `${consumer.name}: delivered=${summary.delivered} rejected=${summary.rejected} retried=${summary.retried}`
+      );
+    }
+
     return summary;
   }
 
