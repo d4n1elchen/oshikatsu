@@ -1,7 +1,9 @@
 # Implementation Plan: Oshikatsu
 
-> **Status:** Active roadmap. Phases 1, 2, 2.1, 3 (resolution + hierarchy), 4 (Monitoring & Observability), and 5 (Downstream Export Protocol) have landed. The system is functional end-to-end on a single source. **Phase 8 (Web UI) is now the next target**, pulled ahead of Phases 6 and 7 since the existing pipeline is operational and a browser-based interface unblocks non-developer users sooner. Phases 6 (Multi-Source Support) and 7 (Platform Expansion) follow.
+> **Status:** Active roadmap. Phases 1, 2, 2.1, 3 (resolution + hierarchy), 4 (Monitoring & Observability), and 5 (Downstream Export Protocol) have landed. The system is functional end-to-end on a single source. **Phase 6 (Web UI) is the next target** — pulled ahead of Multi-Source and Platform Expansion since the pipeline is operational and a browser-based interface unblocks non-developer users sooner. Phase 7 (Multi-Source Support) and Phase 8 (Platform Expansion) follow.
 > **Follow-ups:** Future phases scoped inline as they're approached. Open work tracked in `TECH_DEBTS.md`.
+>
+> **Renumbering note (2026-05-06):** Phase 6 used to be Multi-Source Support, Phase 7 Platform Expansion, Phase 8 Web UI. The numbers were swapped to reflect the new priority ordering: Phase 6 = Web UI, Phase 7 = Multi-Source Support, Phase 8 = Platform Expansion. Older docs may still reference the old numbers; if you find one, update it.
 
 ## Overview
 
@@ -132,35 +134,10 @@ This plan outlines the phased implementation of the Oshikatsu platform, starting
 **Out of scope** (each becomes its own follow-up):
 
 - Specific consumer implementations (iCal file, Google Calendar, Discord/Slack webhook, email, push).
-- Web/HTTP pull API (Phase 8).
-- Consumer-failure alerting (Phase 7, builds on the same `scheduler_runs` substrate).
+- Web/HTTP pull API (Phase 6).
+- Consumer-failure alerting (Phase 8, builds on the same `scheduler_runs` substrate).
 
-## Phase 6: Multi-Source Support
-
-**Goal**: Add support for a second data source.
-
-**Deliverables**:
-
-- Second source connector implementation (e.g., Instagram, YouTube)
-- Cross-source resolution validation (identity matching, merge correctness, sub-event linking)
-
-**Working product**: Events from two sources are ingested, resolved (deduplicated and hierarchically linked), and exported correctly.
-
-## Phase 7: Platform Expansion
-
-**Goal**: Build alerting, automated recovery, and additional integrations on top of the Phase 4 monitoring substrate.
-
-**Deliverables**:
-
-- Alert dispatch on persistent failures (configurable channel: webhook, email, etc.).
-- Automated unhealthy-target handling (auto-disable after N consecutive failures, operator notification).
-- Health-check CLI command for external monitoring.
-- Additional source connectors as needed.
-- Additional downstream export targets.
-
-**Working product**: Platform supports multiple sources and downstream integrations with reliable operation; persistent failures generate alerts rather than silent log lines.
-
-## Phase 8: Web UI
+## Phase 6: Web UI
 
 **Goal**: Provide a web-based interface that **coexists with the TUI**. Both surfaces stay supported: the TUI remains the operator-side power tool and stays the source of truth for any feature that hasn't been ported, while the web UI opens the platform to non-developer users and to remote access.
 
@@ -180,3 +157,28 @@ This plan outlines the phased implementation of the Oshikatsu platform, starting
 - The TUI is not deprecated. It remains the lowest-friction interface for development, debugging, and operator-side maintenance.
 
 **Working product**: An operator can manage artists/watch targets, browse normalized events, and monitor pipeline health from either the TUI or a web browser, with both surfaces always reflecting the same underlying state.
+
+## Phase 7: Multi-Source Support
+
+**Goal**: Add support for a second data source.
+
+**Deliverables**:
+
+- Second source connector implementation (e.g., Instagram, YouTube)
+- Cross-source resolution validation (identity matching, merge correctness, sub-event linking)
+
+**Working product**: Events from two sources are ingested, resolved (deduplicated and hierarchically linked), and exported correctly.
+
+## Phase 8: Platform Expansion
+
+**Goal**: Build alerting, automated recovery, and additional integrations on top of the Phase 4 monitoring substrate.
+
+**Deliverables**:
+
+- Alert dispatch on persistent failures (configurable channel: webhook, email, etc.).
+- Automated unhealthy-target handling (auto-disable after N consecutive failures, operator notification).
+- Health-check CLI command for external monitoring.
+- Additional source connectors as needed.
+- Additional downstream export targets.
+
+**Working product**: Platform supports multiple sources and downstream integrations with reliable operation; persistent failures generate alerts rather than silent log lines.

@@ -34,10 +34,10 @@ Picking a single concrete consumer first and abstracting later would bake those 
 ## Non-Goals
 
 - No specific consumer implementation (iCal, Google Calendar, Discord, Slack, webhook, email, push) — each is its own follow-up once the protocol lands.
-- No web/HTTP server or pull API. Phase 5 is push-only; the eventual web UI (Phase 8) will add pull endpoints.
+- No web/HTTP server or pull API. Phase 5 is push-only; the eventual web UI (Phase 6) will add pull endpoints.
 - No fan-out across machines / queueing infrastructure. Single-process, single-daemon delivery.
 - No automatic retry-with-backoff scheduling beyond "the next tick will try again." Sophisticated DLQ / circuit-breaker behavior is deferred.
-- No alerting on consumer failure — Phase 7 will build this on the same `scheduler_runs` substrate.
+- No alerting on consumer failure — Phase 8 will build this on the same `scheduler_runs` substrate.
 - No exactly-once guarantee. We provide at-least-once with stable identity and let consumers dedup.
 
 ## Design

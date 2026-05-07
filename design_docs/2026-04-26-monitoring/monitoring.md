@@ -1,11 +1,11 @@
 # Phase 4: Monitoring & Observability
 
 > **Status:** Landed. 11 new tests in `Scheduler.test.ts` and `SchedulerRunsRepo.test.ts` plus an extraction `error_class` capture test.
-> **Follow-ups:** Alert dispatch, auto-recovery, and health-check CLI deferred to Phase 7 per the implementation plan. Manual pruning + client-side per-target aggregation tracked in `TECH_DEBTS.md`.
+> **Follow-ups:** Alert dispatch, auto-recovery, and health-check CLI deferred to Phase 8 per the implementation plan. Manual pruning + client-side per-target aggregation tracked in `TECH_DEBTS.md`.
 
 ## Overview
 
-Phase 4 introduces the substrate for monitoring the daemon: a `scheduler_runs` table that captures every tick of every task, instrumentation in the `Scheduler` to record start/finish/status, and a `[6] Monitor` TUI tab that surfaces the data. Alerting and automated recovery are deferred to Phase 7 — this phase only builds the data layer and a read-only view.
+Phase 4 introduces the substrate for monitoring the daemon: a `scheduler_runs` table that captures every tick of every task, instrumentation in the `Scheduler` to record start/finish/status, and a `[6] Monitor` TUI tab that surfaces the data. Alerting and automated recovery are deferred to Phase 8 — this phase only builds the data layer and a read-only view.
 
 This phase is contained: one new table, one migration, ~30 lines of scheduler instrumentation, one TUI view. No new long-running processes, no external integrations.
 
@@ -20,15 +20,15 @@ With Phase 5 (Downstream Export) about to consume normalized events for calendar
 - The operator can answer "is the daemon healthy?" without reading logs.
 - The operator can see which watch targets are failing repeatedly versus genuinely quiet.
 - Phase 5 export tasks get visibility automatically by registering as `ScheduledTask`s.
-- Provide the data layer Phase 7 will build alerting/auto-recovery on top of.
+- Provide the data layer Phase 8 will build alerting/auto-recovery on top of.
 - Keep the change small — instrumentation, not a new subsystem.
 
 ## Non-Goals
 
-- No alert dispatch (email, webhook, Slack) — Phase 7.
-- No automated recovery / auto-disable of unhealthy targets — Phase 7.
-- No health-check CLI command for external monitoring — Phase 7.
-- No external monitoring integrations (Prometheus, OpenTelemetry, etc.) — Phase 7.
+- No alert dispatch (email, webhook, Slack) — Phase 8.
+- No automated recovery / auto-disable of unhealthy targets — Phase 8.
+- No health-check CLI command for external monitoring — Phase 8.
+- No external monitoring integrations (Prometheus, OpenTelemetry, etc.) — Phase 8.
 - No real-time streaming. The TUI polls; structured log lines remain the streaming channel.
 - No automatic pruning policy. A manual `reset:runs` script is provided.
 
@@ -171,7 +171,7 @@ Keybindings: `↑↓` navigate, `r` refresh, `c` clear (calls `reset:runs` after
 
 ### Per-target last-success surface
 
-Within ingestion, the `details.fetched.perTarget` map holds per-target outcomes. The Monitor view computes "last success per target" client-side by scanning the most recent N ingestion runs. Phase 7 will likely promote this to a proper view or denormalized table; for Phase 4, the client-side scan is sufficient for the TUI's read-only purpose.
+Within ingestion, the `details.fetched.perTarget` map holds per-target outcomes. The Monitor view computes "last success per target" client-side by scanning the most recent N ingestion runs. Phase 8 will likely promote this to a proper view or denormalized table; for Phase 4, the client-side scan is sufficient for the TUI's read-only purpose.
 
 ## Logging
 
@@ -195,7 +195,7 @@ For now, ship a `reset:runs` script that deletes runs older than a configurable 
 
 1. **Should `details` JSON be queryable with indexes?** SQLite supports JSON paths and even functional indexes since 3.38. For Phase 4 we render in TypeScript after a `LIMIT 50` query, so no path indexes are needed. Revisit if the per-target view requires them.
 
-2. **Should `error_message` be redacted?** Twitter URLs in raw item rendering are already shown in plaintext in the TUI; storing them in `error_message` doesn't escalate exposure. No redaction in Phase 4. Phase 7 alert dispatch may need it.
+2. **Should `error_message` be redacted?** Twitter URLs in raw item rendering are already shown in plaintext in the TUI; storing them in `error_message` doesn't escalate exposure. No redaction in Phase 4. Phase 8 alert dispatch may need it.
 
 3. **Two views show the same errored items — is that confusing?** The `[2] Raw Items` view lists individual errored rows for retry; the new `[6] Monitor` aggregates them by class for health awareness. They serve different purposes (per-row triage vs. aggregate signal) and live at different abstraction levels, so two views is the right answer. The Monitor view's middle panel could deep-link into Raw Items filtered by class as a follow-up.
 
@@ -217,7 +217,7 @@ After landing this phase, update `TECH_DEBTS.md`:
 
 - Remove "No per-cycle metrics or run history" from the Scheduler section.
 - Refine "No error classification on persistent storage failures" to reference the now-existing `scheduler_runs` consumer instead of "the future Monitoring component."
-- Add (small): "Monitor TUI view computes per-target last-success client-side; promote to a denormalized view if it gets slow or Phase 7 alerting needs server-side aggregation."
+- Add (small): "Monitor TUI view computes per-target last-success client-side; promote to a denormalized view if it gets slow or Phase 8 alerting needs server-side aggregation."
 - Add (small): "Automatic pruning of `scheduler_runs` is deferred; manual via `reset:runs --older-than=N`."
 - Add (small): "Resolution per-event failures are not persisted (failed events stay un-resolved and retry next cycle). If recurring resolver errors become a real signal — e.g. a code bug producing the same exception every cycle — promote to a similar `error_class`-tagged persistence shape. Ephemeral retry is fine for now."
 
@@ -229,7 +229,7 @@ After landing this phase, update `TECH_DEBTS.md`:
 - `src/tui/App.tsx` — register the new tab.
 - `src/scripts/resetDb.ts` — extend to support `--older-than-runs` mode (or new script).
 - `ARCHITECTURE.md` — Component 7 (Monitoring); Phase 4 implements the data-collection half.
-- `design_docs/2026-04-23-implementation-plan/plan.md` — Phase 4 was pulled forward from Phase 6 in this restructure.
+- `design_docs/2026-04-23-implementation-plan/plan.md` — Phase 4 was pulled forward from a later phase in this restructure (originally numbered Phase 6, before the 2026-05-06 phase renumbering shuffled 6/7/8).
 
 ## Implementation Plan
 

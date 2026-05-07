@@ -34,7 +34,7 @@ This document defines the core technology stack for the Oshikatsu project. The p
 - **Framework:** `ink`
 - **Why:** `ink` brings the React component model (JSX, Hooks, State) to the terminal. This lets us build interactive dashboards in the same mental model and component shape we use for the Web UI, so logic stays portable across surfaces.
 
-### Web UI (Phase 8)
+### Web UI (Phase 6)
 - **Frontend Framework:** `Next.js` or `Vite + React`
 - **Backend API:** `Hono` or `Express` (or Next.js Server Actions if going Next.js).
 - **Why:** The TUI and the Web UI **coexist** — neither replaces the other. Both surfaces read and write the same SQLite database through the same `core/` modules (`WatchListManager`, `EventResolver`, `ExportRunner`, etc.); each adds only its own thin presentation layer. Choosing React for both keeps state and component patterns shareable.

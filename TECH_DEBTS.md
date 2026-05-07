@@ -142,7 +142,7 @@ Follow-up:
 
 `RawStorage` write paths propagate errors to the scheduler's per-target catch, which logs the failure and surfaces it in `scheduler_runs.details.perTarget[username].errorClass` for the Monitor view. A catastrophic failure (`SQLITE_CORRUPT`, `SQLITE_READONLY`, `SQLITE_FULL`) is now visible — but it produces an endless stream of identical failed runs while the daemon keeps running. We deliberately do not crash on these; daemons that quit on a transient disk hiccup cause more pages than they prevent.
 
-Follow-up (Phase 7):
+Follow-up (Phase 8):
 
 - Track a per-target consecutive-failure counter on top of the existing `scheduler_runs` data; mark a target unhealthy after N failures; trigger an alert; let the operator decide whether to intervene.
 
@@ -152,7 +152,7 @@ Follow-up (Phase 7):
 
 Follow-up:
 
-- Add a daily prune `ScheduledTask` if the table grows large enough to slow queries, or if a Phase 7 retention policy is needed for compliance/visibility reasons.
+- Add a daily prune `ScheduledTask` if the table grows large enough to slow queries, or if a Phase 8 retention policy is needed for compliance/visibility reasons.
 
 ### Monitor view computes per-target stats client-side
 
@@ -160,7 +160,7 @@ The Monitor TUI scans the most recent `scheduler_runs` rows and groups by `detai
 
 Follow-up:
 
-- Promote per-target stats to a denormalized view or aggregate query when Phase 7 alerting needs server-side aggregation.
+- Promote per-target stats to a denormalized view or aggregate query when Phase 8 alerting needs server-side aggregation.
 
 ### Resolution per-event failures are not persisted
 
@@ -201,7 +201,7 @@ Follow-up:
 
 ### Monitor TUI hardcodes the task-name list
 
-`src/tui/views/Monitor.tsx` keys its per-task cards on a literal `["Ingestion", "Extraction", "Resolution"]`. Export ticks land in `scheduler_runs` and show up in the bottom recent-runs list, but no per-task card renders for them. The same gap will hit Phase 6 multi-source ingestion and any future `ScheduledTask`.
+`src/tui/views/Monitor.tsx` keys its per-task cards on a literal `["Ingestion", "Extraction", "Resolution"]`. Export ticks land in `scheduler_runs` and show up in the bottom recent-runs list, but no per-task card renders for them. The same gap will hit Phase 7 multi-source ingestion and any future `ScheduledTask`.
 
 Follow-up:
 
