@@ -30,14 +30,14 @@ This document defines the core technology stack for the Oshikatsu project. The p
 
 ## User Interfaces
 
-### Phase 1: Terminal UI (TUI)
+### Terminal UI (TUI)
 - **Framework:** `ink`
-- **Why:** `ink` brings the React component model (JSX, Hooks, State) to the terminal. This allows us to build complex, interactive terminal dashboards while building the exact mental model and component structure we will use for the Phase 8 Web UI.
+- **Why:** `ink` brings the React component model (JSX, Hooks, State) to the terminal. This lets us build interactive dashboards in the same mental model and component shape we use for the Web UI, so logic stays portable across surfaces.
 
-### Phase 8: Web UI (Future)
+### Web UI (Phase 8)
 - **Frontend Framework:** `Next.js` or `Vite + React`
-- **Backend API:** `FastAPI` equivalent for Node, such as `Hono` or `Express` (if not using Next.js Server Actions).
-- **Why:** Since the TUI was built using React concepts via `ink`, migrating the interface to the web will be a natural translation of state and API logic.
+- **Backend API:** `Hono` or `Express` (or Next.js Server Actions if going Next.js).
+- **Why:** The TUI and the Web UI **coexist** — neither replaces the other. Both surfaces read and write the same SQLite database through the same `core/` modules (`WatchListManager`, `EventResolver`, `ExportRunner`, etc.); each adds only its own thin presentation layer. Choosing React for both keeps state and component patterns shareable.
 
 ## Environment & User Rules Override
 

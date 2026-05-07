@@ -1,6 +1,6 @@
 # Implementation Plan: Oshikatsu
 
-> **Status:** Active roadmap. Phases 1, 2, 2.1, 3 (resolution + hierarchy), 4 (Monitoring & Observability), and 5 (Downstream Export Protocol) have landed. Phase 6 (Multi-Source Support) is the next target.
+> **Status:** Active roadmap. Phases 1, 2, 2.1, 3 (resolution + hierarchy), 4 (Monitoring & Observability), and 5 (Downstream Export Protocol) have landed. The system is functional end-to-end on a single source. **Phase 8 (Web UI) is now the next target**, pulled ahead of Phases 6 and 7 since the existing pipeline is operational and a browser-based interface unblocks non-developer users sooner. Phases 6 (Multi-Source Support) and 7 (Platform Expansion) follow.
 > **Follow-ups:** Future phases scoped inline as they're approached. Open work tracked in `TECH_DEBTS.md`.
 
 ## Overview
@@ -162,14 +162,21 @@ This plan outlines the phased implementation of the Oshikatsu platform, starting
 
 ## Phase 8: Web UI
 
-**Goal**: Provide a web-based interface for managing and visualizing the platform.
+**Goal**: Provide a web-based interface that **coexists with the TUI**. Both surfaces stay supported: the TUI remains the operator-side power tool and stays the source of truth for any feature that hasn't been ported, while the web UI opens the platform to non-developer users and to remote access.
 
 **Deliverables**:
 
-- Web UI for watch list management (artists, sources, toggles)
-- Artist and venue database management
-- Event dashboard with timeline/list view and filtering
-- Calendar view with export to iCal/Google Calendar
-- Ingestion monitoring dashboard
+- Web UI for watch list management (artists, sources, toggles).
+- Artist and venue database management.
+- Event dashboard with timeline/list view and filtering.
+- Calendar view with iCal/Google Calendar subscription links (the iCal feed is already being written by the Phase 5 consumer).
+- Ingestion monitoring dashboard mirroring the TUI Monitor tab.
+- HTTP API surface that both the web UI and external integrations can call. The Phase 5 `ExportRecord` shape is already plain-serializable, so it carries straight over the wire.
 
-**Working product**: All platform management and monitoring tasks can be performed through a web browser, replacing the TUI for daily use.
+**Coexistence guarantees**:
+
+- TUI and web UI read and write the **same SQLite database** through the **same `core/` modules** (`WatchListManager`, `EventResolver`, `ExportRunner`, etc.). Neither surface gets a private path.
+- New features land in `core/` first. Each surface adds its own thin presentation layer afterwards; behavior parity is the default, presentation choice is per-surface.
+- The TUI is not deprecated. It remains the lowest-friction interface for development, debugging, and operator-side maintenance.
+
+**Working product**: An operator can manage artists/watch targets, browse normalized events, and monitor pipeline health from either the TUI or a web browser, with both surfaces always reflecting the same underlying state.
