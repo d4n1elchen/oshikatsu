@@ -1,42 +1,7 @@
 import React, { useState, useCallback } from "react";
 import { Box, Text, useInput } from "ink";
-import { db } from "../../db";
-import {
-  artists,
-  eventResolutionDecisions,
-  extractedEvents,
-  normalizedEvents,
-  venues,
-} from "../../db/schema";
-import { desc, eq } from "drizzle-orm";
 import { EventResolver } from "../../core/EventResolver";
-
-type ReviewItem = {
-  decisionId: string;
-  decision: string;
-  score: number | null;
-  signals: Record<string, unknown>;
-  reason: string;
-  createdAt: Date;
-  // Candidate (the extracted event being evaluated)
-  extractedId: string;
-  candidateTitle: string;
-  candidateDescription: string;
-  candidateStartTime: Date | null;
-  candidateAuthor: string;
-  candidateSourceUrl: string;
-  candidateRawContent: string;
-  candidateScope: string;
-  candidateParentHint: string | null;
-  candidateArtistName: string | null;
-  candidateVenueName: string | null;
-  // Matched normalized event (if any)
-  matchedId: string | null;
-  matchedTitle: string | null;
-  matchedStartTime: Date | null;
-  matchedVenueName: string | null;
-  matchedSourceCount: number;
-};
+import { listReviewQueue, type ReviewQueueItem as ReviewItem } from "../../core/queries/ReviewQueueQueries";
 
 export default function ReviewQueue() {
   const [items, setItems] = useState<ReviewItem[]>([]);
@@ -48,75 +13,7 @@ export default function ReviewQueue() {
 
   const loadData = useCallback(async () => {
     setLoading(true);
-
-    const decisions = await db
-      .select()
-      .from(eventResolutionDecisions)
-      .where(eq(eventResolutionDecisions.decision, "needs_review"))
-      .orderBy(desc(eventResolutionDecisions.createdAt))
-      .limit(100);
-
-    const enriched = await Promise.all(
-      decisions.map(async (d): Promise<ReviewItem | null> => {
-        const [extractedRows] = await Promise.all([
-          db
-            .select()
-            .from(extractedEvents)
-            .where(eq(extractedEvents.id, d.candidateExtractedEventId))
-            .limit(1),
-        ]);
-
-        const ev = extractedRows[0];
-        if (!ev) return null;
-
-        const [artistRows, venueRows, matchedRows] = await Promise.all([
-          ev.artistId
-            ? db.select({ name: artists.name }).from(artists).where(eq(artists.id, ev.artistId)).limit(1)
-            : Promise.resolve([]),
-          ev.venueId
-            ? db.select({ name: venues.name }).from(venues).where(eq(venues.id, ev.venueId)).limit(1)
-            : Promise.resolve([]),
-          d.matchedNormalizedEventId
-            ? db
-                .select()
-                .from(normalizedEvents)
-                .where(eq(normalizedEvents.id, d.matchedNormalizedEventId))
-                .limit(1)
-            : Promise.resolve([]),
-        ]);
-
-        const matched = matchedRows[0] ?? null;
-        const matchedVenue = matched?.venueId
-          ? await db.select({ name: venues.name }).from(venues).where(eq(venues.id, matched.venueId)).limit(1)
-          : [];
-
-        return {
-          decisionId: d.id,
-          decision: d.decision,
-          score: d.score,
-          signals: (d.signals as Record<string, unknown>) ?? {},
-          reason: d.reason,
-          createdAt: d.createdAt,
-          extractedId: ev.id,
-          candidateTitle: ev.title,
-          candidateDescription: ev.description,
-          candidateStartTime: ev.startTime,
-          candidateAuthor: ev.author,
-          candidateSourceUrl: ev.sourceUrl,
-          candidateRawContent: ev.rawContent,
-          candidateScope: ev.eventScope,
-          candidateParentHint: ev.parentEventHint,
-          candidateArtistName: artistRows[0]?.name ?? null,
-          candidateVenueName: venueRows[0]?.name ?? ev.venueName ?? null,
-          matchedId: matched?.id ?? null,
-          matchedTitle: matched?.title ?? null,
-          matchedStartTime: matched?.startTime ?? null,
-          matchedVenueName: matchedVenue[0]?.name ?? matched?.venueName ?? null,
-          matchedSourceCount: 0, // populated below
-        };
-      })
-    ).then((rows) => rows.filter((r): r is ReviewItem => r !== null));
-
+    const enriched = await listReviewQueue({ limit: 100 });
     setItems(enriched);
     setLoading(false);
   }, []);

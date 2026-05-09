@@ -1,9 +1,7 @@
 import React, { useState, useCallback } from "react";
 import { Box, Text, useInput } from "ink";
-import { db } from "../../db";
-import { rawItems, schedulerRuns } from "../../db/schema";
-import { count, desc, eq } from "drizzle-orm";
 import { SchedulerRunsRepo } from "../../core/SchedulerRunsRepo";
+import { getExtractionFailureSummary, type ExtractionFailureSummary } from "../../core/queries/MonitorQueries";
 import type { SchedulerRun } from "../../core/types";
 
 const TASK_NAMES = ["Ingestion", "Extraction", "Resolution"] as const;
@@ -16,20 +14,10 @@ type TaskCard = {
   countsLastHour: { completed: number; failed: number; aborted: number };
 };
 
-type ExtractionFailureGroup = {
-  errorClass: string;
-  count: number;
-  oldest: Date;
-  newest: Date;
-};
-
 type MonitorData = {
   cards: TaskCard[];
   recent: SchedulerRun[];
-  extractionFailures: {
-    total: number;
-    groups: ExtractionFailureGroup[];
-  };
+  extractionFailures: ExtractionFailureSummary;
 };
 
 const STATUS_COLOR: Record<string, string> = {
@@ -51,16 +39,10 @@ export default function Monitor() {
   const loadData = useCallback(async () => {
     setLoading(true);
     const sinceHour = new Date(Date.now() - HOUR_MS);
-    const [recent, countsRows, extractionErrorRows] = await Promise.all([
+    const [recent, countsRows, extractionFailures] = await Promise.all([
       repo.recent(50),
       repo.countsSince(sinceHour),
-      db
-        .select({
-          errorClass: rawItems.errorClass,
-          fetchedAt: rawItems.fetchedAt,
-        })
-        .from(rawItems)
-        .where(eq(rawItems.status, "error")),
+      getExtractionFailureSummary(),
     ]);
 
     // Build per-task cards
@@ -80,28 +62,7 @@ export default function Monitor() {
       })
     );
 
-    // Group extraction failures by error_class
-    const groupMap = new Map<string, { count: number; oldest: Date; newest: Date }>();
-    for (const row of extractionErrorRows) {
-      const key = row.errorClass ?? "Error";
-      const existing = groupMap.get(key);
-      if (existing) {
-        existing.count++;
-        if (row.fetchedAt < existing.oldest) existing.oldest = row.fetchedAt;
-        if (row.fetchedAt > existing.newest) existing.newest = row.fetchedAt;
-      } else {
-        groupMap.set(key, { count: 1, oldest: row.fetchedAt, newest: row.fetchedAt });
-      }
-    }
-    const groups: ExtractionFailureGroup[] = [...groupMap.entries()]
-      .map(([errorClass, v]) => ({ errorClass, ...v }))
-      .sort((a, b) => b.count - a.count);
-
-    setData({
-      cards,
-      recent,
-      extractionFailures: { total: extractionErrorRows.length, groups },
-    });
+    setData({ cards, recent, extractionFailures });
     setLoading(false);
   }, [repo]);
 

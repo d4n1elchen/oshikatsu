@@ -1,19 +1,6 @@
 import React, { useState, useCallback } from "react";
 import { Box, Text, useInput } from "ink";
-import { db } from "../../db";
-import { artists, eventResolutionDecisions, extractedEvents, normalizedEventSources, normalizedEvents, venues } from "../../db/schema";
-import { count, desc, eq, sql } from "drizzle-orm";
-import type { NormalizedEvent, Venue } from "../../core/types";
-
-type EnrichedNormalizedEvent = NormalizedEvent & {
-  artistName: string | null;
-  venue: Venue | null;
-  sourceCount: number;
-  latestDecision: string | null;
-  latestReason: string | null;
-  parentTitle: string | null;
-  subEventCount: number;
-};
+import { listNormalizedEvents, type NormalizedEventListItem as EnrichedNormalizedEvent } from "../../core/queries/NormalizedEventsQueries";
 
 const DECISION_COLOR: Record<string, string> = {
   new: "green",
@@ -31,67 +18,7 @@ export default function NormalizedEvents() {
 
   const loadEvents = useCallback(async () => {
     setLoading(true);
-
-    const rows = await db
-      .select()
-      .from(normalizedEvents)
-      .orderBy(desc(normalizedEvents.startTime))
-      .limit(50);
-
-    const enriched = await Promise.all(
-      rows.map(async (ev) => {
-        const [venueRows, artistRows, sourcesRow, decisionRows, parentRows, subEventRow] = await Promise.all([
-          ev.venueId
-            ? db.select().from(venues).where(eq(venues.id, ev.venueId)).limit(1)
-            : Promise.resolve([]),
-          ev.artistId
-            ? db.select({ name: artists.name }).from(artists).where(eq(artists.id, ev.artistId)).limit(1)
-            : Promise.resolve([]),
-          db
-            .select({ cnt: count() })
-            .from(normalizedEventSources)
-            .where(eq(normalizedEventSources.normalizedEventId, ev.id)),
-          // Get the resolution decision for the primary source
-          db
-            .select({
-              decision: eventResolutionDecisions.decision,
-              reason: eventResolutionDecisions.reason,
-            })
-            .from(normalizedEventSources)
-            .innerJoin(
-              eventResolutionDecisions,
-              eq(normalizedEventSources.extractedEventId, eventResolutionDecisions.candidateExtractedEventId)
-            )
-            .where(
-              sql`${normalizedEventSources.normalizedEventId} = ${ev.id} AND ${normalizedEventSources.role} = 'primary'`
-            )
-            .limit(1),
-          ev.parentEventId
-            ? db
-                .select({ title: normalizedEvents.title })
-                .from(normalizedEvents)
-                .where(eq(normalizedEvents.id, ev.parentEventId))
-                .limit(1)
-            : Promise.resolve([]),
-          db
-            .select({ cnt: count() })
-            .from(normalizedEvents)
-            .where(eq(normalizedEvents.parentEventId, ev.id)),
-        ]);
-
-        return {
-          ...ev,
-          venue: venueRows[0] ?? null,
-          artistName: artistRows[0]?.name ?? null,
-          sourceCount: sourcesRow[0]?.cnt ?? 0,
-          latestDecision: decisionRows[0]?.decision ?? null,
-          latestReason: decisionRows[0]?.reason ?? null,
-          parentTitle: parentRows[0]?.title ?? null,
-          subEventCount: subEventRow[0]?.cnt ?? 0,
-        };
-      })
-    );
-
+    const enriched = await listNormalizedEvents({ limit: 50 });
     setEvents(enriched);
     setLoading(false);
   }, []);

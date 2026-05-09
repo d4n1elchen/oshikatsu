@@ -233,14 +233,6 @@ Follow-up:
 
 ## TUI / Developer Workflow
 
-### TUI directly uses DB access
-
-The TUI currently queries storage directly in places. This is acceptable for the prototype, but will become harder to maintain as workflows grow.
-
-Follow-up:
-
-- Introduce read/query services for Events and Monitor views.
-
 ### One-shot scripts are useful but informal
 
 `extract:once` and `resolve:once` are useful for development and repair. `extract:once` already supports `--limit` and `--retry-errors`; `reset:*` supports `--dry-run`. The remaining gaps are options that don't have a clear use case yet.

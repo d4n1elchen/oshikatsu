@@ -1,16 +1,6 @@
 import React, { useState, useCallback } from "react";
 import { Box, Text, useInput } from "ink";
-import { db } from "../../db";
-import { artists, extractedEvents, extractedEventRelatedLinks, rawItems, venues } from "../../db/schema";
-import { desc, eq } from "drizzle-orm";
-import type { ExtractedEvent, ExtractedEventRelatedLink, Venue } from "../../core/types";
-
-type EnrichedExtractedEvent = ExtractedEvent & {
-  links: ExtractedEventRelatedLink[];
-  venue: Venue | null;
-  sourceName: string | null;
-  artistName: string | null;
-};
+import { listExtractedEvents, type ExtractedEventListItem as EnrichedExtractedEvent } from "../../core/queries/ExtractedEventsQueries";
 
 export default function ExtractedEvents() {
   const [events, setEvents] = useState<EnrichedExtractedEvent[]>([]);
@@ -20,43 +10,7 @@ export default function ExtractedEvents() {
 
   const loadEvents = useCallback(async () => {
     setLoading(true);
-    
-    // Fetch extracted events ordered by start_time.
-    const recentEvents = await db.select()
-      .from(extractedEvents)
-      .orderBy(desc(extractedEvents.startTime))
-      .limit(50);
-
-    const enriched = await Promise.all(
-      recentEvents.map(async (ev) => {
-        const [links, venueRows, rawItemRows, artistRows] = await Promise.all([
-          db.select()
-            .from(extractedEventRelatedLinks)
-            .where(eq(extractedEventRelatedLinks.extractedEventId, ev.id)),
-          ev.venueId
-            ? db.select().from(venues).where(eq(venues.id, ev.venueId)).limit(1)
-            : Promise.resolve([]),
-          db.select({ sourceName: rawItems.sourceName })
-            .from(rawItems)
-            .where(eq(rawItems.id, ev.rawItemId))
-            .limit(1),
-          ev.artistId
-            ? db.select({ name: artists.name })
-                .from(artists)
-                .where(eq(artists.id, ev.artistId))
-                .limit(1)
-            : Promise.resolve([]),
-        ]);
-        return {
-          ...ev,
-          links,
-          venue: venueRows[0] || null,
-          sourceName: rawItemRows[0]?.sourceName ?? null,
-          artistName: artistRows[0]?.name ?? null,
-        };
-      })
-    );
-
+    const enriched = await listExtractedEvents({ limit: 50 });
     setEvents(enriched);
     setLoading(false);
   }, []);
