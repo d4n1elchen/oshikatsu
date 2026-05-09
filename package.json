@@ -30,6 +30,9 @@
     "reset:all": "tsx src/scripts/resetDb.ts --all",
     "reset:everything": "tsx src/scripts/resetDb.ts --everything",
     "start:backend": "tsx src/daemon.ts",
+    "web:dev": "concurrently -k -n vite,server -c blue,magenta \"vite\" \"tsx watch src/web/server.ts\"",
+    "web:build": "vite build",
+    "web:start": "tsx src/web/server.ts",
     "typecheck": "tsc --noEmit",
     "test:unit": "node --import tsx/esm --test src/**/__tests__/**/*.test.ts",
     "test": "npm run typecheck && npm run test:unit"
@@ -39,13 +42,16 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@hono/node-server": "^1.13.0",
     "@inkjs/ui": "^2.0.0",
     "better-sqlite3": "^12.9.0",
     "drizzle-orm": "^0.45.2",
+    "hono": "^4.6.0",
     "ink": "^7.0.1",
     "ollama": "^0.6.3",
     "playwright": "^1.59.1",
     "react": "^19.2.5",
+    "react-dom": "^19.2.5",
     "yaml": "^2.8.3",
     "zod": "^4.3.6"
   },
@@ -53,8 +59,12 @@
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.6.0",
     "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.14",
+    "@vitejs/plugin-react": "^5.0.0",
+    "concurrently": "^9.0.0",
     "drizzle-kit": "^0.31.10",
     "tsx": "^4.21.0",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vite": "^7.0.0"
   }
 }

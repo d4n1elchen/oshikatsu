@@ -138,14 +138,19 @@ The read/query layer is transport-agnostic, so the HTTP shape is mechanical. Con
 
 ### Stack choice
 
-Deferred to a follow-up commit on this design doc. Constraints to honor when picking:
+**Hono + Vite + React.**
 
-- TypeScript end-to-end (matches existing codebase).
-- Server-side render or SPA-with-SSR — not pure CSR. The dashboard's first paint should be useful.
-- Minimal framework lock-in — this is a single-page app; pulling in a heavyweight framework for one page is overkill.
-- Drizzle-compatible (no ORM swap).
+- **Hono** for the HTTP server. Tiny, TypeScript-first, runtime-agnostic (Node, Bun, Cloudflare). A route handler is `(c) => c.json(await listX(...))` — the read/query layer drops in directly with no reshape.
+- **Vite + React** for the client. Vite gives fast HMR and emits a static SPA bundle Hono serves. React aligns with the existing TUI (which uses Ink, also React) so component patterns transfer.
+- **First paint:** SPA with `loading…` placeholders, hydrated by an immediate `/api/dashboard` fetch. Not full SSR. Acceptable because the dashboard is single-tenant operator-flavored — first paint within a few hundred ms of an in-process query is fine. Revisit if perceived latency becomes an issue.
 
-Candidates to evaluate: Hono + a lightweight React/Solid SPA, Remix, SvelteKit, Astro with islands. Decision belongs in a separate stack-choice commit, not this doc.
+**Considered and rejected:**
+
+- **Remix** — opinionated full-stack React with loaders/actions. The loader model maps elegantly onto our query layer, but Remix's value is in nav/route choreography for multi-page apps. We have one page. Paying for the routing primitives we don't use.
+- **SvelteKit** — same shape as Remix in Svelte. Plus the cognitive cost of introducing a second component model alongside the existing React TUI.
+- **Astro with islands** — great for content-heavy pages with sparse interactivity. The dashboard is the opposite: every panel is interactive (sidebar filter, modal, polling). Astro's MPA model fights this; islands are a workaround for what Vite+React does natively.
+
+**Tradeoff accepted:** Hono+Vite+React is more "assemble" than "framework." We hand-roll a small dev script (concurrent Vite + tsx server) and a build script (Vite build + tsc). The freedom is worth it; we never end up fighting an opinionated framework's defaults.
 
 ## Data availability audit
 
