@@ -1,6 +1,6 @@
 # Implementation Plan: Oshikatsu
 
-> **Status:** Active roadmap. Phases 1, 2, 2.1, 3 (resolution + hierarchy), 4 (Monitoring & Observability), and 5 (Downstream Export Protocol) have landed. The system is functional end-to-end on a single source. **Phase 6 (Web UI) is the next target** — pulled ahead of Multi-Source and Platform Expansion since the pipeline is operational and a browser-based interface unblocks non-developer users sooner. Phase 7 (Multi-Source Support) and Phase 8 (Platform Expansion) follow.
+> **Status:** Active roadmap. Phases 1, 2, 2.1, 3 (resolution + hierarchy), 4 (Monitoring & Observability), and 5 (Downstream Export Protocol) have landed. **Phase 6 (Web UI) is in progress** — the read/query layer is in place, the TUI views are migrated to it, the web stack is scaffolded (Hono + Vite + React), and the dashboard's sidebar, hero, streams rail, week strip, event feed, modal, and timeline rail (Feed) all render against real data. Phase 6.1 (Admin Surface) is scoped (`design_docs/2026-05-09-admin-surface/admin.md`) but unbuilt. Phase 7 (Multi-Source Support) and Phase 8 (Platform Expansion) follow.
 > **Follow-ups:** Future phases scoped inline as they're approached. Open work tracked in `TECH_DEBTS.md`.
 >
 > **Renumbering note (2026-05-06):** Phase 6 used to be Multi-Source Support, Phase 7 Platform Expansion, Phase 8 Web UI. The numbers were swapped to reflect the new priority ordering: Phase 6 = Web UI, Phase 7 = Multi-Source Support, Phase 8 = Platform Expansion. Older docs may still reference the old numbers; if you find one, update it.
@@ -141,14 +141,18 @@ This plan outlines the phased implementation of the Oshikatsu platform, starting
 
 **Goal**: Provide a web-based interface that **coexists with the TUI**. Both surfaces stay supported: the TUI remains the operator-side power tool and stays the source of truth for any feature that hasn't been ported, while the web UI opens the platform to non-developer users and to remote access.
 
-**Deliverables**:
+Detailed scope and stack: `design_docs/2026-05-08-phase6-web-ui/web-ui.md`. Operator surface (review queue, edit canonical events, monitoring): `design_docs/2026-05-09-admin-surface/admin.md`. Read/query substrate that both share: `design_docs/2026-05-08-read-query-layer/query-layer.md`.
 
-- Web UI for watch list management (artists, sources, toggles).
-- Artist and venue database management.
-- Event dashboard with timeline/list view and filtering.
-- Calendar view with iCal/Google Calendar subscription links (the iCal feed is already being written by the Phase 5 consumer).
-- Ingestion monitoring dashboard mirroring the TUI Monitor tab.
-- HTTP API surface that both the web UI and external integrations can call. The Phase 5 `ExportRecord` shape is already plain-serializable, so it carries straight over the wire.
+**Phase 6.0 — Fan dashboard** (in progress):
+
+- Read/query service layer under `src/core/queries/` (landed). TUI views migrated.
+- HTTP server + static client (Hono + Vite + React) (landed).
+- Single-page dashboard with sidebar (oshi filter, URL-synced), hero, live & upcoming streams rail, week strip, event feed, event modal, and Feed rail (raw posts) (landed in initial form, polish ongoing).
+- Calendar subscription links surfacing the Phase 5 iCal feed (deferred).
+
+**Phase 6.1 — Admin surface** (scoped, not built):
+
+- Pipeline health, review queue with merge/new actions, canonical-event editing with row-level operator-owned freeze, extraction failures, recent-runs rail.
 
 **Coexistence guarantees**:
 

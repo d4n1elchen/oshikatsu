@@ -1,7 +1,7 @@
 # Phase 6: Web UI
 
-> **Status:** Proposed.
-> **Follow-ups:** Pre-work tracked in `TECH_DEBTS.md` (read/query service layer, Monitor task-name list); Phase 6 follow-on surfaces tracked in `IDEAS.md` (fan-art carousel, hashtag tracking, hype index).
+> **Status:** In progress. Read/query layer landed (`design_docs/2026-05-08-read-query-layer/query-layer.md`) and the TUI is migrated. Stack chosen and scaffolded (Hono + Vite + React). Sidebar with oshi filter, hero, live & upcoming streams rail, week strip, event feed, event modal, and Feed rail (raw posts) all render end-to-end against real data. Not yet polished to mock parity; admin surface is its own follow-up (`design_docs/2026-05-09-admin-surface/admin.md`).
+> **Follow-ups:** Schema additions made during build-out: `raw_items.posted_at` (migration `0019`) so the Feed rail can show source-post age instead of fetch age. Phase 6 follow-on surfaces tracked in `IDEAS.md` (fan-art carousel, hashtag tracking, hype index). Operator workflows (review queue, event editing) live in the admin design doc.
 
 ## Overview
 
@@ -17,7 +17,7 @@ A second motivation: opening up the surface forces a clean read/query layer. The
 
 ## Goals
 
-- A single-page dashboard that surfaces live streams, this week's events, the recent event feed, and a per-artist activity timeline.
+- A single-page dashboard that surfaces live streams, this week's events, the recent event feed, and a per-artist activity feed (raw posts).
 - Sidebar acts as both oshi list and filter; selecting an oshi scopes every panel.
 - Event detail surfaces as a modal, not a separate route, so navigation stays on the dashboard.
 - Read/query service layer used by both TUI and web — no duplicated drizzle queries across clients.
@@ -39,7 +39,7 @@ A second motivation: opening up the surface forces a clean read/query layer. The
 
 ```
 ┌──────────┬───────────────────────┬──────────┐
-│ Sidebar  │ Header                │ Timeline │
+│ Sidebar  │ Header                │ Feed     │
 │          ├───────────────────────┤ feed     │
 │ ● All    │ Next event countdown  │          │
 │ ──────   ├───────────────────────┤ ● post   │
@@ -55,7 +55,7 @@ A second motivation: opening up the surface forces a clean read/query layer. The
 └──────────┴───────────────────────┴──────────┘
 ```
 
-Three columns: sidebar (narrow), main (events), right rail (raw timeline). Sidebar selection filters every panel. Right rail collapses below the main column on narrow viewports.
+Three columns: sidebar (narrow), main (events), right rail (raw posts feed). Sidebar selection filters every panel. Right rail collapses below the main column on narrow viewports.
 
 ### Panels
 
@@ -106,7 +106,7 @@ Each panel is independent and queries the read/query layer directly. No cross-pa
 - Content: full title, description, artist, venue (with link), start/end time, all related links, all source posts (raw_items linked via `normalized_event_sources`), parent event (if sub-event) or sub-events list (if parent).
 - Sub-event "↑ parent" button inside modal swaps the modal contents to the parent — same component, different ID.
 
-#### Timeline rail
+#### Feed rail
 
 - `raw_items` ordered by `fetched_at desc`, scoped to the active filter.
 - Compact rows: avatar/handle, post excerpt (~80 chars), relative timestamp, link out to source.
@@ -168,7 +168,7 @@ Every panel maps to existing tables. No schema additions required for v1.
 | Sub-event "↑ parent" | `normalized_events.parent_event_id` | ✓ |
 | Source provenance | `COUNT(normalized_event_sources)` | ✓ |
 | Event modal | joins across normalized_events / sources / venues / related_links | ✓ |
-| Timeline rail | `raw_items` ordered by `fetched_at desc` | ✓ |
+| Feed rail | `raw_items` ordered by `fetched_at desc`; display uses `posted_at ?? fetched_at` | `posted_at` added during Phase 6 (migration 0019) — populated by the connector at ingest |
 
 **Visible compromises:**
 
@@ -178,15 +178,16 @@ Every panel maps to existing tables. No schema additions required for v1.
 
 ## Implementation order
 
-1. **Read/query service layer + TUI migration.** No web work yet. Migrate the four drizzle-importing TUI views to the new modules. Ships value independent of Phase 6 (resolves a `TECH_DEBTS.md` item).
-2. **HTTP layer + stack choice.** Pick stack, scaffold server, wire one route end-to-end (`/api/dashboard`).
-3. **Dashboard panels, in this order:** sidebar → hero → event feed → week strip → streams rail → timeline rail → modal. Each is a standalone PR; the dashboard is functional after every step, just with fewer panels.
-4. **Polish + responsive collapse.** Right rail drops below center on narrow viewports.
+1. ✅ **Read/query service layer + TUI migration.** Five modules under `src/core/queries/`, four TUI views migrated. (Plus `WatchedArtistsQueries` and `StreamsQueries` added later for the web surfaces.)
+2. ✅ **HTTP layer + stack choice.** Hono + Vite + React. `/api/dashboard` returns the composed bundle.
+3. ✅ **Dashboard panels** (in scaffold form): sidebar → hero → event feed → streams rail → week strip → modal → Feed rail. Each landed as its own commit. Visual polish to match the mock is ongoing.
+4. **Polish + responsive collapse.** Underway. Breakpoint tuned to 980px for the 3-column layout; sidebar/rail collapse below.
+5. **Calendar subscription links** for the Phase 5 iCal feed. Deferred — not blocking and the consumer already produces files.
 
-Each step is independently shippable. The first step has value even if Phases 6+ stall.
+Each step is independently shippable. The first step shipped value independent of Phase 6 (resolved a `TECH_DEBTS.md` item).
 
 ## Open questions
 
-- **Stack choice.** Deferred to follow-up commit per above.
-- **Timezone.** Display in deployment-local time, or browser-local? Probably browser-local (events are wall-clock anchored to the venue's locale, which we don't currently store separately from `start_time`). Worth confirming when implementing the week strip.
+- **Stack choice.** Settled — see "Stack choice" above.
+- **Timezone.** v1 displays browser-local (`Date.toLocaleString()`). Cross-TZ display gaps tracked in `TECH_DEBTS.md` (no venue/event-local TZ stored). `posted_at` on raw_items now lands as a real column populated by the connector at ingest, so Feed-rail times reflect post age, not fetch age.
 - **Polling cadence vs. perceived freshness.** 30s feels right for a command-center surface; revisit if it feels stale or hammers SQLite.

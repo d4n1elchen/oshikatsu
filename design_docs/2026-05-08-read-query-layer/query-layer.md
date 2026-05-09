@@ -1,7 +1,7 @@
 # Read/Query Service Layer
 
-> **Status:** Proposed.
-> **Follow-ups:** Pre-work for Phase 6 (`design_docs/2026-05-08-phase6-web-ui/web-ui.md`); resolves the "TUI directly uses DB access" item in `TECH_DEBTS.md`. New TUI/web read paths added during or after Phase 6 belong in this layer.
+> **Status:** Landed. Five original modules (Monitor, ReviewQueue, ExtractedEvents, NormalizedEvents, RawItems) shipped along with the four TUI view migrations. Two additional modules added during the Phase 6 web build-out: `WatchedArtistsQueries` (sidebar oshi list with last-activity timestamp) and `StreamsQueries` (live & upcoming streams rail — virtual-venue-scoped events). `TECH_DEBTS.md`'s "TUI directly uses DB access" entry has been removed.
+> **Follow-ups:** New TUI/web read paths belong in this layer. Per-field DTO sharing across modules is still off — generalize on the second real overlap, not preemptively.
 
 ## Overview
 
@@ -44,13 +44,16 @@ src/core/queries/
   NormalizedEventsQueries.ts     // listNormalizedEvents
   ExtractedEventsQueries.ts      // listExtractedEvents
   ReviewQueueQueries.ts          // listReviewQueue
-  RawItemsQueries.ts             // listRecentRawItems  (web UI timeline rail)
+  RawItemsQueries.ts             // listRecentRawItems  (web Feed rail)
+  WatchedArtistsQueries.ts       // listWatchedArtists  (web sidebar — added during Phase 6)
+  StreamsQueries.ts              // listLiveAndUpcomingStreams  (web streams rail — added during Phase 6)
   __tests__/
     MonitorQueries.test.ts
     NormalizedEventsQueries.test.ts
     ExtractedEventsQueries.test.ts
     ReviewQueueQueries.test.ts
     RawItemsQueries.test.ts
+    WatchedArtistsQueries.test.ts
 ```
 
 ### Module conventions
