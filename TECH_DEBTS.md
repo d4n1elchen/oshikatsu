@@ -216,6 +216,21 @@ Follow-up:
 
 - Review the list quarterly or whenever an `AntiBotError` rate spike is observed.
 
+### Anti-lock follow-ups deferred per design doc
+
+`design_docs/2026-05-09-twitter-anti-lock` landed launch-options unification, dropped the hard-coded UA, and switched to headful. The remaining behavioral fingerprint surface is unaddressed:
+
+- **Login still happens inside Playwright.** Importing cookies from the operator's real Chrome profile would remove the riskiest moment in the session lifetime.
+- **`window.scrollBy` emits no `wheel` events.** `page.mouse.wheel` would dispatch real wheel events.
+- **Per-page timing is metronomic.** The 3000ms post-load wait and 1500ms scroll delay are constants. Add ±30–50% jitter, occasional heavier-tail pauses.
+- **No mouse movement at all.** A couple of `page.mouse.move` calls between scrolls would be cheap and meaningful.
+- **Fixed `1280×800` viewport every session.** ±5% randomization on each session start would break the stable device fingerprint.
+- **Ingestion fires on the dot every 60 min.** Schedule jitter on cycle start would help.
+
+Follow-up:
+
+- Promote any of these from "defer" to "address" if a future lock or `AntiBotError` rate spike points at behavioral fingerprinting specifically. Do not preemptively bundle them — each adds surface area, and the unified-fingerprint + headful change is the leverage point.
+
 ## Phase 5 Downstream Export
 
 ### Monitor TUI hardcodes the task-name list

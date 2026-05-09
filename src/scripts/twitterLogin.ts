@@ -1,6 +1,7 @@
 import { chromium } from "playwright";
 import { getConfig } from "../config";
 import { tagged } from "../core/logger";
+import { buildLaunchOptions } from "../connectors/twitter/browser";
 
 const log = tagged("login:twitter");
 
@@ -10,12 +11,13 @@ async function main() {
   log.info(`Launching browser at ${userDataDir}`);
   log.info("Log into Twitter/X manually; the browser will stay open for 3 minutes");
 
-  const context = await chromium.launchPersistentContext(userDataDir, {
-    headless: false, // We need to see it to log in
-    viewport: { width: 1280, height: 800 },
-    args: ["--disable-blink-features=AutomationControlled"],
-    ignoreDefaultArgs: ["--enable-automation"],
-  });
+  // Same launch options as the scraping connector — same UA, same viewport,
+  // same flags — so the auth cookie minted here doesn't trip X's
+  // session-binding heuristics when the connector reuses it.
+  const context = await chromium.launchPersistentContext(
+    userDataDir,
+    buildLaunchOptions({ userDataDir, headless: false })
+  );
 
   const page = await context.newPage();
   await page.goto("https://x.com/login");

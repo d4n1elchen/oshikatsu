@@ -14,7 +14,7 @@ llm:
 
 twitter:
   maxTweetsPerSource: 50
-  headless: true
+  headless: false                    # headful reduces anti-bot detection on X; flipping to true increases lock risk
   interTargetDelayMs: 3000           # delay between successive target fetches (with ±25% jitter); set to 0 to disable
 
 paths:

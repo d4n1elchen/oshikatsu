@@ -2,6 +2,7 @@ import { chromium, type BrowserContext, type Page } from "playwright";
 import type { BaseConnector } from "../types";
 import type { WatchTarget } from "../../core/types";
 import { tagged } from "../../core/logger";
+import { buildLaunchOptions } from "./browser";
 import {
   ANTI_BOT_MARKERS,
   AntiBotError,
@@ -43,26 +44,36 @@ export interface PageLike {
 export class TwitterConnector implements BaseConnector {
   private context: BrowserContext | null = null;
   private page: PageLike | null = null;
+  /**
+   * Returns the current cookies for the X session. Set for real in start();
+   * overridable from tests via setPageForTesting. The default returns a
+   * synthetic auth_token so existing tests don't trip the login-wall check.
+   */
+  private cookiesFn: () => Promise<{ name: string }[]> = async () => [
+    { name: "auth_token" },
+  ];
 
   constructor(private config: TwitterConnectorConfig) {}
 
   /** Test seam: inject a pre-made page (skips browser launch). */
-  setPageForTesting(page: PageLike): void {
+  setPageForTesting(page: PageLike, cookies?: { name: string }[]): void {
     this.page = page;
+    if (cookies) this.cookiesFn = async () => cookies;
   }
 
   async start(): Promise<void> {
     log.info(`Launching persistent browser context at ${this.config.browser.userDataDir}`);
-    this.context = await chromium.launchPersistentContext(this.config.browser.userDataDir, {
-      headless: this.config.browser.headless,
-      // Useful for reducing anti-bot detections
-      viewport: { width: 1280, height: 800 },
-      userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-      args: ["--disable-blink-features=AutomationControlled"],
-      ignoreDefaultArgs: ["--enable-automation"],
-    });
+    this.context = await chromium.launchPersistentContext(
+      this.config.browser.userDataDir,
+      buildLaunchOptions({
+        userDataDir: this.config.browser.userDataDir,
+        headless: this.config.browser.headless,
+      })
+    );
 
     this.page = (await this.context.newPage()) as unknown as PageLike;
+    const ctx = this.context;
+    this.cookiesFn = () => ctx.cookies();
   }
 
   async fetchUpdates(source: WatchTarget, signal?: AbortSignal): Promise<Record<string, any>[]> {
@@ -135,6 +146,17 @@ export class TwitterConnector implements BaseConnector {
       // needs to be re-authenticated via `npm run login:twitter`.
       const resolvedUrl = this.page.url();
       if (LOGIN_WALL_URL_PATTERNS.some((pattern) => resolvedUrl.includes(pattern))) {
+        throw new LoginWallError(resolvedUrl);
+      }
+
+      // Cookie-based login probe: X no longer always redirects logged-out
+      // visitors to /i/flow/login. It now serves the profile URL with a
+      // degraded "Tweet Highlights" preview — UserTweets fires, but with
+      // shuffled, mostly-old tweets. The auth_token cookie's absence is the
+      // most reliable signal that the persistent session has expired and
+      // needs `npm run login:twitter`.
+      const cookies = await this.cookiesFn();
+      if (!cookies.some((c) => c.name === "auth_token")) {
         throw new LoginWallError(resolvedUrl);
       }
 

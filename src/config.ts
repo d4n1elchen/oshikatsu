@@ -60,7 +60,11 @@ const DEFAULT_CONFIG: OshikatsuConfig = {
   },
   twitter: {
     maxTweetsPerSource: 50,
-    headless: true,
+    // Headful is the default to reduce anti-bot detection on X. Flipping
+    // this to `true` increases lock risk because headless Chromium leaves
+    // detectable signals (font rendering, GPU stack, missing-permissions
+    // APIs). See design_docs/2026-05-09-twitter-anti-lock.
+    headless: false,
     interTargetDelayMs: 3000,
   },
   paths: {

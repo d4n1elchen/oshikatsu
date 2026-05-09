@@ -156,6 +156,26 @@ test("throws LoginWallError when redirected to /i/flow/login", async () => {
   );
 });
 
+test("throws LoginWallError when auth_token cookie is missing (logged-out preview)", async () => {
+  // X no longer always redirects logged-out visitors — it serves the profile
+  // URL with a shuffled "Tweet Highlights" preview. The auth_token cookie's
+  // absence is the reliable signal.
+  const connector = makeConnector();
+  connector.setPageForTesting(
+    makeFakePage({
+      fakeResponses: [
+        { url: "https://x.com/i/api/graphql/abc/UserTweets", json: buildUserTweetsJson(["1", "2"]) },
+      ],
+    }),
+    [{ name: "guest_id" }] // no auth_token
+  );
+
+  await assert.rejects(
+    () => connector.fetchUpdates(TARGET),
+    (err: unknown) => err instanceof LoginWallError
+  );
+});
+
 // ---- 2. Anti-bot interstitial ----
 
 test("throws AntiBotError when Cloudflare challenge title is present", async () => {
