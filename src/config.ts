@@ -37,6 +37,13 @@ export interface OshikatsuConfig {
       calendarPrefix: string;
     };
   };
+  /**
+   * IANA timezone (e.g. "Asia/Tokyo") used as the last-resort fallback
+   * when extraction encounters an offset-less timestamp and the artist
+   * has no `timezone` set. Set to `null` to disable the fallback (in
+   * which case offset-less timestamps will fail extraction).
+   */
+  defaultTimezone: string | null;
 }
 
 const DEFAULT_CONFIG: OshikatsuConfig = {
@@ -74,6 +81,7 @@ const DEFAULT_CONFIG: OshikatsuConfig = {
       calendarPrefix: "Oshikatsu",
     },
   },
+  defaultTimezone: "Asia/Tokyo",
 };
 
 let cachedConfig: OshikatsuConfig | null = null;
@@ -124,6 +132,10 @@ export function getConfig(): OshikatsuConfig {
         ...(((userConfig as any).export ?? {}).ical ?? {}),
       },
     },
+    defaultTimezone:
+      (userConfig as any).defaultTimezone !== undefined
+        ? (userConfig as any).defaultTimezone
+        : DEFAULT_CONFIG.defaultTimezone,
   };
 
   // Resolve relative paths based on CWD

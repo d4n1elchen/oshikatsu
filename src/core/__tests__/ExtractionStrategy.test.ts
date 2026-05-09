@@ -233,3 +233,37 @@ test("sanitize throws on unparseable start_time", () => {
     })
   );
 });
+
+test("sanitize applies fallbackTimezone when start_time has no offset", () => {
+  const ctx = twitter.buildContext(fakeTwitterRawItem())!;
+  ctx.fallbackTimezone = "Asia/Tokyo";
+  const result = twitter.sanitize(fakeTwitterRawItem(), ctx, {
+    title: "X",
+    description: "Y",
+    type: "concert",
+    event_scope: "main",
+    start_time: "2026-05-16T18:00:00",
+    related_links: [],
+    tags: [],
+  });
+  // 18:00 JST = 09:00 UTC
+  assert.equal(result.start_time, "2026-05-16T09:00:00.000Z");
+});
+
+test("sanitize throws MissingTimezoneError when offset-less and no fallback", () => {
+  const ctx = twitter.buildContext(fakeTwitterRawItem())!;
+  ctx.fallbackTimezone = null;
+  assert.throws(
+    () =>
+      twitter.sanitize(fakeTwitterRawItem(), ctx, {
+        title: "X",
+        description: "Y",
+        type: "concert",
+        event_scope: "main",
+        start_time: "2026-05-16T18:00:00",
+        related_links: [],
+        tags: [],
+      }),
+    /MissingTimezoneError|no fallback timezone/i
+  );
+});

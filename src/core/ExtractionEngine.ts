@@ -1,7 +1,8 @@
 import { randomUUID } from "crypto";
 import { eq } from "drizzle-orm";
 import { db as defaultDb } from "../db";
-import { extractedEvents, extractedEventRelatedLinks, watchTargets } from "../db/schema";
+import { artists, extractedEvents, extractedEventRelatedLinks, watchTargets } from "../db/schema";
+import { getConfig } from "../config";
 import { RawStorage } from "./RawStorage";
 import { VenueResolver } from "./VenueResolver";
 import type { LLMProvider } from "./LLMProvider";
@@ -76,6 +77,7 @@ export class ExtractionEngine {
       if (!context) {
         throw new Error("No usable text context found in raw data");
       }
+      context.fallbackTimezone = await this.resolveFallbackTimezone(item);
 
       if (await this.hasExistingExtraction(item.id)) {
         await this.rawStorage.markProcessed(item.id);
@@ -197,6 +199,25 @@ export class ExtractionEngine {
       .limit(1);
 
     return rows[0]?.artistId ?? null;
+  }
+
+  /**
+   * Resolve the IANA timezone applied to offset-less timestamps in this
+   * item's extraction. Order: artist.timezone → config.defaultTimezone →
+   * null (which makes offset-less timestamps fail extraction).
+   */
+  private async resolveFallbackTimezone(rawItem: any): Promise<string | null> {
+    if (rawItem.watchTargetId) {
+      const rows = await this.db
+        .select({ tz: artists.timezone })
+        .from(watchTargets)
+        .innerJoin(artists, eq(watchTargets.artistId, artists.id))
+        .where(eq(watchTargets.id, rawItem.watchTargetId))
+        .limit(1);
+      const artistTz = rows[0]?.tz;
+      if (artistTz) return artistTz;
+    }
+    return getConfig().defaultTimezone;
   }
 }
 

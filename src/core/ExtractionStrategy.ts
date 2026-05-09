@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  hasTimezoneOffset,
+  parseIsoWithFallbackTimezone,
+  MissingTimezoneError,
+} from "./timezone";
 
 export const EVENT_TYPES = ["live_stream", "merchandise", "release", "concert", "broadcast", "collaboration", "side_event"] as const;
 export const EVENT_SCOPES = ["main", "sub", "unknown"] as const;
@@ -31,6 +36,13 @@ export interface SourceContext {
   url: string;
   relatedLinkCandidates: RelatedLinkCandidate[];
   rawContent: string;
+  /**
+   * IANA timezone applied when the LLM emits an offset-less timestamp.
+   * Set by the engine from artist.timezone or config.defaultTimezone
+   * after `buildContext` returns. Null disables the fallback (offset-less
+   * timestamps will fail extraction loudly).
+   */
+  fallbackTimezone?: string | null;
 }
 
 export interface RelatedLinkCandidate {
@@ -82,6 +94,7 @@ Language rules:
 Extraction rules:
 - Extract the specific activity described by the source post. A post may announce a main event, or it may announce a sub-event such as a merch sale, ticket lottery, meet-and-greet, pre-show, after-show, campaign, booth, or stream related to a larger main event.
 - start_time should be an ISO 8601 timestamp for when the extracted activity happens, if the source gives an explicit time or enough context to infer it safely.
+- start_time and end_time MUST include a timezone offset (e.g. "2026-05-16T18:00:00+09:00" for JST, or trailing "Z" for UTC). If the source post does not state a timezone explicitly, infer it from the language, location, or venue (e.g. Japanese fan announcements default to +09:00 / JST). Never emit a bare local time like "2026-05-16T18:00:00".
 - Leave start_time unset when the source announces a real activity but does not provide the activity's own time. Do not use the source publish time as start_time.
 - end_time should only be set when an explicit end time is available.
 - related_links must contain only event-relevant candidate URLs and optional human-readable titles.
@@ -106,8 +119,9 @@ Venue rules:
   sanitize(_rawItem: any, _context: SourceContext, extracted: EventExtractionResult): EventExtractionResult {
     const title = requireNonEmpty(extracted.title, "title");
     const description = requireNonEmpty(extracted.description, "description");
-    const startTime = extracted.start_time ? parseDateOrThrow(extracted.start_time, "start_time") : undefined;
-    const endTime = extracted.end_time ? parseDateOrThrow(extracted.end_time, "end_time") : undefined;
+    const fallbackTz = _context.fallbackTimezone ?? null;
+    const startTime = extracted.start_time ? parseDateOrThrow(extracted.start_time, "start_time", fallbackTz) : undefined;
+    const endTime = extracted.end_time ? parseDateOrThrow(extracted.end_time, "end_time", fallbackTz) : undefined;
     const eventScope = EVENT_SCOPES.includes(extracted.event_scope) ? extracted.event_scope : "unknown";
 
     return {
@@ -168,12 +182,18 @@ export function parseDateOrDefault(value: string | undefined, defaultIso: string
   return Number.isNaN(defaultDate.getTime()) ? new Date() : defaultDate;
 }
 
-function parseDateOrThrow(value: string, fieldName: string): Date {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    throw new Error(`Invalid ${fieldName}: ${value}`);
+function parseDateOrThrow(value: string, fieldName: string, fallbackTimezone: string | null): Date {
+  if (hasTimezoneOffset(value)) {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new Error(`Invalid ${fieldName}: ${value}`);
+    }
+    return parsed;
   }
-  return parsed;
+  if (!fallbackTimezone) {
+    throw new MissingTimezoneError(fieldName, value);
+  }
+  return parseIsoWithFallbackTimezone(value, fallbackTimezone);
 }
 
 function requireNonEmpty(value: string, fieldName: string): string {

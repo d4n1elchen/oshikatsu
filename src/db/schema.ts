@@ -13,6 +13,12 @@ export const artists = sqliteTable("artists", {
   categories: text("categories", { mode: "json" }).$type<string[]>().notNull(),
   groups: text("groups", { mode: "json" }).$type<string[]>().notNull(),
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  /**
+   * IANA timezone name (e.g. "Asia/Tokyo"). Applied as a fallback when
+   * the LLM emits an offset-less timestamp during extraction. Nullable;
+   * the ultimate fallback is `config.defaultTimezone`.
+   */
+  timezone: text("timezone"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 }, (table) => [

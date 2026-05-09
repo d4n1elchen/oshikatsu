@@ -27,6 +27,7 @@ function createTestDb() {
       id TEXT PRIMARY KEY, handle TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
       categories TEXT NOT NULL, groups TEXT NOT NULL,
       enabled INTEGER NOT NULL DEFAULT 1,
+      timezone TEXT,
       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
     );
     CREATE TABLE watch_targets (

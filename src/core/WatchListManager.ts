@@ -3,6 +3,7 @@ import { eq, and } from "drizzle-orm";
 import { db as defaultDb } from "../db";
 import { artists, watchTargets } from "../db/schema";
 import { validateHandle } from "./validateHandle";
+import { assertValidTimezone } from "./timezone";
 import type { Artist, WatchTarget } from "./types";
 
 type DbInstance = typeof defaultDb;
@@ -40,10 +41,16 @@ export class WatchListManager {
     handle: string,
     categories: string[] = [],
     groups: string[] = [],
+    options: { timezone?: string | null } = {}
   ): Promise<Artist> {
     const validation = validateHandle(handle);
     if (!validation.valid) throw new InvalidHandleError(validation.reason);
     if (await this.handleExists(handle)) throw new HandleInUseError(handle);
+
+    const timezone =
+      options.timezone === undefined || options.timezone === null
+        ? null
+        : assertValidTimezone(options.timezone);
 
     const newArtist = {
       id: randomUUID(),
@@ -52,6 +59,7 @@ export class WatchListManager {
       categories,
       groups,
       enabled: true,
+      timezone,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -89,10 +97,14 @@ export class WatchListManager {
    */
   async updateArtist(
     artistId: string,
-    fields: { name?: string; categories?: string[]; groups?: string[]; handle?: string }
+    fields: { name?: string; categories?: string[]; groups?: string[]; handle?: string; timezone?: string | null }
   ): Promise<void> {
-    const { handle: requestedHandle, ...rest } = fields;
+    const { handle: requestedHandle, timezone: requestedTz, ...rest } = fields;
     const updates: Record<string, unknown> = { ...rest, updatedAt: new Date() };
+
+    if (requestedTz !== undefined) {
+      updates.timezone = requestedTz === null ? null : assertValidTimezone(requestedTz);
+    }
 
     if (requestedHandle != null) {
       const existing = await this.db

@@ -127,6 +127,13 @@
       "when": 1778033456190,
       "tag": "0017_motionless_madame_masque",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1778365200000,
+      "tag": "0018_artists_timezone",
+      "breakpoints": true
     }
   ]
 }

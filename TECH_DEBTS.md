@@ -99,6 +99,25 @@ Follow-up:
 - Add a curated merge action in a future venue review workflow.
 - Or add an LLM-assisted post-pass to extract a channel URL from a stream URL and re-point references.
 
+## Timezone handling
+
+### No venue-level or event-level timezone stored
+
+`artists.timezone` exists and is the extraction-time fallback (artist → `config.defaultTimezone` → reject). For *display*, this is also a reasonable proxy ("this artist's events default to JST"), but it breaks for an artist's overseas tour: the venue is in a different TZ than the artist's home TZ, and we have no field for it.
+
+Follow-up:
+
+- Add `timezone` (IANA name) to `venues`, with `normalized_events.timezone` as a fallback when venue TZ is unknown. Web UI display can then prefer venue → artist → config.
+- Decide the display contract for cross-TZ users (browser-local vs. event-local with annotation) when the Phase 6 dashboard hits this.
+
+### TUI displays dates in host-local time
+
+`NormalizedEvents.tsx` and other views call `new Date(startTime).toLocaleString()`, which renders in the daemon host's locale. Cosmetic and operator-only — not a correctness issue — but inconsistent if operator and event venue are in different timezones.
+
+Follow-up:
+
+- Switch TUI display to render in artist-local TZ (`artists.timezone`) with an explicit suffix (`18:00 JST`). Upgrade to venue-local once the venue/event TZ field above lands.
+
 ## Phase 3 Event Resolution
 
 ### Title similarity is deterministic only

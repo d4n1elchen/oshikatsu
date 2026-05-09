@@ -39,3 +39,9 @@ export:
     enabled: false
     outputDir: "./data/ical"   # one <artist-id>.ics file per artist
     calendarPrefix: "Oshikatsu" # X-WR-CALNAME prefix; full name is "<prefix> — <artist name>"
+
+# Last-resort timezone applied during extraction when the LLM emits an
+# offset-less timestamp and the artist has no `timezone` set. IANA name.
+# Set to null to disable the fallback (offset-less timestamps will then
+# fail extraction loudly instead of being coerced).
+defaultTimezone: "Asia/Tokyo"
