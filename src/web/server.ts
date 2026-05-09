@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import * as fs from "fs";
 import * as path from "path";
 import { dashboardRoute } from "./api/dashboard";
+import { eventsRoute } from "./api/events";
 import { tagged } from "../core/logger";
 
 const log = tagged("WebServer");
@@ -11,6 +12,7 @@ const log = tagged("WebServer");
 const app = new Hono();
 
 app.route("/api", dashboardRoute);
+app.route("/api", eventsRoute);
 
 // In production we serve the built client bundle from dist/web. In dev,
 // Vite serves the client on its own port and proxies /api here, so we

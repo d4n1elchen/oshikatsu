@@ -86,3 +86,27 @@ export async function fetchDashboard(opts: { oshi?: string } = {}): Promise<Dash
   if (!res.ok) throw new Error(`Dashboard fetch failed: ${res.status}`);
   return res.json();
 }
+
+export type EventDetailPayload = NormalizedEventDTO & {
+  sources: Array<{
+    extractedEventId: string;
+    role: string;
+    author: string;
+    publishTime: string;
+    sourceUrl: string;
+    rawContent: string;
+  }>;
+  relatedLinks: Array<{ url: string; title: string | null }>;
+  subEvents: Array<{
+    id: string;
+    title: string;
+    startTime: string | null;
+    isCancelled: boolean;
+  }>;
+};
+
+export async function fetchEventDetail(id: string): Promise<EventDetailPayload> {
+  const res = await fetch(`/api/events/${encodeURIComponent(id)}`);
+  if (!res.ok) throw new Error(`Event fetch failed: ${res.status}`);
+  return res.json();
+}

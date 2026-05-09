@@ -1,8 +1,10 @@
-import { and, count, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray } from "drizzle-orm";
 import { db as defaultDb } from "../../db";
 import {
   artists,
   eventResolutionDecisions,
+  extractedEventRelatedLinks,
+  extractedEvents,
   normalizedEventSources,
   normalizedEvents,
   venues,
@@ -15,6 +17,8 @@ export type ListNormalizedEventsOptions = {
   limit?: number;
   /** Filter to a specific artist. */
   artistId?: string;
+  /** Filter to a single event by id. Used by the detail query. */
+  id?: string;
   /** Default `"startTime"` (TUI). Web feed prefers `"updatedAt"`. */
   orderBy?: "startTime" | "updatedAt";
 };
@@ -69,9 +73,11 @@ export async function listNormalizedEvents(
   const orderColumn =
     opts.orderBy === "updatedAt" ? normalizedEvents.updatedAt : normalizedEvents.startTime;
 
-  const whereClause = opts.artistId
-    ? eq(normalizedEvents.artistId, opts.artistId)
-    : undefined;
+  const whereParts = [
+    opts.artistId ? eq(normalizedEvents.artistId, opts.artistId) : undefined,
+    opts.id ? eq(normalizedEvents.id, opts.id) : undefined,
+  ].filter((c): c is NonNullable<typeof c> => c !== undefined);
+  const whereClause = whereParts.length === 0 ? undefined : and(...whereParts);
 
   // Outer + artist + venue. Parent titles are fetched separately to keep
   // type inference clean (drizzle's aliasedTable + leftJoin trips it).
@@ -215,4 +221,110 @@ export async function listNormalizedEvents(
     latestDecision: decisionByEvent.get(r.id)?.decision ?? null,
     latestReason: decisionByEvent.get(r.id)?.reason ?? null,
   }));
+}
+
+export type EventSourceEntry = {
+  extractedEventId: string;
+  role: string;
+  author: string;
+  publishTime: Date;
+  sourceUrl: string;
+  rawContent: string;
+};
+
+export type EventRelatedLink = {
+  url: string;
+  title: string | null;
+};
+
+export type EventSubEntry = {
+  id: string;
+  title: string;
+  startTime: Date | null;
+  isCancelled: boolean;
+};
+
+export type NormalizedEventDetail = NormalizedEventListItem & {
+  sources: EventSourceEntry[];
+  relatedLinks: EventRelatedLink[];
+  subEvents: EventSubEntry[];
+};
+
+/**
+ * Full detail for one canonical event, used by the dashboard modal.
+ * Composes the same enrichment as `listNormalizedEvents` and adds
+ * source raw items (via extracted_events), de-duplicated related
+ * links, and direct sub-events (one level).
+ */
+export async function getNormalizedEventDetail(
+  id: string,
+  dbi: DbInstance = defaultDb
+): Promise<NormalizedEventDetail | null> {
+  const [event] = await listNormalizedEvents({ id, limit: 1 }, dbi);
+  if (!event) return null;
+
+  const [sources, links, subs] = await Promise.all([
+    dbi
+      .select({
+        extractedEventId: normalizedEventSources.extractedEventId,
+        role: normalizedEventSources.role,
+        author: extractedEvents.author,
+        publishTime: extractedEvents.publishTime,
+        sourceUrl: extractedEvents.sourceUrl,
+        rawContent: extractedEvents.rawContent,
+      })
+      .from(normalizedEventSources)
+      .innerJoin(extractedEvents, eq(normalizedEventSources.extractedEventId, extractedEvents.id))
+      .where(eq(normalizedEventSources.normalizedEventId, id))
+      .orderBy(desc(extractedEvents.publishTime)),
+
+    dbi
+      .select({
+        url: extractedEventRelatedLinks.url,
+        title: extractedEventRelatedLinks.title,
+        extractedEventId: extractedEventRelatedLinks.extractedEventId,
+      })
+      .from(extractedEventRelatedLinks)
+      .innerJoin(
+        normalizedEventSources,
+        eq(normalizedEventSources.extractedEventId, extractedEventRelatedLinks.extractedEventId)
+      )
+      .where(eq(normalizedEventSources.normalizedEventId, id)),
+
+    dbi
+      .select({
+        id: normalizedEvents.id,
+        title: normalizedEvents.title,
+        startTime: normalizedEvents.startTime,
+        isCancelled: normalizedEvents.isCancelled,
+      })
+      .from(normalizedEvents)
+      .where(eq(normalizedEvents.parentEventId, id))
+      .orderBy(asc(normalizedEvents.startTime)),
+  ]);
+
+  // Dedupe related links by URL.
+  const linkByUrl = new Map<string, EventRelatedLink>();
+  for (const l of links) {
+    if (!linkByUrl.has(l.url)) linkByUrl.set(l.url, { url: l.url, title: l.title });
+  }
+
+  return {
+    ...event,
+    sources: sources.map((s) => ({
+      extractedEventId: s.extractedEventId,
+      role: s.role,
+      author: s.author,
+      publishTime: s.publishTime,
+      sourceUrl: s.sourceUrl,
+      rawContent: s.rawContent,
+    })),
+    relatedLinks: [...linkByUrl.values()],
+    subEvents: subs.map((s) => ({
+      id: s.id,
+      title: s.title,
+      startTime: s.startTime,
+      isCancelled: s.isCancelled,
+    })),
+  };
 }

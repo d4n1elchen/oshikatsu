@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { fetchDashboard, type DashboardPayload } from "./api";
+import { EventModal } from "./EventModal";
 import { Sidebar } from "./Sidebar";
 import { StreamsRail } from "./StreamsRail";
 import { WeekStrip } from "./WeekStrip";
@@ -11,6 +12,7 @@ export function App() {
   const [data, setData] = useState<DashboardPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [oshi, setOshi] = useUrlParam("oshi");
+  const [eventId, setEventId] = useUrlParam("event");
 
   useEffect(() => {
     let cancelled = false;
@@ -55,7 +57,10 @@ export function App() {
           <div className="server-time">Updated {formatRelative(data.serverTime)}</div>
         </header>
 
-        <section className="hero">
+        <section
+          className={`hero ${data.nextEvent ? "clickable" : ""}`}
+          onClick={data.nextEvent ? () => setEventId(data.nextEvent!.id) : undefined}
+        >
           <div className="hero-label">Next event</div>
           {data.nextEvent ? (
             <>
@@ -83,7 +88,7 @@ export function App() {
 
         <StreamsRail streams={data.streams} />
 
-        <WeekStrip events={data.eventFeed} />
+        <WeekStrip events={data.eventFeed} onEventClick={setEventId} />
 
         <section>
           <h2 className="section-title">
@@ -91,7 +96,11 @@ export function App() {
           </h2>
           <ul className="event-list">
             {data.eventFeed.slice(0, 20).map((ev) => (
-              <li key={ev.id} className="event-row">
+              <li
+                key={ev.id}
+                className="event-row clickable"
+                onClick={() => setEventId(ev.id)}
+              >
                 <div className="event-title">
                   {ev.isCancelled ? <s>{ev.title}</s> : ev.title}
                 </div>
@@ -100,6 +109,15 @@ export function App() {
                   {ev.startTime && ` · ${new Date(ev.startTime).toLocaleString()}`}
                   {ev.venue?.name && ` · ${ev.venue.name}`}
                   {` · ${ev.sourceCount} source${ev.sourceCount === 1 ? "" : "s"}`}
+                  {ev.parentEventId && (
+                    <button
+                      type="button"
+                      className="parent-chip"
+                      onClick={(e) => { e.stopPropagation(); setEventId(ev.parentEventId!); }}
+                    >
+                      ↑ parent
+                    </button>
+                  )}
                 </div>
               </li>
             ))}
@@ -121,6 +139,14 @@ export function App() {
           ))}
         </ul>
       </aside>
+
+      {eventId && (
+        <EventModal
+          eventId={eventId}
+          onClose={() => setEventId(null)}
+          onOpenEvent={(id) => setEventId(id)}
+        />
+      )}
     </div>
   );
 }
