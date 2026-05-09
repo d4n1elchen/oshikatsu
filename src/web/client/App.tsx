@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { fetchDashboard, type DashboardPayload } from "./api";
 import { Sidebar } from "./Sidebar";
 import { StreamsRail } from "./StreamsRail";
+import { WeekStrip } from "./WeekStrip";
 import { useUrlParam } from "./useUrlState";
 
 const POLL_INTERVAL_MS = 30_000;
@@ -81,6 +82,8 @@ export function App() {
         </section>
 
         <StreamsRail streams={data.streams} />
+
+        <WeekStrip events={data.eventFeed} />
 
         <section>
           <h2 className="section-title">
