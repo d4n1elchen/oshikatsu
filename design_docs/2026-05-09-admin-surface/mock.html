@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Oshikatsu — Admin mock</title>
+<style>
+  :root {
+    --bg: #0e0e11;
+    --bg-elev-1: #16161b;
+    --bg-elev-2: #1c1c22;
+    --bg-elev-3: #24242c;
+    --border: #2a2a33;
+    --border-soft: #1f1f27;
+    --text: #e7e7ea;
+    --text-dim: #9a9aa3;
+    --text-faint: #6a6a73;
+    --accent: #ec4899;
+    --accent-soft: rgba(236, 72, 153, 0.14);
+    --ok: #22c55e;
+    --ok-soft: rgba(34, 197, 94, 0.14);
+    --warn: #f59e0b;
+    --warn-soft: rgba(245, 158, 11, 0.14);
+    --err: #ef4444;
+    --err-soft: rgba(239, 68, 68, 0.14);
+    --info: #6366f1;
+    --info-soft: rgba(99, 102, 241, 0.14);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; text-decoration: none; }
+  button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; padding: 0; }
+
+  .shell {
+    display: grid;
+    grid-template-columns: 240px 1fr 320px;
+    min-height: 100vh;
+  }
+  @media (max-width: 1100px) {
+    .shell { grid-template-columns: 220px 1fr; }
+    .runs-rail { display: none; }
+  }
+
+  /* Sidebar */
+  .sidebar {
+    background: var(--bg-elev-1);
+    border-right: 1px solid var(--border-soft);
+    padding: 20px 0;
+    position: sticky; top: 0;
+    height: 100vh; overflow-y: auto;
+  }
+  .brand {
+    padding: 0 20px 20px;
+    display: flex; align-items: center; gap: 10px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .brand-mark {
+    width: 28px; height: 28px; border-radius: 8px;
+    background: linear-gradient(135deg, var(--accent), #f472b6);
+    display: grid; place-items: center; font-weight: 700; color: #fff;
+  }
+  .brand-name { font-weight: 600; }
+
+  .sidebar-label {
+    text-transform: uppercase;
+    font-size: 11px;
+    color: var(--text-faint);
+    letter-spacing: 0.8px;
+    padding: 18px 20px 8px;
+  }
+  .nav-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 20px;
+    border-left: 2px solid transparent;
+    cursor: pointer;
+  }
+  .nav-row:hover { background: var(--bg-elev-2); }
+  .nav-row.active {
+    background: var(--accent-soft);
+    border-left-color: var(--accent);
+    color: var(--text);
+  }
+  .nav-icon { width: 16px; opacity: 0.7; }
+
+  /* Header */
+  .main { padding: 24px 32px 64px; min-width: 0; }
+  .header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 24px;
+  }
+  .title-block { display: flex; align-items: baseline; gap: 12px; }
+  .page-title { font-size: 22px; font-weight: 600; margin: 0; }
+  .page-subtitle { color: var(--text-faint); font-size: 12px; }
+  .health-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    color: var(--text-faint); font-size: 12px;
+  }
+  .health-pill::before {
+    content: ""; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--ok);
+  }
+
+  /* Section headers */
+  section { margin-bottom: 36px; }
+  .section-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin: 0 0 14px;
+  }
+  .section-title { font-size: 16px; font-weight: 600; margin: 0; }
+  .section-title .count {
+    color: var(--text-faint); font-weight: 400; font-size: 13px;
+    margin-left: 6px;
+  }
+  .section-link { color: var(--text-dim); font-size: 12px; }
+  .section-link:hover { color: var(--accent); }
+
+  /* Pipeline health cards */
+  .health-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+  }
+  .health-card {
+    background: var(--bg-elev-1);
+    border: 1px solid var(--border-soft);
+    border-radius: 12px;
+    padding: 16px 18px;
+    border-left: 3px solid var(--ok);
+  }
+  .health-card.warn { border-left-color: var(--warn); }
+  .health-card.err { border-left-color: var(--err); }
+  .health-card.idle { border-left-color: var(--text-faint); }
+
+  .health-card-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 12px;
+  }
+  .health-card-name { font-weight: 600; }
+  .health-card-status {
+    text-transform: uppercase;
+    font-size: 10px; letter-spacing: 0.8px;
+    padding: 2px 6px; border-radius: 4px;
+  }
+  .health-card-status.ok { background: var(--ok-soft); color: var(--ok); }
+  .health-card-status.warn { background: var(--warn-soft); color: var(--warn); }
+  .health-card-status.err { background: var(--err-soft); color: var(--err); }
+
+  .health-card-stat-row {
+    display: flex; justify-content: space-between;
+    font-size: 12px;
+    color: var(--text-dim);
+    padding: 3px 0;
+  }
+  .health-card-stat-row strong {
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Review queue */
+  .review-list { display: flex; flex-direction: column; gap: 10px; }
+  .review-row {
+    background: var(--bg-elev-1);
+    border: 1px solid var(--border-soft);
+    border-radius: 12px;
+    padding: 14px 16px;
+    display: grid;
+    grid-template-columns: 60px 1fr auto;
+    gap: 16px;
+    align-items: center;
+  }
+  .review-score {
+    font-size: 18px;
+    font-weight: 700;
+    text-align: center;
+    color: var(--warn);
+    font-variant-numeric: tabular-nums;
+  }
+  .review-body { min-width: 0; }
+  .review-title { font-weight: 600; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .review-meta { font-size: 12px; color: var(--text-dim); }
+  .review-meta .reason {
+    display: inline-block;
+    margin-top: 4px;
+    padding: 4px 8px;
+    background: var(--bg-elev-3);
+    border-radius: 4px;
+    font-style: italic;
+  }
+
+  .actions { display: flex; gap: 6px; }
+  .btn {
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    background: var(--bg-elev-2);
+    color: var(--text);
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn-primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  .btn-primary:hover { background: #f472b6; border-color: #f472b6; }
+  .btn-ghost { background: transparent; }
+
+  .review-empty {
+    background: var(--bg-elev-1);
+    border: 1px dashed var(--border);
+    border-radius: 12px;
+    padding: 28px;
+    text-align: center;
+    color: var(--text-dim);
+  }
+
+  /* Canonical events */
+  .events-toolbar {
+    display: flex; gap: 10px; margin-bottom: 12px;
+  }
+  .search-input {
+    flex: 1;
+    background: var(--bg-elev-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    color: var(--text);
+    font-size: 13px;
+  }
+  .search-input::placeholder { color: var(--text-faint); }
+  .filter-select {
+    background: var(--bg-elev-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    color: var(--text);
+    font-size: 13px;
+  }
+
+  .events-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    background: var(--bg-elev-1);
+    border: 1px solid var(--border-soft);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .events-table th, .events-table td {
+    padding: 10px 14px;
+    text-align: left;
+    font-size: 13px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .events-table th {
+    color: var(--text-faint);
+    font-weight: 500;
+    font-size: 11px;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    background: var(--bg-elev-2);
+  }
+  .events-table tr:last-child td { border-bottom: none; }
+  .events-table tr:hover td { background: var(--bg-elev-2); }
+  .events-table .col-title { font-weight: 500; }
+  .events-table .col-date { color: var(--text-dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .events-table .col-artist { color: var(--text-dim); }
+  .events-table .col-flags { white-space: nowrap; }
+  .events-table .col-edit { text-align: right; white-space: nowrap; }
+
+  .pill {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    margin-right: 4px;
+  }
+  .pill.cancelled { background: var(--bg-elev-3); color: var(--text-faint); }
+  .pill.owned {
+    background: var(--info-soft);
+    color: var(--info);
+    border: 1px solid var(--info);
+  }
+  .pill.sub { background: var(--bg-elev-3); color: var(--text-dim); }
+
+  .icon-btn {
+    color: var(--text-dim);
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 14px;
+  }
+  .icon-btn:hover { color: var(--accent); background: var(--bg-elev-3); }
+
+  /* Failures */
+  .failure-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 14px;
+    align-items: center;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border-soft);
+    font-size: 13px;
+  }
+  .failure-row:last-child { border-bottom: none; }
+  .failure-class { font-family: ui-monospace, "SF Mono", Menlo, monospace; color: var(--err); }
+  .failure-count { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .failure-time { color: var(--text-faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+  .failures-wrap {
+    background: var(--bg-elev-1);
+    border: 1px solid var(--border-soft);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  /* Runs rail */
+  .runs-rail {
+    background: var(--bg-elev-1);
+    border-left: 1px solid var(--border-soft);
+    padding: 24px 20px;
+    position: sticky; top: 0;
+    height: 100vh; overflow-y: auto;
+  }
+  .runs-list { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+  .run-row {
+    display: grid;
+    grid-template-columns: 8px 1fr;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border-soft);
+    cursor: pointer;
+  }
+  .run-row:last-child { border-bottom: none; }
+  .run-row:hover .run-task { color: var(--accent); }
+  .run-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    margin-top: 6px;
+  }
+  .run-dot.ok { background: var(--ok); }
+  .run-dot.err { background: var(--err); }
+  .run-dot.warn { background: var(--warn); }
+  .run-dot.running { background: var(--info); animation: pulse 1.4s infinite; }
+
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  .run-head { display: flex; justify-content: space-between; align-items: baseline; }
+  .run-task { font-size: 12px; font-weight: 600; }
+  .run-time { color: var(--text-faint); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .run-detail { font-size: 11px; color: var(--text-dim); margin-top: 2px; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+
+  /* Modal */
+  .modal-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.6);
+    backdrop-filter: blur(6px);
+    display: none;
+    align-items: center; justify-content: center;
+    z-index: 100;
+    padding: 24px;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    background: var(--bg-elev-1);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    width: 100%;
+    max-width: 600px;
+    max-height: 85vh;
+    overflow-y: auto;
+    padding: 28px 32px;
+    position: relative;
+  }
+  .modal-close {
+    position: absolute; top: 18px; right: 18px;
+    width: 32px; height: 32px; border-radius: 50%;
+    background: var(--bg-elev-2);
+    color: var(--text-dim);
+    display: grid; place-items: center; font-size: 18px;
+  }
+  .modal-close:hover { background: var(--bg-elev-3); color: var(--text); }
+  .modal-title { font-size: 20px; font-weight: 600; margin: 0 0 8px; padding-right: 40px; }
+  .modal-subtitle { color: var(--text-dim); font-size: 13px; margin-bottom: 20px; }
+
+  .field-row { margin-bottom: 14px; }
+  .field-label {
+    display: block;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.6px;
+    color: var(--text-faint);
+    margin-bottom: 4px;
+  }
+  .field-input, .field-textarea, .field-select {
+    width: 100%;
+    background: var(--bg-elev-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    color: var(--text);
+    font: inherit;
+    font-size: 13px;
+  }
+  .field-input:focus, .field-textarea:focus, .field-select:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .field-textarea { min-height: 70px; resize: vertical; }
+
+  .checkbox-row { display: flex; align-items: center; gap: 8px; }
+  .checkbox-row input { accent-color: var(--accent); }
+
+  .ownership-banner {
+    background: var(--info-soft);
+    border: 1px solid var(--info);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 12px;
+    color: var(--info);
+    margin-bottom: 18px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .modal-actions {
+    display: flex; justify-content: flex-end; gap: 8px;
+    margin-top: 24px;
+    padding-top: 18px;
+    border-top: 1px solid var(--border-soft);
+  }
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">推</div>
+      <div class="brand-name">Oshikatsu</div>
+    </div>
+
+    <div class="sidebar-label">Navigation</div>
+    <nav>
+      <div class="nav-row">
+        <span class="nav-icon">←</span>
+        <span>Back to Dashboard</span>
+      </div>
+      <div class="nav-row active">
+        <span class="nav-icon">⚙</span>
+        <span>Admin</span>
+      </div>
+    </nav>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+    <div class="header">
+      <div class="title-block">
+        <h1 class="page-title">Admin</h1>
+        <span class="page-subtitle">pipeline, queue, events</span>
+      </div>
+      <div class="health-pill">All systems nominal · last ingested 4m ago</div>
+    </div>
+
+    <!-- Pipeline health -->
+    <section>
+      <div class="section-header">
+        <h2 class="section-title">Pipeline health</h2>
+        <a class="section-link" href="#">Last hour</a>
+      </div>
+      <div class="health-grid">
+        <div class="health-card">
+          <div class="health-card-head">
+            <span class="health-card-name">Ingestion</span>
+            <span class="health-card-status ok">OK</span>
+          </div>
+          <div class="health-card-stat-row"><span>Last success</span><strong>4m ago</strong></div>
+          <div class="health-card-stat-row"><span>Last failure</span><strong>—</strong></div>
+          <div class="health-card-stat-row"><span>1h ratio</span><strong>4/4</strong></div>
+        </div>
+
+        <div class="health-card">
+          <div class="health-card-head">
+            <span class="health-card-name">Extraction</span>
+            <span class="health-card-status ok">OK</span>
+          </div>
+          <div class="health-card-stat-row"><span>Last success</span><strong>40s ago</strong></div>
+          <div class="health-card-stat-row"><span>Last failure</span><strong>2h ago</strong></div>
+          <div class="health-card-stat-row"><span>1h ratio</span><strong>11/12</strong></div>
+        </div>
+
+        <div class="health-card warn">
+          <div class="health-card-head">
+            <span class="health-card-name">Resolution</span>
+            <span class="health-card-status warn">DEGRADED</span>
+          </div>
+          <div class="health-card-stat-row"><span>Last success</span><strong>1m ago</strong></div>
+          <div class="health-card-stat-row"><span>Last failure</span><strong>3m ago</strong></div>
+          <div class="health-card-stat-row"><span>1h ratio</span><strong>27/30</strong></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Review queue -->
+    <section>
+      <div class="section-header">
+        <h2 class="section-title">Review queue <span class="count">· 3</span></h2>
+        <a class="section-link" href="#">All decisions →</a>
+      </div>
+      <div class="review-list">
+
+        <div class="review-row">
+          <div class="review-score">0.42</div>
+          <div class="review-body">
+            <div class="review-title">星野あおい Birthday Live 2026 〜物販先行〜</div>
+            <div class="review-meta">
+              星野あおい · scope=sub · candidate of "Birthday Live 2026 「Hoshizora Symphony」"
+              <div class="reason">title sim 0.62, time within window, but venue mismatch — could be merch booth at same event or unrelated pop-up</div>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="btn btn-primary">Merge ↗</button>
+            <button class="btn">New +</button>
+          </div>
+        </div>
+
+        <div class="review-row">
+          <div class="review-score">0.38</div>
+          <div class="review-body">
+            <div class="review-title">月見りな ホラゲー実況 #28 (predicted reschedule)</div>
+            <div class="review-meta">
+              月見りな · scope=main · matched against "ホラーゲーム実況 〜叫んでもいいよね〜"
+              <div class="reason">same artist, similar title, but start_time differs by 36h — could be reschedule or new episode</div>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="btn btn-primary">Merge ↗</button>
+            <button class="btn">New +</button>
+          </div>
+        </div>
+
+        <div class="review-row">
+          <div class="review-score">0.31</div>
+          <div class="review-body">
+            <div class="review-title">桜井ゆい New Album Pre-order Campaign</div>
+            <div class="review-meta">
+              桜井ゆい · scope=unknown · no candidate match
+              <div class="reason">title similarity below auto-merge floor; tag overlap suggests it could be sub-event of Album Release but parent_event_hint missing</div>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="btn btn-primary">Merge ↗</button>
+            <button class="btn">New +</button>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Canonical events -->
+    <section>
+      <div class="section-header">
+        <h2 class="section-title">Canonical events <span class="count">· 124</span></h2>
+        <a class="section-link" href="#">Bulk actions →</a>
+      </div>
+      <div class="events-toolbar">
+        <input class="search-input" type="text" placeholder="Search title, artist, venue…" />
+        <select class="filter-select">
+          <option>All artists</option>
+          <option>星野あおい</option>
+          <option>月見りな</option>
+          <option>桜井ゆい</option>
+          <option>望月かれん</option>
+        </select>
+        <select class="filter-select">
+          <option>Any status</option>
+          <option>Operator-owned</option>
+          <option>Cancelled</option>
+          <option>Sub-events only</option>
+        </select>
+      </div>
+
+      <table class="events-table">
+        <thead>
+          <tr>
+            <th>Title</th>
+            <th>Artist</th>
+            <th>When</th>
+            <th>Flags</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr onclick="openModal()">
+            <td class="col-title">Birthday Live 2026 「Hoshizora Symphony」</td>
+            <td class="col-artist">星野あおい</td>
+            <td class="col-date">May 16 · 18:00</td>
+            <td class="col-flags"><span class="pill owned">Owned</span></td>
+            <td class="col-edit"><button class="icon-btn">✎</button></td>
+          </tr>
+          <tr>
+            <td class="col-title">Birthday Live — 物販開始</td>
+            <td class="col-artist">星野あおい</td>
+            <td class="col-date">May 15 · 10:00</td>
+            <td class="col-flags"><span class="pill sub">Sub</span></td>
+            <td class="col-edit"><button class="icon-btn">✎</button></td>
+          </tr>
+          <tr>
+            <td class="col-title">Hoshino Radio #42 — Pre-Birthday Special</td>
+            <td class="col-artist">星野あおい</td>
+            <td class="col-date">May 9 · 22:00</td>
+            <td class="col-flags"></td>
+            <td class="col-edit"><button class="icon-btn">✎</button></td>
+          </tr>
+          <tr>
+            <td class="col-title">『夜明けまで』MV Premiere</td>
+            <td class="col-artist">桜井ゆい</td>
+            <td class="col-date">May 10 · 21:00</td>
+            <td class="col-flags"></td>
+            <td class="col-edit"><button class="icon-btn">✎</button></td>
+          </tr>
+          <tr>
+            <td class="col-title">桜井ゆい ゲリラ配信</td>
+            <td class="col-artist">桜井ゆい</td>
+            <td class="col-date">May 14 · 20:00</td>
+            <td class="col-flags"><span class="pill cancelled">Cancelled</span></td>
+            <td class="col-edit"><button class="icon-btn">✎</button></td>
+          </tr>
+          <tr>
+            <td class="col-title">深夜のおしゃべり配信</td>
+            <td class="col-artist">望月かれん</td>
+            <td class="col-date">May 10 · 23:00</td>
+            <td class="col-flags"></td>
+            <td class="col-edit"><button class="icon-btn">✎</button></td>
+          </tr>
+          <tr>
+            <td class="col-title">ホラーゲーム実況 〜叫んでもいいよね〜</td>
+            <td class="col-artist">月見りな</td>
+            <td class="col-date">May 11 · 20:30</td>
+            <td class="col-flags"></td>
+            <td class="col-edit"><button class="icon-btn">✎</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Failures -->
+    <section>
+      <div class="section-header">
+        <h2 class="section-title">Extraction failures <span class="count">· 4</span></h2>
+        <a class="section-link" href="#">Reprocess all →</a>
+      </div>
+      <div class="failures-wrap">
+        <div class="failure-row">
+          <span class="failure-class">MissingTimezoneError</span>
+          <span class="failure-count">2</span>
+          <span class="failure-time">oldest 18m · newest 6m</span>
+        </div>
+        <div class="failure-row">
+          <span class="failure-class">ZodValidationError</span>
+          <span class="failure-count">1</span>
+          <span class="failure-time">14m ago</span>
+        </div>
+        <div class="failure-row">
+          <span class="failure-class">LLMTimeoutError</span>
+          <span class="failure-count">1</span>
+          <span class="failure-time">2h ago</span>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Recent runs rail -->
+  <aside class="runs-rail">
+    <div class="section-header">
+      <h2 class="section-title">Recent runs</h2>
+      <span class="section-link">live</span>
+    </div>
+    <div class="runs-list">
+
+      <div class="run-row">
+        <span class="run-dot running"></span>
+        <div>
+          <div class="run-head">
+            <span class="run-task">Extraction</span>
+            <span class="run-time">running…</span>
+          </div>
+          <div class="run-detail">processing=3</div>
+        </div>
+      </div>
+
+      <div class="run-row">
+        <span class="run-dot ok"></span>
+        <div>
+          <div class="run-head">
+            <span class="run-task">Resolution</span>
+            <span class="run-time">1m ago · 0.8s</span>
+          </div>
+          <div class="run-detail">resolved=2, merged=1, needs_review=1</div>
+        </div>
+      </div>
+
+      <div class="run-row">
+        <span class="run-dot ok"></span>
+        <div>
+          <div class="run-head">
+            <span class="run-task">Extraction</span>
+            <span class="run-time">2m ago · 4.2s</span>
+          </div>
+          <div class="run-detail">processed=4, failed=0</div>
+        </div>
+      </div>
+
+      <div class="run-row">
+        <span class="run-dot err"></span>
+        <div>
+          <div class="run-head">
+            <span class="run-task">Resolution</span>
+            <span class="run-time">3m ago · 0.4s</span>
+          </div>
+          <div class="run-detail">processed=12, failed=1</div>
+        </div>
+      </div>
+
+      <div class="run-row">
+        <span class="run-dot ok"></span>
+        <div>
+          <div class="run-head">
+            <span class="run-task">Ingestion</span>
+            <span class="run-time">4m ago · 12.6s</span>
+          </div>
+          <div class="run-detail">targets=4, items=18</div>
+        </div>
+      </div>
+
+      <div class="run-row">
+        <span class="run-dot ok"></span>
+        <div>
+          <div class="run-head">
+            <span class="run-task">Export</span>
+            <span class="run-time">5m ago · 0.3s</span>
+          </div>
+          <div class="run-detail">delivered=2, skipped=0</div>
+        </div>
+      </div>
+
+      <div class="run-row">
+        <span class="run-dot ok"></span>
+        <div>
+          <div class="run-head">
+            <span class="run-task">Resolution</span>
+            <span class="run-time">5m ago · 0.5s</span>
+          </div>
+          <div class="run-detail">resolved=3, merged=2</div>
+        </div>
+      </div>
+
+      <div class="run-row">
+        <span class="run-dot ok"></span>
+        <div>
+          <div class="run-head">
+            <span class="run-task">Extraction</span>
+            <span class="run-time">7m ago · 3.1s</span>
+          </div>
+          <div class="run-detail">processed=2, failed=0</div>
+        </div>
+      </div>
+
+      <div class="run-row">
+        <span class="run-dot warn"></span>
+        <div>
+          <div class="run-head">
+            <span class="run-task">Ingestion</span>
+            <span class="run-time">19m ago · 14.0s</span>
+          </div>
+          <div class="run-detail">targets=4, partial: anti_bot=1</div>
+        </div>
+      </div>
+
+    </div>
+  </aside>
+
+</div>
+
+<!-- Edit modal -->
+<div class="modal-backdrop" id="modalBackdrop">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal()">×</button>
+    <h2 class="modal-title">Edit canonical event</h2>
+    <div class="modal-subtitle">星野あおい · resolved 2026-04-29</div>
+
+    <div class="ownership-banner">
+      <span><strong>Operator-owned</strong> since 2026-05-04 · resolver writes are skipped</span>
+      <button class="btn btn-ghost">Release back</button>
+    </div>
+
+    <div class="field-row">
+      <label class="field-label">Title</label>
+      <input class="field-input" value="Birthday Live 2026 「Hoshizora Symphony」" />
+    </div>
+
+    <div class="field-row">
+      <label class="field-label">Description</label>
+      <textarea class="field-textarea">星野あおい 5th Anniversary Birthday Live。アルバム『Hoshizora』全曲披露＋未発表新曲のプレミア演奏あり。物販は当日10時より会場前にて。配信視聴券もあり。</textarea>
+    </div>
+
+    <div class="field-row" style="display:grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+      <div>
+        <label class="field-label">Start</label>
+        <input class="field-input" type="datetime-local" value="2026-05-16T18:00" />
+      </div>
+      <div>
+        <label class="field-label">End</label>
+        <input class="field-input" type="datetime-local" value="2026-05-16T21:00" />
+      </div>
+    </div>
+
+    <div class="field-row">
+      <label class="field-label">Venue</label>
+      <select class="field-select">
+        <option>Zepp DiverCity, Tokyo (verified)</option>
+        <option>Zepp Tokyo (verified)</option>
+        <option>— none —</option>
+      </select>
+    </div>
+
+    <div class="field-row">
+      <label class="field-label">Parent event</label>
+      <select class="field-select">
+        <option>— main event (no parent) —</option>
+        <option>Hoshizora Symphony Tour 2026</option>
+      </select>
+    </div>
+
+    <div class="field-row">
+      <label class="field-label">Tags</label>
+      <input class="field-input" value="星野あおい, Hoshizora, 5th Anniversary, Zepp DiverCity" />
+    </div>
+
+    <div class="field-row checkbox-row">
+      <input id="cancelled" type="checkbox" />
+      <label for="cancelled">Cancelled</label>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  function openModal() {
+    document.getElementById("modalBackdrop").classList.add("open");
+  }
+  function closeModal() {
+    document.getElementById("modalBackdrop").classList.remove("open");
+  }
+  document.getElementById("modalBackdrop").addEventListener("click", (e) => {
+    if (e.target === e.currentTarget) closeModal();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeModal();
+  });
+</script>
+
+</body>
+</html>
