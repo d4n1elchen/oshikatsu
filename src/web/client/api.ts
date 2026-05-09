@@ -11,6 +11,7 @@ export type DashboardPayload = {
   oshis: OshiDTO[];
   activeOshi: string | null;
   nextEvent: NormalizedEventDTO | null;
+  streams: StreamDTO[];
   eventFeed: NormalizedEventDTO[];
   timeline: RawItemDTO[];
   serverTime: string;
@@ -21,6 +22,20 @@ export type OshiDTO = {
   handle: string;
   name: string;
   lastActivityAt: string | null;
+};
+
+export type StreamDTO = {
+  id: string;
+  title: string;
+  startTime: string;
+  endTime: string | null;
+  isLive: boolean;
+  artistId: string | null;
+  artistName: string | null;
+  venueId: string;
+  venueName: string;
+  venueUrl: string | null;
+  platform: "youtube" | "twitch" | "niconico" | "x" | "other";
 };
 
 export type NormalizedEventDTO = {

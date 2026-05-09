@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { fetchDashboard, type DashboardPayload } from "./api";
 import { Sidebar } from "./Sidebar";
+import { StreamsRail } from "./StreamsRail";
 import { useUrlParam } from "./useUrlState";
 
 const POLL_INTERVAL_MS = 30_000;
@@ -78,6 +79,8 @@ export function App() {
             <div className="hero-empty">Nothing on the horizon.</div>
           )}
         </section>
+
+        <StreamsRail streams={data.streams} />
 
         <section>
           <h2 className="section-title">

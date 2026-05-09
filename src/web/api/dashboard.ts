@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { listNormalizedEvents } from "../../core/queries/NormalizedEventsQueries";
 import { listRecentRawItems } from "../../core/queries/RawItemsQueries";
+import { listLiveAndUpcomingStreams } from "../../core/queries/StreamsQueries";
 import { listWatchedArtists } from "../../core/queries/WatchedArtistsQueries";
 
 export const dashboardRoute = new Hono();
@@ -19,9 +20,10 @@ dashboardRoute.get("/dashboard", async (c) => {
   const activeOshi = oshiHandle ? oshis.find((o) => o.handle === oshiHandle) ?? null : null;
   const artistId = activeOshi?.id;
 
-  const [events, timeline] = await Promise.all([
+  const [events, timeline, streams] = await Promise.all([
     listNormalizedEvents({ orderBy: "updatedAt", limit: 50, artistId }),
     listRecentRawItems({ limit: 30, artistId }),
+    listLiveAndUpcomingStreams({ limit: 12, artistId }),
   ]);
 
   const now = Date.now();
@@ -34,6 +36,7 @@ dashboardRoute.get("/dashboard", async (c) => {
     oshis,
     activeOshi: activeOshi?.handle ?? null,
     nextEvent,
+    streams,
     eventFeed: events,
     timeline,
     serverTime: new Date().toISOString(),

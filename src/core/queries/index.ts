@@ -4,3 +4,4 @@ export * from "./ExtractedEventsQueries";
 export * from "./NormalizedEventsQueries";
 export * from "./RawItemsQueries";
 export * from "./WatchedArtistsQueries";
+export * from "./StreamsQueries";
