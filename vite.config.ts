@@ -7,7 +7,9 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": "http://127.0.0.1:5174",
+      // Anchored regex so the proxy doesn't grab the client's own `api.ts`
+      // module import (Vite would otherwise forward `/api.ts` → 404).
+      "^/api/": "http://127.0.0.1:5174",
     },
   },
   build: {
