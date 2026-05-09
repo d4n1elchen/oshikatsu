@@ -1,11 +1,14 @@
 import React, { useEffect, useState } from "react";
 import { fetchDashboard, type DashboardPayload } from "./api";
+import { Sidebar } from "./Sidebar";
+import { useUrlParam } from "./useUrlState";
 
 const POLL_INTERVAL_MS = 30_000;
 
 export function App() {
   const [data, setData] = useState<DashboardPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [oshi, setOshi] = useUrlParam("oshi");
 
   useEffect(() => {
     let cancelled = false;
@@ -13,7 +16,7 @@ export function App() {
 
     const tick = async () => {
       try {
-        const payload = await fetchDashboard();
+        const payload = await fetchDashboard({ oshi: oshi ?? undefined });
         if (!cancelled) {
           setData(payload);
           setError(null);
@@ -30,22 +33,26 @@ export function App() {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, []);
+  }, [oshi]);
 
-  if (error) return <div className="state state-error">Error: {error}</div>;
+  if (error && !data) return <div className="state state-error">Error: {error}</div>;
   if (!data) return <div className="state">Loading…</div>;
+
+  const activeName =
+    data.activeOshi ? data.oshis.find((o) => o.handle === data.activeOshi)?.name ?? data.activeOshi : "All oshis";
 
   return (
     <div className="shell">
-      <header className="header">
-        <div className="brand">
-          <div className="brand-mark">推</div>
-          <div className="brand-name">Oshikatsu</div>
-        </div>
-        <div className="server-time">Updated {formatRelative(data.serverTime)}</div>
-      </header>
+      <Sidebar oshis={data.oshis} activeOshi={data.activeOshi} onSelect={setOshi} />
 
       <main className="main">
+        <header className="header">
+          <div className="filter-pill">
+            Showing <strong>{activeName}</strong>
+          </div>
+          <div className="server-time">Updated {formatRelative(data.serverTime)}</div>
+        </header>
+
         <section className="hero">
           <div className="hero-label">Next event</div>
           {data.nextEvent ? (
@@ -121,7 +128,6 @@ function formatRelative(iso: string): string {
 }
 
 function extractText(rawData: Record<string, unknown>): string {
-  // Twitter shape; web UI is single-source today.
   const legacy = (rawData as any).legacy;
   if (legacy?.full_text) return String(legacy.full_text);
   return JSON.stringify(rawData).slice(0, 120);

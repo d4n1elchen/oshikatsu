@@ -3,3 +3,4 @@ export * from "./ReviewQueueQueries";
 export * from "./ExtractedEventsQueries";
 export * from "./NormalizedEventsQueries";
 export * from "./RawItemsQueries";
+export * from "./WatchedArtistsQueries";

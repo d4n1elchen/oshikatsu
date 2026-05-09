@@ -8,10 +8,19 @@
  */
 
 export type DashboardPayload = {
+  oshis: OshiDTO[];
+  activeOshi: string | null;
   nextEvent: NormalizedEventDTO | null;
   eventFeed: NormalizedEventDTO[];
   timeline: RawItemDTO[];
   serverTime: string;
+};
+
+export type OshiDTO = {
+  id: string;
+  handle: string;
+  name: string;
+  lastActivityAt: string | null;
 };
 
 export type NormalizedEventDTO = {
