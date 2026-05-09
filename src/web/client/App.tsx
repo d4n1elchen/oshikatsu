@@ -126,13 +126,13 @@ export function App() {
       </main>
 
       <aside className="timeline-rail">
-        <h2 className="section-title">Timeline</h2>
+        <h2 className="section-title">Feed</h2>
         <ul className="timeline-list">
           {data.timeline.map((post) => (
             <li key={post.id} className="timeline-post">
               <div className="timeline-head">
                 <span className="timeline-name">{post.artistName}</span>
-                <span className="timeline-time">{formatRelative(post.fetchedAt)}</span>
+                <span className="timeline-time">{formatRelative(post.postedAt ?? post.fetchedAt)}</span>
               </div>
               <div className="timeline-text">{extractText(post.rawData)}</div>
             </li>

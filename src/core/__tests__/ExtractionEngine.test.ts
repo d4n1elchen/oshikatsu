@@ -39,7 +39,7 @@ function createTestDb() {
     CREATE TABLE raw_items (
       id TEXT PRIMARY KEY, watch_target_id TEXT NOT NULL,
       source_name TEXT NOT NULL, source_id TEXT NOT NULL UNIQUE,
-      raw_data TEXT NOT NULL, fetched_at INTEGER NOT NULL,
+      raw_data TEXT NOT NULL, posted_at INTEGER, fetched_at INTEGER NOT NULL,
       status TEXT NOT NULL DEFAULT 'new', error_message TEXT,
       error_class TEXT
     );

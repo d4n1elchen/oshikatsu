@@ -20,6 +20,11 @@ export type RawItemTimelineEntry = {
   /** Source-specific payload (e.g. tweet shape for Twitter). The web UI's
    *  render layer is responsible for extracting fields per `sourceName`. */
   rawData: Record<string, unknown>;
+  /** When the post was published on the source platform, when derivable
+   *  from `rawData`. Falls back to null for sources we haven't taught
+   *  the extractor about. Use `postedAt ?? fetchedAt` for display. */
+  postedAt: Date | null;
+  /** When the scheduler fetched the post into raw_items. */
   fetchedAt: Date;
   status: string;
   watchTargetId: string;
@@ -51,6 +56,7 @@ export async function listRecentRawItems(
       sourceName: rawItems.sourceName,
       sourceId: rawItems.sourceId,
       rawData: rawItems.rawData,
+      postedAt: rawItems.postedAt,
       fetchedAt: rawItems.fetchedAt,
       status: rawItems.status,
       watchTargetId: rawItems.watchTargetId,

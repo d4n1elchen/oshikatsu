@@ -23,7 +23,7 @@ function createTestDb() {
     );
     CREATE TABLE raw_items (
       id TEXT PRIMARY KEY, watch_target_id TEXT NOT NULL, source_name TEXT NOT NULL,
-      source_id TEXT NOT NULL UNIQUE, raw_data TEXT NOT NULL, fetched_at INTEGER NOT NULL,
+      source_id TEXT NOT NULL UNIQUE, raw_data TEXT NOT NULL, posted_at INTEGER, fetched_at INTEGER NOT NULL,
       status TEXT NOT NULL DEFAULT 'new', error_message TEXT, error_class TEXT
     );
   `);
@@ -50,13 +50,16 @@ async function seedWatchTarget(db: Db, args: { id: string; artistId: string }) {
 
 async function seedRawItem(db: Db, args: {
   id: string; watchTargetId: string; fetchedAt: Date; text?: string;
+  rawData?: Record<string, unknown>;
+  postedAt?: Date | null;
 }) {
   await db.insert(schema.rawItems).values({
     id: args.id,
     watchTargetId: args.watchTargetId,
     sourceName: "twitter",
     sourceId: args.id,
-    rawData: { text: args.text ?? `tweet ${args.id}` },
+    rawData: args.rawData ?? { text: args.text ?? `tweet ${args.id}` },
+    postedAt: args.postedAt ?? null,
     fetchedAt: args.fetchedAt,
     status: "processed",
     errorMessage: null, errorClass: null,
@@ -99,6 +102,31 @@ test("filters by artistId", async () => {
   const items = await listRecentRawItems({ artistId: "a1" }, db as any);
   assert.equal(items.length, 1);
   assert.equal(items[0]!.id, "r1");
+});
+
+test("postedAt is returned from the raw_items column", async () => {
+  const db = createTestDb();
+  await seedArtist(db, { id: "a1", handle: "h", name: "A" });
+  await seedWatchTarget(db, { id: "wt-1", artistId: "a1" });
+  const posted = new Date("2026-05-03T18:30:00Z");
+  await seedRawItem(db, {
+    id: "r-with-time",
+    watchTargetId: "wt-1",
+    fetchedAt: new Date("2026-05-04T08:00:00Z"),
+    postedAt: posted,
+  });
+  await seedRawItem(db, {
+    id: "r-without-time",
+    watchTargetId: "wt-1",
+    fetchedAt: new Date("2026-05-04T08:00:00Z"),
+    postedAt: null,
+  });
+
+  const items = await listRecentRawItems({}, db as any);
+  const withTime = items.find((i) => i.id === "r-with-time")!;
+  const withoutTime = items.find((i) => i.id === "r-without-time")!;
+  assert.equal(withTime.postedAt?.toISOString(), posted.toISOString());
+  assert.equal(withoutTime.postedAt, null);
 });
 
 test("cursor returns items strictly older than the cursor", async () => {

@@ -102,6 +102,7 @@ export class TwitterConnector implements BaseConnector {
                       sourceName: "twitter",
                       sourceId: rawTweetData.rest_id,
                       rawData: rawTweetData,
+                      postedAt: parseTweetCreatedAt(rawTweetData?.legacy?.created_at),
                     });
                   }
                 }
@@ -217,6 +218,17 @@ function raceWithAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T>
         reject(e);
       });
   });
+}
+
+/**
+ * Parse the X/Twitter `legacy.created_at` string (e.g. "Wed Oct 10
+ * 20:19:24 +0000 2018") into a Date. Returns null when missing or
+ * unparseable — RawItemTimelineEntry then falls back to fetchedAt.
+ */
+function parseTweetCreatedAt(raw: unknown): Date | null {
+  if (typeof raw !== "string") return null;
+  const d = new Date(raw);
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
 async function detectAntiBotMarker(page: PageLike): Promise<string | null> {

@@ -101,7 +101,7 @@ export async function runIngestionCycle(
           saved = await storage.saveItems(
             target.id,
             "twitter",
-            items.map((i) => ({ sourceId: i.sourceId, rawData: i.rawData }))
+            items.map((i) => ({ sourceId: i.sourceId, rawData: i.rawData, postedAt: i.postedAt ?? null }))
           );
         }
         details.perTarget[username] = { items: items.length, saved, status: "ok" };

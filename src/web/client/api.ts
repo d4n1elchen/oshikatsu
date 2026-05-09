@@ -72,6 +72,9 @@ export type RawItemDTO = {
   sourceName: string;
   sourceId: string;
   rawData: Record<string, unknown>;
+  /** Original post time on the source platform (null when not derivable). */
+  postedAt: string | null;
+  /** When the scheduler ingested the post. */
   fetchedAt: string;
   status: string;
   watchTargetId: string;

@@ -21,7 +21,11 @@ export class RawStorage {
    * silently disappear (the previous behavior swallowed the error and
    * returned 0, indistinguishable from "no new items").
    */
-  async saveItems(watchTargetId: string, sourceName: string, items: Array<{ sourceId: string; rawData: any }>): Promise<number> {
+  async saveItems(
+    watchTargetId: string,
+    sourceName: string,
+    items: Array<{ sourceId: string; rawData: any; postedAt?: Date | null }>
+  ): Promise<number> {
     if (items.length === 0) return 0;
 
     const newItems: NewRawItem[] = items.map(item => ({
@@ -30,6 +34,7 @@ export class RawStorage {
       sourceName,
       sourceId: item.sourceId,
       rawData: item.rawData,
+      postedAt: item.postedAt ?? null,
       fetchedAt: new Date(),
       status: "new",
     }));
