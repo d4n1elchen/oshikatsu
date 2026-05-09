@@ -1,0 +1,1432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Oshikatsu — Dashboard mock</title>
+<style>
+  :root {
+    --bg: #0e0e11;
+    --bg-elev-1: #16161b;
+    --bg-elev-2: #1c1c22;
+    --bg-elev-3: #24242c;
+    --border: #2a2a33;
+    --border-soft: #1f1f27;
+    --text: #e7e7ea;
+    --text-dim: #9a9aa3;
+    --text-faint: #6a6a73;
+    --accent: #ec4899;
+    --accent-soft: rgba(236, 72, 153, 0.14);
+    --live: #ef4444;
+    --live-soft: rgba(239, 68, 68, 0.14);
+    --warn: #f59e0b;
+    --warn-soft: rgba(245, 158, 11, 0.14);
+    --ok: #22c55e;
+    --ok-soft: rgba(34, 197, 94, 0.14);
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { height: 100%; margin: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: inherit; text-decoration: none; }
+
+  button {
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+  }
+
+  /* ==== Layout shell ==== */
+
+  .shell {
+    display: grid;
+    grid-template-columns: 240px 1fr 320px;
+    min-height: 100vh;
+  }
+
+  @media (max-width: 1100px) {
+    .shell { grid-template-columns: 220px 1fr; }
+    .timeline-rail { display: none; }
+  }
+
+  /* ==== Sidebar ==== */
+
+  .sidebar {
+    background: var(--bg-elev-1);
+    border-right: 1px solid var(--border-soft);
+    padding: 20px 0;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+  }
+
+  .brand {
+    padding: 0 20px 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+
+  .brand-mark {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, var(--accent), #f472b6);
+    display: grid;
+    place-items: center;
+    font-weight: 700;
+    color: #fff;
+  }
+
+  .brand-name { font-weight: 600; letter-spacing: 0.2px; }
+
+  .sidebar-section-label {
+    text-transform: uppercase;
+    font-size: 11px;
+    color: var(--text-faint);
+    letter-spacing: 0.8px;
+    padding: 18px 20px 8px;
+  }
+
+  .oshi-list { display: flex; flex-direction: column; }
+
+  .oshi-row {
+    display: grid;
+    grid-template-columns: 10px 1fr auto;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 20px;
+    border-left: 2px solid transparent;
+    cursor: pointer;
+    transition: background 0.12s ease;
+  }
+
+  .oshi-row:hover { background: var(--bg-elev-2); }
+
+  .oshi-row.active {
+    background: var(--accent-soft);
+    border-left-color: var(--accent);
+  }
+
+  .oshi-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-faint);
+  }
+  .oshi-dot.active { background: var(--ok); box-shadow: 0 0 8px var(--ok-soft); }
+  .oshi-dot.recent { background: var(--accent); }
+
+  .oshi-name { font-weight: 500; }
+  .oshi-name .handle { color: var(--text-faint); font-size: 12px; font-weight: 400; margin-left: 4px; }
+
+  .oshi-meta {
+    color: var(--text-faint);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .sidebar-divider { height: 1px; background: var(--border-soft); margin: 8px 0; }
+
+  .add-oshi {
+    margin: 12px 20px;
+    padding: 8px 10px;
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    color: var(--text-dim);
+    font-size: 13px;
+    width: calc(100% - 40px);
+    text-align: left;
+  }
+  .add-oshi:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ==== Main column ==== */
+
+  .main {
+    padding: 24px 32px 64px;
+    min-width: 0;
+  }
+
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+  }
+
+  .filter-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: var(--bg-elev-2);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .filter-pill strong { color: var(--text); }
+
+  .health-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-faint);
+    font-size: 12px;
+  }
+  .health-pill::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--ok);
+  }
+
+  /* ==== Hero ==== */
+
+  .hero {
+    background:
+      radial-gradient(ellipse at top right, rgba(236, 72, 153, 0.12), transparent 60%),
+      var(--bg-elev-1);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px 32px;
+    margin-bottom: 28px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hero-label {
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 1px;
+    color: var(--accent);
+    margin-bottom: 12px;
+  }
+
+  .hero-title {
+    font-size: 26px;
+    font-weight: 600;
+    margin: 0 0 6px;
+    line-height: 1.25;
+  }
+
+  .hero-meta {
+    color: var(--text-dim);
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+
+  .hero-meta .dot { color: var(--text-faint); }
+
+  .countdown {
+    display: flex;
+    gap: 16px;
+    align-items: baseline;
+  }
+
+  .countdown-block {
+    display: flex;
+    flex-direction: column;
+  }
+  .countdown-num {
+    font-size: 32px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+  .countdown-label {
+    text-transform: uppercase;
+    font-size: 10px;
+    letter-spacing: 1px;
+    color: var(--text-faint);
+    margin-top: 4px;
+  }
+
+  /* ==== Section headers ==== */
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 0 0 14px;
+  }
+
+  .section-title {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0;
+  }
+  .section-title .count {
+    color: var(--text-faint);
+    font-weight: 400;
+    font-size: 13px;
+    margin-left: 6px;
+  }
+
+  .section-link {
+    color: var(--text-dim);
+    font-size: 12px;
+  }
+  .section-link:hover { color: var(--accent); }
+
+  section { margin-bottom: 36px; }
+
+  /* ==== Streams rail ==== */
+
+  .streams-rail {
+    display: flex;
+    gap: 14px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    padding-bottom: 8px;
+    margin: 0 -32px;
+    padding-left: 32px;
+    padding-right: 32px;
+    scrollbar-width: thin;
+  }
+  .streams-rail::-webkit-scrollbar { height: 6px; }
+  .streams-rail::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .stream-card {
+    flex: 0 0 280px;
+    scroll-snap-align: start;
+    background: var(--bg-elev-1);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform 0.15s ease, border-color 0.15s ease;
+    display: flex;
+    flex-direction: column;
+  }
+  .stream-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--accent);
+  }
+
+  .stream-thumb {
+    aspect-ratio: 16 / 9;
+    background: linear-gradient(135deg, #2a1c2c, #1a1f2e);
+    position: relative;
+    display: grid;
+    place-items: center;
+    color: var(--text-faint);
+    font-size: 26px;
+  }
+
+  .stream-thumb.youtube { background: linear-gradient(135deg, #3a1414, #1a0a0a); }
+  .stream-thumb.twitch { background: linear-gradient(135deg, #2c1a4a, #14082b); }
+  .stream-thumb.x { background: linear-gradient(135deg, #1f2937, #0b0f17); }
+
+  .stream-badge {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    background: var(--live);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 4px;
+    letter-spacing: 0.6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .stream-badge::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #fff;
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  .stream-badge.upcoming {
+    background: var(--bg-elev-3);
+    color: var(--text);
+    font-weight: 600;
+    letter-spacing: 0.4px;
+  }
+  .stream-badge.upcoming::before { display: none; }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  .stream-platform {
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    letter-spacing: 0.4px;
+  }
+
+  .stream-body { padding: 12px 14px; }
+  .stream-title {
+    font-size: 13px;
+    font-weight: 600;
+    margin: 0 0 4px;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    line-height: 1.35;
+  }
+  .stream-artist {
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  /* ==== Week strip ==== */
+
+  .week-strip {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 8px;
+  }
+
+  .week-day {
+    background: var(--bg-elev-1);
+    border: 1px solid var(--border-soft);
+    border-radius: 10px;
+    padding: 10px 10px 12px;
+    min-height: 130px;
+  }
+  .week-day.today {
+    border-color: var(--accent);
+    background:
+      linear-gradient(180deg, var(--accent-soft), transparent 30%),
+      var(--bg-elev-1);
+  }
+
+  .week-day-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .week-day-name {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text-faint);
+  }
+  .week-day-num {
+    font-size: 18px;
+    font-weight: 600;
+    line-height: 1;
+  }
+  .week-day.today .week-day-num { color: var(--accent); }
+
+  .week-event {
+    font-size: 11px;
+    background: var(--bg-elev-3);
+    padding: 5px 7px;
+    border-radius: 5px;
+    margin-bottom: 4px;
+    border-left: 2px solid var(--accent);
+    cursor: pointer;
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .week-event:hover { background: var(--bg-elev-2); }
+  .week-event.live { border-left-color: var(--live); }
+  .week-event.cancelled {
+    border-left-color: var(--text-faint);
+    color: var(--text-faint);
+    text-decoration: line-through;
+  }
+
+  /* ==== Event feed ==== */
+
+  .event-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .event-card {
+    background: var(--bg-elev-1);
+    border: 1px solid var(--border-soft);
+    border-radius: 12px;
+    padding: 16px 18px;
+    display: grid;
+    grid-template-columns: 64px 1fr auto;
+    gap: 16px;
+    align-items: center;
+    cursor: pointer;
+    transition: border-color 0.12s ease, transform 0.12s ease;
+  }
+  .event-card:hover {
+    border-color: var(--border);
+    transform: translateX(2px);
+  }
+
+  .event-date {
+    text-align: center;
+    border-right: 1px solid var(--border-soft);
+    padding-right: 14px;
+  }
+  .event-date-month {
+    font-size: 10px;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    letter-spacing: 0.8px;
+  }
+  .event-date-day {
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1;
+    margin: 2px 0;
+  }
+  .event-date-time {
+    font-size: 10px;
+    color: var(--text-faint);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .event-body { min-width: 0; }
+  .event-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0 0 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .event-meta {
+    font-size: 12px;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .event-meta .dot { color: var(--text-faint); }
+
+  .event-badges {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  .badge {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+  }
+  .badge.live { background: var(--live-soft); color: var(--live); border-color: var(--live); }
+  .badge.cancelled { background: var(--bg-elev-3); color: var(--text-faint); }
+  .badge.updated { background: var(--warn-soft); color: var(--warn); }
+  .badge.sub { background: var(--bg-elev-3); color: var(--text-dim); }
+
+  .sub-link {
+    font-size: 11px;
+    color: var(--text-dim);
+    background: var(--bg-elev-3);
+    padding: 4px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+  }
+  .sub-link:hover { color: var(--accent); border-color: var(--accent); }
+
+  .source-count {
+    font-size: 11px;
+    color: var(--text-faint);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ==== Timeline rail ==== */
+
+  .timeline-rail {
+    background: var(--bg-elev-1);
+    border-left: 1px solid var(--border-soft);
+    padding: 24px 20px;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+  }
+
+  .timeline-rail .section-title { margin-bottom: 16px; }
+
+  .timeline-feed { display: flex; flex-direction: column; gap: 16px; }
+
+  .timeline-post {
+    display: grid;
+    grid-template-columns: 32px 1fr;
+    gap: 10px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .timeline-post:last-child { border-bottom: none; }
+
+  .timeline-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent), #6366f1);
+    display: grid;
+    place-items: center;
+    font-size: 12px;
+    font-weight: 700;
+    color: #fff;
+  }
+
+  .timeline-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 4px;
+  }
+  .timeline-name { font-size: 12px; font-weight: 600; }
+  .timeline-handle { color: var(--text-faint); font-size: 11px; }
+  .timeline-time {
+    color: var(--text-faint);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .timeline-text {
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.5;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+  }
+
+  /* ==== Modal ==== */
+
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(6px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    padding: 24px;
+  }
+  .modal-backdrop.open { display: flex; }
+
+  .modal {
+    background: var(--bg-elev-1);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    width: 100%;
+    max-width: 640px;
+    max-height: 85vh;
+    overflow-y: auto;
+    padding: 28px 32px;
+  }
+
+  .modal-close {
+    position: absolute;
+    top: 18px;
+    right: 18px;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--bg-elev-2);
+    color: var(--text-dim);
+    display: grid;
+    place-items: center;
+    font-size: 18px;
+  }
+  .modal-close:hover { background: var(--bg-elev-3); color: var(--text); }
+
+  .modal-header { position: relative; margin-bottom: 20px; }
+
+  .modal-title {
+    font-size: 22px;
+    font-weight: 600;
+    margin: 0 0 8px;
+    padding-right: 40px;
+  }
+
+  .modal-meta {
+    font-size: 13px;
+    color: var(--text-dim);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .modal-section {
+    border-top: 1px solid var(--border-soft);
+    padding-top: 18px;
+    margin-top: 18px;
+  }
+
+  .modal-section-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-faint);
+    margin: 0 0 10px;
+  }
+
+  .modal-description {
+    font-size: 13px;
+    color: var(--text);
+    line-height: 1.6;
+    white-space: pre-wrap;
+  }
+
+  .related-links { display: flex; flex-direction: column; gap: 6px; }
+  .related-link {
+    font-size: 12px;
+    color: var(--text-dim);
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: var(--bg-elev-2);
+    border: 1px solid transparent;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .related-link:hover { border-color: var(--border); color: var(--accent); }
+  .related-link::before { content: "↗"; color: var(--text-faint); }
+
+  .source-list { display: flex; flex-direction: column; gap: 8px; }
+  .source-item {
+    font-size: 12px;
+    color: var(--text-dim);
+    padding: 10px 12px;
+    background: var(--bg-elev-2);
+    border-radius: 6px;
+    border-left: 2px solid var(--border);
+  }
+  .source-item .source-handle { color: var(--accent); font-weight: 500; }
+  .source-item .source-time { color: var(--text-faint); margin-left: 8px; }
+
+  /* ==== utilities ==== */
+  .row { display: flex; align-items: center; gap: 8px; }
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+  <!-- ===== Sidebar ===== -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">推</div>
+      <div class="brand-name">Oshikatsu</div>
+    </div>
+
+    <div class="sidebar-section-label">Watching</div>
+    <nav class="oshi-list" id="oshiList">
+      <div class="oshi-row active" data-oshi="all">
+        <span class="oshi-dot active"></span>
+        <span class="oshi-name">All oshis</span>
+        <span class="oshi-meta">4</span>
+      </div>
+      <div class="sidebar-divider"></div>
+      <div class="oshi-row" data-oshi="hoshino">
+        <span class="oshi-dot active"></span>
+        <span class="oshi-name">星野あおい <span class="handle">@hoshino_aoi</span></span>
+        <span class="oshi-meta">2h</span>
+      </div>
+      <div class="oshi-row" data-oshi="tsukimi">
+        <span class="oshi-dot recent"></span>
+        <span class="oshi-name">月見りな <span class="handle">@tsukimi_rina</span></span>
+        <span class="oshi-meta">5h</span>
+      </div>
+      <div class="oshi-row" data-oshi="sakurai">
+        <span class="oshi-dot"></span>
+        <span class="oshi-name">桜井ゆい <span class="handle">@sakurai_yui</span></span>
+        <span class="oshi-meta">3d</span>
+      </div>
+      <div class="oshi-row" data-oshi="mochizuki">
+        <span class="oshi-dot"></span>
+        <span class="oshi-name">望月かれん <span class="handle">@mochi_karen</span></span>
+        <span class="oshi-meta">1w</span>
+      </div>
+    </nav>
+
+    <button class="add-oshi">+ Add oshi</button>
+  </aside>
+
+  <!-- ===== Main ===== -->
+  <main class="main">
+
+    <div class="header">
+      <div class="filter-pill">
+        Showing <strong id="activeFilter">All oshis</strong>
+      </div>
+      <div class="health-pill">Last ingested 4m ago · 4 sources healthy</div>
+    </div>
+
+    <!-- Hero -->
+    <section class="hero" data-event="aoi-bday-live">
+      <div class="hero-label">Next event</div>
+      <h1 class="hero-title">星野あおい Birthday Live 2026 「Hoshizora Symphony」</h1>
+      <div class="hero-meta">
+        <span>星野あおい</span>
+        <span class="dot">·</span>
+        <span>Zepp DiverCity, Tokyo</span>
+        <span class="dot">·</span>
+        <span>Sat, May 16 · 18:00 JST</span>
+      </div>
+      <div class="countdown">
+        <div class="countdown-block">
+          <span class="countdown-num">7</span>
+          <span class="countdown-label">days</span>
+        </div>
+        <div class="countdown-block">
+          <span class="countdown-num">14</span>
+          <span class="countdown-label">hours</span>
+        </div>
+        <div class="countdown-block">
+          <span class="countdown-num">22</span>
+          <span class="countdown-label">min</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Streams rail -->
+    <section>
+      <div class="section-header">
+        <h2 class="section-title">Live &amp; upcoming streams <span class="count">· 5</span></h2>
+        <a class="section-link" href="#">See all →</a>
+      </div>
+      <div class="streams-rail">
+
+        <div class="stream-card" data-event="rina-zatsudan">
+          <div class="stream-thumb youtube">
+            <span class="stream-badge">LIVE</span>
+            <span style="font-size:32px;">🎙️</span>
+            <span class="stream-platform">YouTube</span>
+          </div>
+          <div class="stream-body">
+            <div class="stream-title">【雑談】今日のごはんと近況報告だよ〜</div>
+            <div class="stream-artist">月見りな</div>
+          </div>
+        </div>
+
+        <div class="stream-card" data-event="aoi-radio">
+          <div class="stream-thumb twitch">
+            <span class="stream-badge upcoming">In 3h 12m</span>
+            <span style="font-size:32px;">🎧</span>
+            <span class="stream-platform">Twitch</span>
+          </div>
+          <div class="stream-body">
+            <div class="stream-title">Hoshino Radio #42 — Pre-Birthday Special</div>
+            <div class="stream-artist">星野あおい</div>
+          </div>
+        </div>
+
+        <div class="stream-card" data-event="yui-cover">
+          <div class="stream-thumb youtube">
+            <span class="stream-badge upcoming">Tomorrow · 21:00</span>
+            <span style="font-size:32px;">🎤</span>
+            <span class="stream-platform">YouTube Premiere</span>
+          </div>
+          <div class="stream-body">
+            <div class="stream-title">『夜明けまで』covered by 桜井ゆい — MV Premiere</div>
+            <div class="stream-artist">桜井ゆい</div>
+          </div>
+        </div>
+
+        <div class="stream-card" data-event="karen-asmr">
+          <div class="stream-thumb youtube">
+            <span class="stream-badge upcoming">Sat · 23:00</span>
+            <span style="font-size:32px;">🌙</span>
+            <span class="stream-platform">YouTube</span>
+          </div>
+          <div class="stream-body">
+            <div class="stream-title">深夜のおしゃべり配信 〜眠れない夜に〜</div>
+            <div class="stream-artist">望月かれん</div>
+          </div>
+        </div>
+
+        <div class="stream-card" data-event="rina-game">
+          <div class="stream-thumb twitch">
+            <span class="stream-badge upcoming">Sun · 20:30</span>
+            <span style="font-size:32px;">🎮</span>
+            <span class="stream-platform">Twitch</span>
+          </div>
+          <div class="stream-body">
+            <div class="stream-title">ホラーゲーム実況 〜叫んでもいいよね〜</div>
+            <div class="stream-artist">月見りな</div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Week strip -->
+    <section>
+      <div class="section-header">
+        <h2 class="section-title">This week</h2>
+        <a class="section-link" href="#">May 9 — May 15</a>
+      </div>
+      <div class="week-strip">
+        <div class="week-day today">
+          <div class="week-day-head">
+            <span class="week-day-name">Fri</span>
+            <span class="week-day-num">9</span>
+          </div>
+          <div class="week-event live" data-event="rina-zatsudan">月見りな 雑談</div>
+          <div class="week-event" data-event="aoi-radio">Hoshino Radio #42</div>
+        </div>
+        <div class="week-day">
+          <div class="week-day-head">
+            <span class="week-day-name">Sat</span>
+            <span class="week-day-num">10</span>
+          </div>
+          <div class="week-event" data-event="yui-cover">夜明けまで MV</div>
+          <div class="week-event" data-event="karen-asmr">かれん 深夜配信</div>
+        </div>
+        <div class="week-day">
+          <div class="week-day-head">
+            <span class="week-day-name">Sun</span>
+            <span class="week-day-num">11</span>
+          </div>
+          <div class="week-event" data-event="rina-game">ホラゲ実況</div>
+        </div>
+        <div class="week-day">
+          <div class="week-day-head">
+            <span class="week-day-name">Mon</span>
+            <span class="week-day-num">12</span>
+          </div>
+        </div>
+        <div class="week-day">
+          <div class="week-day-head">
+            <span class="week-day-name">Tue</span>
+            <span class="week-day-num">13</span>
+          </div>
+          <div class="week-event" data-event="aoi-rehearsal">あおい リハ配信</div>
+        </div>
+        <div class="week-day">
+          <div class="week-day-head">
+            <span class="week-day-name">Wed</span>
+            <span class="week-day-num">14</span>
+          </div>
+          <div class="week-event cancelled">桜井ゆい 配信</div>
+        </div>
+        <div class="week-day">
+          <div class="week-day-head">
+            <span class="week-day-name">Thu</span>
+            <span class="week-day-num">15</span>
+          </div>
+          <div class="week-event" data-event="aoi-bday-merch">あおい 物販開始</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Event feed -->
+    <section>
+      <div class="section-header">
+        <h2 class="section-title">Latest <span class="count">· 12</span></h2>
+        <a class="section-link" href="#">Filter</a>
+      </div>
+      <div class="event-list">
+
+        <div class="event-card" data-event="aoi-bday-merch">
+          <div class="event-date">
+            <div class="event-date-month">May</div>
+            <div class="event-date-day">15</div>
+            <div class="event-date-time">10:00</div>
+          </div>
+          <div class="event-body">
+            <div class="event-title">星野あおい Birthday Live 2026 — 物販開始</div>
+            <div class="event-meta">
+              <span>星野あおい</span>
+              <span class="dot">·</span>
+              <span>Zepp DiverCity</span>
+              <span class="dot">·</span>
+              <span class="source-count">3 posts · 2 accounts</span>
+            </div>
+          </div>
+          <div class="event-badges">
+            <span class="badge sub">Sub-event</span>
+            <button class="sub-link" data-parent="aoi-bday-live" onclick="event.stopPropagation(); openModal('aoi-bday-live');">↑ parent</button>
+          </div>
+        </div>
+
+        <div class="event-card" data-event="aoi-bday-live">
+          <div class="event-date">
+            <div class="event-date-month">May</div>
+            <div class="event-date-day">16</div>
+            <div class="event-date-time">18:00</div>
+          </div>
+          <div class="event-body">
+            <div class="event-title">星野あおい Birthday Live 2026 「Hoshizora Symphony」</div>
+            <div class="event-meta">
+              <span>星野あおい</span>
+              <span class="dot">·</span>
+              <span>Zepp DiverCity, Tokyo</span>
+              <span class="dot">·</span>
+              <span class="source-count">12 posts · 5 accounts</span>
+            </div>
+          </div>
+          <div class="event-badges">
+            <span class="badge updated">Updated</span>
+          </div>
+        </div>
+
+        <div class="event-card" data-event="rina-zatsudan">
+          <div class="event-date">
+            <div class="event-date-month">May</div>
+            <div class="event-date-day">9</div>
+            <div class="event-date-time">19:30</div>
+          </div>
+          <div class="event-body">
+            <div class="event-title">【雑談】今日のごはんと近況報告だよ〜</div>
+            <div class="event-meta">
+              <span>月見りな</span>
+              <span class="dot">·</span>
+              <span>YouTube Live</span>
+              <span class="dot">·</span>
+              <span class="source-count">2 posts · 1 account</span>
+            </div>
+          </div>
+          <div class="event-badges">
+            <span class="badge live">Live</span>
+          </div>
+        </div>
+
+        <div class="event-card" data-event="yui-cover">
+          <div class="event-date">
+            <div class="event-date-month">May</div>
+            <div class="event-date-day">10</div>
+            <div class="event-date-time">21:00</div>
+          </div>
+          <div class="event-body">
+            <div class="event-title">『夜明けまで』covered by 桜井ゆい — MV Premiere</div>
+            <div class="event-meta">
+              <span>桜井ゆい</span>
+              <span class="dot">·</span>
+              <span>YouTube Premiere</span>
+              <span class="dot">·</span>
+              <span class="source-count">4 posts · 2 accounts</span>
+            </div>
+          </div>
+          <div class="event-badges"></div>
+        </div>
+
+        <div class="event-card" data-event="yui-cancelled">
+          <div class="event-date">
+            <div class="event-date-month">May</div>
+            <div class="event-date-day">14</div>
+            <div class="event-date-time">20:00</div>
+          </div>
+          <div class="event-body">
+            <div class="event-title">桜井ゆい ゲリラ配信</div>
+            <div class="event-meta">
+              <span>桜井ゆい</span>
+              <span class="dot">·</span>
+              <span>体調不良のため中止</span>
+              <span class="dot">·</span>
+              <span class="source-count">1 post · 1 account</span>
+            </div>
+          </div>
+          <div class="event-badges">
+            <span class="badge cancelled">Cancelled</span>
+          </div>
+        </div>
+
+        <div class="event-card" data-event="karen-asmr">
+          <div class="event-date">
+            <div class="event-date-month">May</div>
+            <div class="event-date-day">10</div>
+            <div class="event-date-time">23:00</div>
+          </div>
+          <div class="event-body">
+            <div class="event-title">深夜のおしゃべり配信 〜眠れない夜に〜</div>
+            <div class="event-meta">
+              <span>望月かれん</span>
+              <span class="dot">·</span>
+              <span>YouTube Live</span>
+              <span class="dot">·</span>
+              <span class="source-count">1 post · 1 account</span>
+            </div>
+          </div>
+          <div class="event-badges"></div>
+        </div>
+
+        <div class="event-card" data-event="aoi-rehearsal">
+          <div class="event-date">
+            <div class="event-date-month">May</div>
+            <div class="event-date-day">13</div>
+            <div class="event-date-time">17:00</div>
+          </div>
+          <div class="event-body">
+            <div class="event-title">星野あおい Birthday Live リハーサル配信</div>
+            <div class="event-meta">
+              <span>星野あおい</span>
+              <span class="dot">·</span>
+              <span>Twitch</span>
+              <span class="dot">·</span>
+              <span class="source-count">2 posts · 1 account</span>
+            </div>
+          </div>
+          <div class="event-badges">
+            <span class="badge sub">Sub-event</span>
+            <button class="sub-link" data-parent="aoi-bday-live" onclick="event.stopPropagation(); openModal('aoi-bday-live');">↑ parent</button>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ===== Timeline rail ===== -->
+  <aside class="timeline-rail">
+    <div class="section-header">
+      <h2 class="section-title">Timeline</h2>
+      <span class="section-link">Live</span>
+    </div>
+    <div class="timeline-feed">
+
+      <div class="timeline-post">
+        <div class="timeline-avatar" style="background: linear-gradient(135deg, #ec4899, #f472b6);">星</div>
+        <div>
+          <div class="timeline-head">
+            <div>
+              <span class="timeline-name">星野あおい</span>
+              <span class="timeline-handle">@hoshino_aoi</span>
+            </div>
+            <span class="timeline-time">2m</span>
+          </div>
+          <div class="timeline-text">バースデーライブまであと7日…！物販ラインナップ全部見せます🎂 詳細はリプ欄に👇 #Hoshizora_Symphony</div>
+        </div>
+      </div>
+
+      <div class="timeline-post">
+        <div class="timeline-avatar" style="background: linear-gradient(135deg, #6366f1, #8b5cf6);">月</div>
+        <div>
+          <div class="timeline-head">
+            <div>
+              <span class="timeline-name">月見りな</span>
+              <span class="timeline-handle">@tsukimi_rina</span>
+            </div>
+            <span class="timeline-time">14m</span>
+          </div>
+          <div class="timeline-text">配信開始してます〜!! 今日のごはんはカレー🍛 雑談しながらだらっと話そう</div>
+        </div>
+      </div>
+
+      <div class="timeline-post">
+        <div class="timeline-avatar" style="background: linear-gradient(135deg, #f59e0b, #ef4444);">桜</div>
+        <div>
+          <div class="timeline-head">
+            <div>
+              <span class="timeline-name">桜井ゆい</span>
+              <span class="timeline-handle">@sakurai_yui</span>
+            </div>
+            <span class="timeline-time">38m</span>
+          </div>
+          <div class="timeline-text">『夜明けまで』カバーMV、明日21時プレミア公開です✨ コメント付きで一緒に観ましょう〜</div>
+        </div>
+      </div>
+
+      <div class="timeline-post">
+        <div class="timeline-avatar" style="background: linear-gradient(135deg, #ec4899, #f472b6);">星</div>
+        <div>
+          <div class="timeline-head">
+            <div>
+              <span class="timeline-name">星野あおい</span>
+              <span class="timeline-handle">@hoshino_aoi</span>
+            </div>
+            <span class="timeline-time">1h</span>
+          </div>
+          <div class="timeline-text">今夜22時からTwitchでラジオやります📻 リハの裏側もちょっと見せちゃう予定！</div>
+        </div>
+      </div>
+
+      <div class="timeline-post">
+        <div class="timeline-avatar" style="background: linear-gradient(135deg, #14b8a6, #6366f1);">望</div>
+        <div>
+          <div class="timeline-head">
+            <div>
+              <span class="timeline-name">望月かれん</span>
+              <span class="timeline-handle">@mochi_karen</span>
+            </div>
+            <span class="timeline-time">3h</span>
+          </div>
+          <div class="timeline-text">土曜の深夜にひさびさに配信します🌙 リクエストあったら教えてください〜</div>
+        </div>
+      </div>
+
+      <div class="timeline-post">
+        <div class="timeline-avatar" style="background: linear-gradient(135deg, #6366f1, #8b5cf6);">月</div>
+        <div>
+          <div class="timeline-head">
+            <div>
+              <span class="timeline-name">月見りな</span>
+              <span class="timeline-handle">@tsukimi_rina</span>
+            </div>
+            <span class="timeline-time">5h</span>
+          </div>
+          <div class="timeline-text">日曜のホラゲ実況、何やるか迷い中。みんなのおすすめ教えて〜</div>
+        </div>
+      </div>
+
+      <div class="timeline-post">
+        <div class="timeline-avatar" style="background: linear-gradient(135deg, #f59e0b, #ef4444);">桜</div>
+        <div>
+          <div class="timeline-head">
+            <div>
+              <span class="timeline-name">桜井ゆい</span>
+              <span class="timeline-handle">@sakurai_yui</span>
+            </div>
+            <span class="timeline-time">1d</span>
+          </div>
+          <div class="timeline-text">体調戻ってきました🙏 心配してくれた皆さんありがとう。水曜の配信は中止したけどMVプレミアはやります！</div>
+        </div>
+      </div>
+
+    </div>
+  </aside>
+
+</div>
+
+<!-- ===== Modal ===== -->
+<div class="modal-backdrop" id="modalBackdrop">
+  <div class="modal" id="modalContent">
+    <div class="modal-header">
+      <button class="modal-close" onclick="closeModal()">×</button>
+      <h2 class="modal-title" id="modalTitle"></h2>
+      <div class="modal-meta" id="modalMeta"></div>
+    </div>
+
+    <div class="modal-section" id="modalDescriptionSection">
+      <h3 class="modal-section-title">Description</h3>
+      <div class="modal-description" id="modalDescription"></div>
+    </div>
+
+    <div class="modal-section" id="modalLinksSection">
+      <h3 class="modal-section-title">Related links</h3>
+      <div class="related-links" id="modalLinks"></div>
+    </div>
+
+    <div class="modal-section">
+      <h3 class="modal-section-title">Sources</h3>
+      <div class="source-list" id="modalSources"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ===== Mock event data =====
+  const EVENTS = {
+    "aoi-bday-live": {
+      title: "星野あおい Birthday Live 2026 「Hoshizora Symphony」",
+      meta: ["星野あおい", "Zepp DiverCity, Tokyo", "Sat, May 16 · 18:00 JST", "Doors 17:00"],
+      description: "星野あおい 5th Anniversary Birthday Live。アルバム『Hoshizora』全曲披露＋未発表新曲のプレミア演奏あり。物販は当日10時より会場前にて。配信視聴券もあり。",
+      links: [
+        { label: "official.hoshino-aoi.com/bday2026", url: "#" },
+        { label: "Ticket — eplus.jp/bday-aoi", url: "#" },
+        { label: "Stream — zaiko.io/aoi-bday", url: "#" },
+      ],
+      sources: [
+        { handle: "@hoshino_aoi", time: "2h ago", text: "バースデーライブまであと7日…！物販ラインナップ全部見せます🎂" },
+        { handle: "@hoshino_staff", time: "5h ago", text: "チケット完売しました！配信チケットは引き続き発売中です。" },
+        { handle: "@aoi_fanclub", time: "1d ago", text: "FC先行特典のお渡し詳細を更新しました。" },
+      ],
+    },
+    "aoi-bday-merch": {
+      title: "星野あおい Birthday Live 2026 — 物販開始",
+      meta: ["星野あおい", "Zepp DiverCity 会場前", "Thu, May 15 · 10:00 JST", "Sub-event of Birthday Live"],
+      description: "Birthday Live前日の物販販売。ライトスタンドペンライト Ver.5、新グッズ全種、5周年記念フォトブックなど。整理券はFC会員のみ朝7時より配布。",
+      links: [
+        { label: "Merch list — official.hoshino-aoi.com/goods", url: "#" },
+      ],
+      sources: [
+        { handle: "@hoshino_aoi", time: "2h ago", text: "物販ラインナップ全部見せます🎂" },
+        { handle: "@hoshino_staff", time: "8h ago", text: "物販列の整列場所マップを公開しました。" },
+      ],
+    },
+    "rina-zatsudan": {
+      title: "【雑談】今日のごはんと近況報告だよ〜",
+      meta: ["月見りな", "YouTube Live", "Fri, May 9 · 19:30 JST", "🔴 Live now"],
+      description: "ふらっと雑談配信。最近見たアニメの話、来週のホラゲ実況の予告、あといくつかお知らせがあるかも？",
+      links: [
+        { label: "youtube.com/@tsukimirina/live", url: "#" },
+      ],
+      sources: [
+        { handle: "@tsukimi_rina", time: "14m ago", text: "配信開始してます〜!! 今日のごはんはカレー🍛" },
+        { handle: "@tsukimi_rina", time: "2h ago", text: "今夜19:30から雑談配信やります〜" },
+      ],
+    },
+    "aoi-radio": {
+      title: "Hoshino Radio #42 — Pre-Birthday Special",
+      meta: ["星野あおい", "Twitch", "Fri, May 9 · 22:00 JST"],
+      description: "毎週恒例のラジオ配信。今週はバースデーライブ前ということでセトリのヒントとリハの裏側もちょっと話します。",
+      links: [
+        { label: "twitch.tv/hoshino_aoi", url: "#" },
+      ],
+      sources: [
+        { handle: "@hoshino_aoi", time: "1h ago", text: "今夜22時からTwitchでラジオやります📻" },
+      ],
+    },
+    "yui-cover": {
+      title: "『夜明けまで』covered by 桜井ゆい — MV Premiere",
+      meta: ["桜井ゆい", "YouTube Premiere", "Sat, May 10 · 21:00 JST"],
+      description: "オリジナル曲『夜明けまで』のセルフカバーMV。チャットを開放してプレミア公開。",
+      links: [
+        { label: "youtube.com/@sakurai_yui", url: "#" },
+        { label: "Streaming — linkco.re/yui-yoake", url: "#" },
+      ],
+      sources: [
+        { handle: "@sakurai_yui", time: "38m ago", text: "明日21時プレミア公開です✨" },
+        { handle: "@sakurai_yui", time: "1d ago", text: "体調戻ってきました🙏" },
+      ],
+    },
+    "yui-cancelled": {
+      title: "桜井ゆい ゲリラ配信",
+      meta: ["桜井ゆい", "中止", "Wed, May 14 · 20:00 JST"],
+      description: "予定していたゲリラ配信は体調不良のため中止となりました。MVプレミアは予定通り実施します。",
+      links: [],
+      sources: [
+        { handle: "@sakurai_yui", time: "1d ago", text: "水曜の配信は中止したけどMVプレミアはやります！" },
+      ],
+    },
+    "karen-asmr": {
+      title: "深夜のおしゃべり配信 〜眠れない夜に〜",
+      meta: ["望月かれん", "YouTube Live", "Sat, May 10 · 23:00 JST"],
+      description: "ひさびさの深夜配信。リクエストあれば概要欄から送ってください。",
+      links: [
+        { label: "youtube.com/@mochi_karen", url: "#" },
+      ],
+      sources: [
+        { handle: "@mochi_karen", time: "3h ago", text: "土曜の深夜にひさびさに配信します🌙" },
+      ],
+    },
+    "rina-game": {
+      title: "ホラーゲーム実況 〜叫んでもいいよね〜",
+      meta: ["月見りな", "Twitch", "Sun, May 11 · 20:30 JST"],
+      description: "ホラーゲーム実況。タイトルは当日決定。視聴者投票あり。",
+      links: [
+        { label: "twitch.tv/tsukimi_rina", url: "#" },
+      ],
+      sources: [
+        { handle: "@tsukimi_rina", time: "5h ago", text: "日曜のホラゲ実況、何やるか迷い中。" },
+      ],
+    },
+    "aoi-rehearsal": {
+      title: "星野あおい Birthday Live リハーサル配信",
+      meta: ["星野あおい", "Twitch", "Tue, May 13 · 17:00 JST", "Sub-event of Birthday Live"],
+      description: "バースデーライブ直前のリハ配信。短時間で裏側をちらっと。",
+      links: [
+        { label: "twitch.tv/hoshino_aoi", url: "#" },
+      ],
+      sources: [
+        { handle: "@hoshino_aoi", time: "2d ago", text: "リハ配信もやる予定です！" },
+      ],
+    },
+  };
+
+  // ===== Sidebar filter (visual only) =====
+  document.querySelectorAll("#oshiList .oshi-row").forEach(row => {
+    row.addEventListener("click", () => {
+      document.querySelectorAll("#oshiList .oshi-row").forEach(r => r.classList.remove("active"));
+      row.classList.add("active");
+      const name = row.querySelector(".oshi-name").childNodes[0].textContent.trim();
+      document.getElementById("activeFilter").textContent = name === "All oshis" ? "All oshis" : name;
+    });
+  });
+
+  // ===== Modal =====
+  const backdrop = document.getElementById("modalBackdrop");
+
+  function openModal(eventId) {
+    const ev = EVENTS[eventId];
+    if (!ev) return;
+
+    document.getElementById("modalTitle").textContent = ev.title;
+
+    const metaEl = document.getElementById("modalMeta");
+    metaEl.innerHTML = ev.meta
+      .map((m, i) => i === 0 ? `<span>${m}</span>` : `<span class="dot">·</span><span>${m}</span>`)
+      .join("");
+
+    const descSection = document.getElementById("modalDescriptionSection");
+    if (ev.description) {
+      descSection.style.display = "";
+      document.getElementById("modalDescription").textContent = ev.description;
+    } else {
+      descSection.style.display = "none";
+    }
+
+    const linksSection = document.getElementById("modalLinksSection");
+    const linksEl = document.getElementById("modalLinks");
+    if (ev.links && ev.links.length) {
+      linksSection.style.display = "";
+      linksEl.innerHTML = ev.links.map(l => `<a class="related-link" href="${l.url}">${l.label}</a>`).join("");
+    } else {
+      linksSection.style.display = "none";
+    }
+
+    document.getElementById("modalSources").innerHTML = ev.sources.map(s => `
+      <div class="source-item">
+        <span class="source-handle">${s.handle}</span>
+        <span class="source-time">${s.time}</span>
+        <div style="margin-top:4px;">${s.text}</div>
+      </div>
+    `).join("");
+
+    backdrop.classList.add("open");
+  }
+
+  function closeModal() {
+    backdrop.classList.remove("open");
+  }
+
+  backdrop.addEventListener("click", (e) => {
+    if (e.target === backdrop) closeModal();
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeModal();
+  });
+
+  // Wire all elements with data-event
+  document.querySelectorAll("[data-event]").forEach(el => {
+    el.addEventListener("click", (e) => {
+      const id = el.getAttribute("data-event");
+      openModal(id);
+    });
+  });
+</script>
+
+</body>
+</html>
