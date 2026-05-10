@@ -43,8 +43,6 @@ export const rawItems = sqliteTable("raw_items", {
   sourceId: text("source_id").notNull(),
   sourceUrl: text("source_url"),
   rawData: text("raw_data", { mode: "json" }).$type<Record<string, any>>().notNull(),
-  /** Original post time on the source platform, populated at ingestion
-   *  by the connector when derivable. Falls back to fetchedAt for display. */
   postedAt: integer("posted_at", { mode: "timestamp" }),
   fetchedAt: integer("fetched_at", { mode: "timestamp" }).notNull(),
   status: text("status", { enum: ["new", "processed", "error"] }).notNull().default("new"),
