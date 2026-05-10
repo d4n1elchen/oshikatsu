@@ -3,6 +3,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import * as fs from "fs";
 import * as path from "path";
+import { adminRoute } from "./api/admin";
 import { dashboardRoute } from "./api/dashboard";
 import { eventsRoute } from "./api/events";
 import { tagged } from "../core/logger";
@@ -13,6 +14,7 @@ const app = new Hono();
 
 app.route("/api", dashboardRoute);
 app.route("/api", eventsRoute);
+app.route("/api", adminRoute);
 
 // In production we serve the built client bundle from dist/web. In dev,
 // Vite serves the client on its own port and proxies /api here, so we

@@ -1,6 +1,6 @@
 # Phase 6.1: Admin Surface
 
-> **Status:** Proposed.
+> **Status:** Shipped.
 > **Follow-ups:** Builds on the Phase 6 dashboard (`design_docs/2026-05-08-phase6-web-ui/web-ui.md`) and the read/query layer (`design_docs/2026-05-08-read-query-layer/query-layer.md`). Operator-action endpoints (POST routes) are new substrate; per-field override masks for normalized-event edits are deliberately deferred per the open question below.
 
 ## Overview

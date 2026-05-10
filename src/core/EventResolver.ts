@@ -691,14 +691,19 @@ export class EventResolver {
 
         // Merge cancellation flag — only enqueue if the canonical flag
         // actually flips, to avoid sending consumers redundant cancellations.
+        // Operator-owned rows are frozen: skip the UPDATE entirely so the
+        // operator's edits aren't clobbered by a downstream cancellation.
         let cancellationFlipped = false;
         if (candidate.isCancelled) {
           const existing = tx
-            .select({ isCancelled: normalizedEvents.isCancelled })
+            .select({
+              isCancelled: normalizedEvents.isCancelled,
+              operatorOwned: normalizedEvents.operatorOwned,
+            })
             .from(normalizedEvents)
             .where(eq(normalizedEvents.id, normalizedEventId))
             .all();
-          if (existing[0] && !existing[0].isCancelled) {
+          if (existing[0] && !existing[0].isCancelled && !existing[0].operatorOwned) {
             cancellationFlipped = true;
             tx.update(normalizedEvents)
               .set({ isCancelled: true, updatedAt: new Date() })

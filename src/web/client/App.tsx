@@ -47,7 +47,7 @@ export function App() {
 
   return (
     <div className="shell">
-      <Sidebar oshis={data.oshis} activeOshi={data.activeOshi} onSelect={setOshi} />
+      <Sidebar surface="dashboard" oshis={data.oshis} activeOshi={data.activeOshi} onSelect={setOshi} />
 
       <main className="main">
         <header className="header">

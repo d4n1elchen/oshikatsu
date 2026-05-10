@@ -4,8 +4,6 @@ import { SchedulerRunsRepo } from "../../core/SchedulerRunsRepo";
 import { getExtractionFailureSummary, type ExtractionFailureSummary } from "../../core/queries/MonitorQueries";
 import type { SchedulerRun } from "../../core/types";
 
-const TASK_NAMES = ["Ingestion", "Extraction", "Resolution"] as const;
-
 type TaskCard = {
   name: string;
   lastRun: SchedulerRun | null;
@@ -39,15 +37,16 @@ export default function Monitor() {
   const loadData = useCallback(async () => {
     setLoading(true);
     const sinceHour = new Date(Date.now() - HOUR_MS);
-    const [recent, countsRows, extractionFailures] = await Promise.all([
+    const [recent, countsRows, taskNames, extractionFailures] = await Promise.all([
       repo.recent(50),
       repo.countsSince(sinceHour),
+      repo.distinctTaskNames(),
       getExtractionFailureSummary(),
     ]);
 
     // Build per-task cards
     const cards: TaskCard[] = await Promise.all(
-      TASK_NAMES.map(async (name) => {
+      taskNames.map(async (name) => {
         const taskRecent = recent.filter((r) => r.taskName === name);
         const lastRun = taskRecent[0] ?? null;
         const lastSuccess = taskRecent.find((r) => r.status === "completed") ?? null;

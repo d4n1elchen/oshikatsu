@@ -57,6 +57,9 @@ export type NormalizedEventListItem = {
   sourceCount: number;
   latestDecision: string | null;
   latestReason: string | null;
+
+  operatorOwned: boolean;
+  operatorEditedAt: Date | null;
 };
 
 /**
@@ -106,6 +109,9 @@ export async function listNormalizedEvents(
       venueCanonicalStatus: venues.status,
 
       parentEventId: normalizedEvents.parentEventId,
+
+      operatorOwned: normalizedEvents.operatorOwned,
+      operatorEditedAt: normalizedEvents.operatorEditedAt,
     })
     .from(normalizedEvents)
     .leftJoin(artists, eq(normalizedEvents.artistId, artists.id))
@@ -220,6 +226,9 @@ export async function listNormalizedEvents(
     sourceCount: sourceCountByEvent.get(r.id) ?? 0,
     latestDecision: decisionByEvent.get(r.id)?.decision ?? null,
     latestReason: decisionByEvent.get(r.id)?.reason ?? null,
+
+    operatorOwned: r.operatorOwned,
+    operatorEditedAt: r.operatorEditedAt,
   }));
 }
 

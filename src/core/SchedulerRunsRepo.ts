@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { and, desc, eq, gte, lt } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lt } from "drizzle-orm";
 import { db as defaultDb } from "../db";
 import { schedulerRuns } from "../db/schema";
 import type { RunDetails, SchedulerRun, SchedulerRunStatus } from "./types";
@@ -108,6 +108,19 @@ export class SchedulerRunsRepo {
       const [taskName, status] = key.split(":") as [string, SchedulerRunStatus];
       return { taskName, status, count };
     });
+  }
+
+  /**
+   * Distinct task names that have ever been recorded. Used by Monitor /
+   * admin surfaces to avoid hardcoding the set of tasks; new tasks
+   * surface automatically once they emit a run.
+   */
+  async distinctTaskNames(): Promise<string[]> {
+    const rows = await this.db
+      .selectDistinct({ taskName: schedulerRuns.taskName })
+      .from(schedulerRuns)
+      .orderBy(asc(schedulerRuns.taskName));
+    return rows.map((r) => r.taskName);
   }
 
   /** Delete runs older than `before`. Returns the number deleted. */

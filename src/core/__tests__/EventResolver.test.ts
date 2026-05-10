@@ -113,6 +113,8 @@ function createTestDb() {
       type TEXT NOT NULL,
       is_cancelled INTEGER NOT NULL DEFAULT 0,
       tags TEXT NOT NULL,
+      operator_owned INTEGER NOT NULL DEFAULT 0,
+      operator_edited_at INTEGER,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );

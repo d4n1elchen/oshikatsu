@@ -142,6 +142,13 @@ export const normalizedEvents = sqliteTable("normalized_events", {
   type: text("type").notNull(),
   isCancelled: integer("is_cancelled", { mode: "boolean" }).notNull().default(false),
   tags: text("tags", { mode: "json" }).$type<string[]>().notNull(),
+  /**
+   * Operator freeze flag. When an admin edits this row, set to true and
+   * the resolver skips it on subsequent UPDATE paths (merge cancellation
+   * flips, future updates). Cleared via the admin "release" action.
+   */
+  operatorOwned: integer("operator_owned", { mode: "boolean" }).notNull().default(false),
+  operatorEditedAt: integer("operator_edited_at", { mode: "timestamp" }),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 }, (table) => [

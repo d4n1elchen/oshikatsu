@@ -4,13 +4,16 @@ import type { OshiDTO } from "./api";
 const ACTIVE_THRESHOLD_MS = 24 * 60 * 60 * 1000;       // green dot
 const RECENT_THRESHOLD_MS = 3 * 24 * 60 * 60 * 1000;   // pink dot
 
+type Surface = "dashboard" | "admin";
+
 type Props = {
-  oshis: OshiDTO[];
-  activeOshi: string | null;
-  onSelect: (handle: string | null) => void;
+  surface: Surface;
+  oshis?: OshiDTO[];
+  activeOshi?: string | null;
+  onSelect?: (handle: string | null) => void;
 };
 
-export function Sidebar({ oshis, activeOshi, onSelect }: Props) {
+export function Sidebar({ surface, oshis, activeOshi, onSelect }: Props) {
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -18,40 +21,58 @@ export function Sidebar({ oshis, activeOshi, onSelect }: Props) {
         <div className="brand-name">Oshikatsu</div>
       </div>
 
-      <div className="sidebar-label">Watching</div>
-
-      <nav className="oshi-list">
-        <button
-          type="button"
-          className={`oshi-row ${activeOshi === null ? "active" : ""}`}
-          onClick={() => onSelect(null)}
+      <nav className="surface-nav">
+        <a
+          href="/"
+          className={`surface-link ${surface === "dashboard" ? "active" : ""}`}
         >
-          <span className="oshi-dot active" aria-hidden />
-          <span className="oshi-name">All oshis</span>
-          <span className="oshi-meta">{oshis.length}</span>
-        </button>
+          Dashboard
+        </a>
+        <a
+          href="/admin"
+          className={`surface-link ${surface === "admin" ? "active" : ""}`}
+        >
+          Admin
+        </a>
+      </nav>
 
-        <div className="sidebar-divider" />
-
-        {oshis.map((o) => {
-          const dotClass = activityDotClass(o.lastActivityAt);
-          const meta = formatLastActivity(o.lastActivityAt);
-          return (
+      {surface === "dashboard" && oshis && onSelect && (
+        <>
+          <div className="sidebar-label">Watching</div>
+          <nav className="oshi-list">
             <button
               type="button"
-              key={o.id}
-              className={`oshi-row ${activeOshi === o.handle ? "active" : ""}`}
-              onClick={() => onSelect(o.handle)}
+              className={`oshi-row ${activeOshi == null ? "active" : ""}`}
+              onClick={() => onSelect(null)}
             >
-              <span className={`oshi-dot ${dotClass}`} aria-hidden />
-              <span className="oshi-name">
-                {o.name} <span className="handle">@{o.handle}</span>
-              </span>
-              <span className="oshi-meta">{meta}</span>
+              <span className="oshi-dot active" aria-hidden />
+              <span className="oshi-name">All oshis</span>
+              <span className="oshi-meta">{oshis.length}</span>
             </button>
-          );
-        })}
-      </nav>
+
+            <div className="sidebar-divider" />
+
+            {oshis.map((o) => {
+              const dotClass = activityDotClass(o.lastActivityAt);
+              const meta = formatLastActivity(o.lastActivityAt);
+              return (
+                <button
+                  type="button"
+                  key={o.id}
+                  className={`oshi-row ${activeOshi === o.handle ? "active" : ""}`}
+                  onClick={() => onSelect(o.handle)}
+                >
+                  <span className={`oshi-dot ${dotClass}`} aria-hidden />
+                  <span className="oshi-name">
+                    {o.name} <span className="handle">@{o.handle}</span>
+                  </span>
+                  <span className="oshi-meta">{meta}</span>
+                </button>
+              );
+            })}
+          </nav>
+        </>
+      )}
     </aside>
   );
 }

@@ -65,6 +65,9 @@ export type NormalizedEventDTO = {
   sourceCount: number;
   latestDecision: string | null;
   latestReason: string | null;
+
+  operatorOwned: boolean;
+  operatorEditedAt: string | null;
 };
 
 export type RawItemDTO = {
@@ -111,4 +114,133 @@ export async function fetchEventDetail(id: string): Promise<EventDetailPayload> 
   const res = await fetch(`/api/events/${encodeURIComponent(id)}`);
   if (!res.ok) throw new Error(`Event fetch failed: ${res.status}`);
   return res.json();
+}
+
+// ----- Admin types -----
+
+export type SchedulerRunDTO = {
+  id: string;
+  taskName: string;
+  startedAt: string;
+  finishedAt: string | null;
+  status: "running" | "completed" | "failed" | "aborted";
+  errorClass: string | null;
+  errorMessage: string | null;
+  details: Record<string, unknown> | null;
+};
+
+export type TaskCardDTO = {
+  name: string;
+  lastRun: SchedulerRunDTO | null;
+  lastSuccess: SchedulerRunDTO | null;
+  lastFailure: SchedulerRunDTO | null;
+  countsLastHour: { completed: number; failed: number; aborted: number };
+};
+
+export type ExtractionFailureGroupDTO = {
+  errorClass: string;
+  count: number;
+  oldest: string;
+  newest: string;
+};
+
+export type ExtractionFailureSummaryDTO = {
+  total: number;
+  groups: ExtractionFailureGroupDTO[];
+};
+
+export type ReviewQueueItemDTO = {
+  decisionId: string;
+  decision: string;
+  score: number | null;
+  signals: Record<string, unknown>;
+  reason: string;
+  createdAt: string;
+
+  extractedId: string;
+  candidateTitle: string;
+  candidateDescription: string;
+  candidateStartTime: string | null;
+  candidateAuthor: string;
+  candidateSourceUrl: string;
+  candidateRawContent: string;
+  candidateScope: string;
+  candidateParentHint: string | null;
+  candidateArtistName: string | null;
+  candidateVenueName: string | null;
+
+  matchedId: string | null;
+  matchedTitle: string | null;
+  matchedStartTime: string | null;
+  matchedVenueName: string | null;
+};
+
+export type AdminDashboardPayload = {
+  cards: TaskCardDTO[];
+  recentRuns: SchedulerRunDTO[];
+  extractionFailures: ExtractionFailureSummaryDTO;
+  reviewQueue: ReviewQueueItemDTO[];
+  events: NormalizedEventDTO[];
+  serverTime: string;
+};
+
+export async function fetchAdminDashboard(): Promise<AdminDashboardPayload> {
+  const res = await fetch(`/api/admin/dashboard`);
+  if (!res.ok) throw new Error(`Admin dashboard fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export async function adminAcceptMerge(
+  decisionId: string,
+  extractedEventId: string,
+  normalizedEventId: string,
+): Promise<void> {
+  const res = await fetch(`/api/admin/review/${encodeURIComponent(decisionId)}/merge`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ extractedEventId, normalizedEventId }),
+  });
+  if (!res.ok) throw new Error(`Merge failed: ${res.status} ${await res.text()}`);
+}
+
+export async function adminAcceptNew(
+  decisionId: string,
+  extractedEventId: string,
+): Promise<void> {
+  const res = await fetch(`/api/admin/review/${encodeURIComponent(decisionId)}/new`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ extractedEventId }),
+  });
+  if (!res.ok) throw new Error(`Accept-as-new failed: ${res.status} ${await res.text()}`);
+}
+
+export type EventEditFields = {
+  title?: string;
+  description?: string;
+  startTime?: string | null;
+  endTime?: string | null;
+  isCancelled?: boolean;
+  tags?: string[];
+  parentEventId?: string | null;
+  venueId?: string | null;
+  venueName?: string | null;
+  venueUrl?: string | null;
+  type?: string;
+};
+
+export async function adminUpdateEvent(id: string, fields: EventEditFields): Promise<void> {
+  const res = await fetch(`/api/admin/events/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) throw new Error(`Update failed: ${res.status} ${await res.text()}`);
+}
+
+export async function adminReleaseEvent(id: string): Promise<void> {
+  const res = await fetch(`/api/admin/events/${encodeURIComponent(id)}/release`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(`Release failed: ${res.status} ${await res.text()}`);
 }

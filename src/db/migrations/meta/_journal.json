@@ -148,6 +148,13 @@
       "when": 1778536400000,
       "tag": "0020_raw_items_source_url",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1778622800000,
+      "tag": "0021_normalized_events_operator_ownership",
+      "breakpoints": true
     }
   ]
 }
