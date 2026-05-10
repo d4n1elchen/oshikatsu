@@ -152,7 +152,15 @@ export class TwitterExtractionStrategy extends DefaultExtractionStrategy {
     const text = legacy.full_text || "";
     if (!text.trim()) return null;
 
-    const author = rawItem.rawData?.core?.user_results?.result?.legacy?.screen_name || "unknown";
+    // Author resolution: the GraphQL response shape isn't stable, so the deep
+    // path can silently miss. The connector already resolved this at fetch
+    // time (with its own fallback to the queried watch-target handle) and
+    // encoded the result into rawItem.sourceUrl. Trust that as the source of
+    // truth; deep-path lookup is just a small optimisation when it succeeds.
+    const fromGraphQL = rawItem.rawData?.core?.user_results?.result?.legacy?.screen_name;
+    const fromRawUrl = rawItem.sourceUrl ? extractAuthorFromXUrl(rawItem.sourceUrl) : null;
+    const author = fromGraphQL || fromRawUrl || "unknown";
+    const url = rawItem.sourceUrl || `https://x.com/${author}/status/${rawItem.sourceId}`;
     const publishTime = parseDateOrDefault(legacy.created_at, new Date().toISOString());
     const relatedLinkCandidates = extractTwitterLinkCandidates(rawItem);
 
@@ -160,11 +168,16 @@ export class TwitterExtractionStrategy extends DefaultExtractionStrategy {
       text,
       publishTime,
       author,
-      url: `https://x.com/${author}/status/${rawItem.sourceId}`,
+      url,
       relatedLinkCandidates,
       rawContent: text,
     };
   }
+}
+
+function extractAuthorFromXUrl(url: string): string | null {
+  const m = url.match(/^https?:\/\/(?:x|twitter)\.com\/([^/]+)\/status\//i);
+  return m ? m[1]! : null;
 }
 
 export function createDefaultExtractionStrategies(): ExtractionStrategy[] {
