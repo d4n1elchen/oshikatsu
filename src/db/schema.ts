@@ -45,7 +45,7 @@ export const rawItems = sqliteTable("raw_items", {
   rawData: text("raw_data", { mode: "json" }).$type<Record<string, any>>().notNull(),
   postedAt: integer("posted_at", { mode: "timestamp" }),
   fetchedAt: integer("fetched_at", { mode: "timestamp" }).notNull(),
-  status: text("status", { enum: ["new", "processed", "error"] }).notNull().default("new"),
+  status: text("status", { enum: ["new", "processed", "error", "not_an_event"] }).notNull().default("new"),
   errorMessage: text("error_message"),
   errorClass: text("error_class"),
 }, (table) => [
@@ -98,6 +98,15 @@ export const extractedEvents = sqliteTable("extracted_events", {
   venueName: text("venue_name"),
   venueUrl: text("venue_url"),
   type: text("type").notNull(),
+  /**
+   * Discriminates rows that *are* events (the 7-type taxonomy: concert,
+   * release, etc.) from rows that *annotate* an existing event
+   * (milestones, press coverage, recaps, reminder reposts). Annotation
+   * rows reuse parent_event_hint to point at the existing event and
+   * leave start_time / end_time / venue_* null. The resolver filters
+   * to record_kind='event' on the event-normalization path.
+   */
+  recordKind: text("record_kind", { enum: ["event", "annotation"] }).notNull().default("event"),
   eventScope: text("event_scope", { enum: ["main", "sub", "unknown"] }).notNull().default("unknown"),
   parentEventHint: text("parent_event_hint"),
   isCancelled: integer("is_cancelled", { mode: "boolean" }).notNull().default(false),
@@ -115,6 +124,7 @@ export const extractedEvents = sqliteTable("extracted_events", {
   uniqueIndex("idx_extracted_events_raw_item").on(table.rawItemId),
   index("idx_extracted_events_artist_start_time").on(table.artistId, table.startTime),
   index("idx_extracted_events_start_time").on(table.startTime),
+  index("idx_extracted_events_record_kind").on(table.recordKind),
 ]);
 
 export const extractedEventRelatedLinks = sqliteTable("extracted_event_related_links", {

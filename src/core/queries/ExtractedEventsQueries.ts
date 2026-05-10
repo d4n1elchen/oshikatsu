@@ -13,6 +13,11 @@ type DbInstance = typeof defaultDb;
 export type ListExtractedEventsOptions = {
   /** Default 50. */
   limit?: number;
+  /**
+   * Which record_kind to return. Defaults to "event" so existing TUI/web
+   * consumers continue to see only event rows, not annotations.
+   */
+  recordKind?: "event" | "annotation";
 };
 
 export type ExtractedEventRelatedLink = {
@@ -67,6 +72,7 @@ export async function listExtractedEvents(
   dbi: DbInstance = defaultDb
 ): Promise<ExtractedEventListItem[]> {
   const limit = opts.limit ?? 50;
+  const recordKind = opts.recordKind ?? "event";
 
   const rows = await dbi
     .select({
@@ -104,6 +110,7 @@ export async function listExtractedEvents(
     .leftJoin(artists, eq(extractedEvents.artistId, artists.id))
     .leftJoin(venues, eq(extractedEvents.venueId, venues.id))
     .leftJoin(rawItems, eq(extractedEvents.rawItemId, rawItems.id))
+    .where(eq(extractedEvents.recordKind, recordKind))
     .orderBy(desc(extractedEvents.startTime))
     .limit(limit);
 

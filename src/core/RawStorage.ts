@@ -107,15 +107,38 @@ export class RawStorage {
       .where(eq(rawItems.id, itemId));
   }
 
+  /**
+   * Mark an item as an orphan post (mood, fan_engagement, other) that
+   * is neither an event nor an annotation of one. Annotations of an
+   * existing event flow through `extracted_events` instead, with
+   * `record_kind='annotation'`. The category is recorded only in the
+   * log line and the human-readable reason; we deliberately don't
+   * persist it as a column until a consumer needs it. `error_message`
+   * carries the reason so the RawItems detail panel renders it.
+   */
+  async markNotAnEvent(itemId: string, _category: string, reason: string): Promise<void> {
+    await this.db.update(rawItems)
+      .set({
+        status: "not_an_event",
+        errorMessage: reason,
+        errorClass: null,
+      })
+      .where(eq(rawItems.id, itemId));
+  }
+
   /** Put an item back on the extraction queue. */
   async markNew(itemId: string): Promise<void> {
     await this.db.update(rawItems)
-      .set({ status: "new", errorMessage: null, errorClass: null })
+      .set({
+        status: "new",
+        errorMessage: null,
+        errorClass: null,
+      })
       .where(eq(rawItems.id, itemId));
   }
 
   /** Return storage statistics, optionally filtered by source. */
-  async getStats(sourceName?: string): Promise<{ total: number; new: number; processed: number; error: number }> {
+  async getStats(sourceName?: string): Promise<{ total: number; new: number; processed: number; error: number; notAnEvent: number }> {
     const conditions = sourceName ? [eq(rawItems.sourceName, sourceName)] : [];
 
     const rows = await this.db.select({
@@ -126,10 +149,14 @@ export class RawStorage {
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .groupBy(rawItems.status);
 
-    const stats = { total: 0, new: 0, processed: 0, error: 0 };
+    const stats = { total: 0, new: 0, processed: 0, error: 0, notAnEvent: 0 };
     for (const row of rows) {
-      const s = row.status as "new" | "processed" | "error";
-      stats[s] = row.count;
+      const s = row.status as "new" | "processed" | "error" | "not_an_event";
+      if (s === "not_an_event") {
+        stats.notAnEvent = row.count;
+      } else {
+        stats[s] = row.count;
+      }
       stats.total += row.count;
     }
     return stats;

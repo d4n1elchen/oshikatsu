@@ -314,12 +314,15 @@ export class EventResolver {
    * mid-batch, the loop exits at the next event boundary.
    */
   async processBatch(limit: number = 50, signal?: AbortSignal): Promise<{ resolved: number; failed: number }> {
-    // Find extracted events without a resolution decision
+    // Find extracted events without a resolution decision. Filter out
+    // annotation rows (record_kind='annotation') — those don't go
+    // through normalization; a future reconciliation step will attach
+    // them to their parent event by parent_event_hint.
     const unresolved = await this.db
       .select({ id: extractedEvents.id })
       .from(extractedEvents)
       .where(
-        sql`${extractedEvents.id} NOT IN (
+        sql`${extractedEvents.recordKind} = 'event' AND ${extractedEvents.id} NOT IN (
           SELECT ${eventResolutionDecisions.candidateExtractedEventId}
           FROM ${eventResolutionDecisions}
         )`

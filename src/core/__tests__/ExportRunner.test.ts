@@ -60,6 +60,7 @@ function createTestDb() {
       start_time INTEGER, end_time INTEGER,
       venue_id TEXT, venue_name TEXT, venue_url TEXT,
       type TEXT NOT NULL,
+      record_kind TEXT NOT NULL DEFAULT 'event',
       event_scope TEXT NOT NULL DEFAULT 'unknown',
       parent_event_hint TEXT,
       is_cancelled INTEGER NOT NULL DEFAULT 0,

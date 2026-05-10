@@ -1,6 +1,6 @@
 # Extraction Strategy Design
 
-> **Status:** Landed; strategy layer is intentionally minimal.
+> **Status:** Landed; strategy layer is intentionally minimal. The annotation branch (milestone, press coverage, recap, reminder repost) and the orphan branch (mood, fan engagement, other) were added later — see `design_docs/2026-05-10-non-event-classification/`. Annotations land in `extracted_events` with `record_kind='annotation'`; orphans terminate in `raw_items.status='not_an_event'`.
 > **Follow-ups:** Expand source-specific rules when the review queue or resolution decisions reveal a gap; tracked in `TECH_DEBTS.md`.
 
 ## Overview
@@ -223,6 +223,8 @@ For example, if the source text says `花譜` or `宿声`, the normalized title 
 ## Failure Policy
 
 The engine does not create fallback extracted events. If the LLM call fails, returns malformed JSON, fails schema validation, or produces values that fail strategy sanitization, the raw item is marked as `error` and no extracted event or `extracted_event_related_links` rows are created for that attempt.
+
+Posts that the LLM classifies as outside the event taxonomy follow separate paths and never land in `error`. Annotations of existing events (milestones, press coverage, recaps, reminder reposts) write to `extracted_events` with `record_kind='annotation'`. Orphan posts (mood, fan engagement, other) terminate at `raw_items.status='not_an_event'`. See `design_docs/2026-05-10-non-event-classification/`.
 
 Allowed deterministic sanitization:
 

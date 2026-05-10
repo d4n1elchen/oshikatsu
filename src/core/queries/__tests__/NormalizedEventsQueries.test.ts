@@ -31,7 +31,7 @@ function createTestDb(opts: { logger?: { logQuery: () => void } } = {}) {
       title TEXT NOT NULL, description TEXT NOT NULL,
       start_time INTEGER, end_time INTEGER,
       venue_id TEXT, venue_name TEXT, venue_url TEXT,
-      type TEXT NOT NULL, event_scope TEXT NOT NULL DEFAULT 'unknown',
+      type TEXT NOT NULL, record_kind TEXT NOT NULL DEFAULT 'event', event_scope TEXT NOT NULL DEFAULT 'unknown',
       parent_event_hint TEXT, is_cancelled INTEGER NOT NULL DEFAULT 0,
       tags TEXT NOT NULL, publish_time INTEGER NOT NULL,
       author TEXT NOT NULL, source_url TEXT NOT NULL, raw_content TEXT NOT NULL,

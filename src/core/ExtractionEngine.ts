@@ -8,8 +8,11 @@ import { VenueResolver } from "./VenueResolver";
 import type { LLMProvider } from "./LLMProvider";
 import {
   createDefaultExtractionStrategies,
-  EventExtractionSchema,
+  ExtractionOutputSchema,
+  sanitizeAnnotation,
+  type AnnotationResult,
   type EventExtractionResult,
+  type ExtractionOutput,
   type ExtractionStrategy,
   type SourceContext,
 } from "./ExtractionStrategy";
@@ -87,9 +90,22 @@ export class ExtractionEngine {
 
       const systemPrompt = strategy.buildPrompt(context);
 
-      const extracted = await this.extractAndSanitize(item, context, strategy, systemPrompt);
+      const result = await this.extractAndSanitize(item, context, strategy, systemPrompt);
 
-      await this.saveExtractedEvent(item, context, extracted);
+      if (result.kind === "not_an_event") {
+        await this.rawStorage.markNotAnEvent(item.id, result.category, result.reason);
+        log.info(`Item ${item.id} classified as not_an_event (${result.category})`);
+        return true;
+      }
+
+      if (result.kind === "annotation") {
+        await this.saveExtractedAnnotation(item, context, result);
+        await this.rawStorage.markProcessed(item.id);
+        log.info(`Extracted annotation for item ${item.id} (${result.category})`);
+        return true;
+      }
+
+      await this.saveExtractedEvent(item, context, result);
 
       await this.rawStorage.markProcessed(item.id);
       log.info(`Extracted item ${item.id}`);
@@ -120,10 +136,17 @@ export class ExtractionEngine {
     context: SourceContext,
     strategy: ExtractionStrategy,
     systemPrompt: string
-  ): Promise<EventExtractionResult> {
+  ): Promise<ExtractionOutput> {
     try {
-      const extracted = await this.llm.extract(context.rawContent, EventExtractionSchema, systemPrompt);
-      return strategy.sanitize(item, context, extracted);
+      const extracted = await this.llm.extract(context.rawContent, ExtractionOutputSchema, systemPrompt);
+      if (extracted.kind === "not_an_event") {
+        return extracted;
+      }
+      if (extracted.kind === "annotation") {
+        return sanitizeAnnotation(context, extracted);
+      }
+      const sanitized: EventExtractionResult = strategy.sanitize(item, context, extracted);
+      return sanitized;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       // Preserve the original error.name so the Monitor view can group by class
@@ -164,11 +187,63 @@ export class ExtractionEngine {
         venueName: extracted.venue_name || null,
         venueUrl: extracted.venue_url || null,
         type: extracted.type,
+        recordKind: "event",
         eventScope: extracted.event_scope,
         parentEventHint: extracted.parent_event_hint || null,
         isCancelled: false,
         tags: extracted.tags,
         // Source provenance (formerly source_references)
+        publishTime: context.publishTime,
+        author: context.author,
+        sourceUrl: context.url,
+        rawContent: context.rawContent,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }).run();
+
+      for (const link of extracted.related_links) {
+        tx.insert(extractedEventRelatedLinks).values({
+          id: randomUUID(),
+          extractedEventId,
+          rawItemId: rawItem.id,
+          url: link.url,
+          title: link.title || null,
+          createdAt: new Date(),
+        }).onConflictDoNothing().run();
+      }
+    });
+  }
+
+  /**
+   * Save an annotation row into extracted_events. Same provenance + 1:1
+   * shape as events; record_kind='annotation' is the discriminator and
+   * parent_event_hint carries the linkage to the existing event. Venue
+   * resolution and start/end times don't apply to annotations.
+   */
+  private async saveExtractedAnnotation(rawItem: any, context: SourceContext, extracted: AnnotationResult): Promise<void> {
+    const extractedEventId = randomUUID();
+    const artistId = await this.getArtistIdForRawItem(rawItem);
+
+    this.db.transaction((tx) => {
+      tx.insert(extractedEvents).values({
+        id: extractedEventId,
+        rawItemId: rawItem.id,
+        artistId,
+        title: extracted.title,
+        description: extracted.description,
+        startTime: null,
+        endTime: null,
+        venueId: null,
+        venueName: null,
+        venueUrl: null,
+        // For annotations, `type` carries the annotation category. The
+        // record_kind discriminator tells callers which enum to read it as.
+        type: extracted.category,
+        recordKind: "annotation",
+        eventScope: "unknown",
+        parentEventHint: extracted.parent_event_hint,
+        isCancelled: false,
+        tags: extracted.tags,
         publishTime: context.publishTime,
         author: context.author,
         sourceUrl: context.url,

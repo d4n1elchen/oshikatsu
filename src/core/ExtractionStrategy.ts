@@ -8,7 +8,24 @@ import {
 export const EVENT_TYPES = ["live_stream", "merchandise", "release", "concert", "broadcast", "collaboration", "side_event"] as const;
 export const EVENT_SCOPES = ["main", "sub", "unknown"] as const;
 
-export const EventExtractionSchema = z.object({
+/**
+ * Annotations are extracted records that point at an *existing* event
+ * (a milestone for a release, press coverage of a concert, a recap
+ * after the fact, a reminder restating an already-announced activity).
+ * They land in extracted_events with record_kind='annotation' and reuse
+ * parent_event_hint as the linkage hint.
+ */
+export const ANNOTATION_CATEGORIES = ["milestone", "press_coverage", "recap", "reminder_repost"] as const;
+
+/**
+ * Orphan posts: not events and not tied to any existing event. They
+ * terminate at raw_items.status='not_an_event' and never produce an
+ * extracted_events row.
+ */
+export const NON_EVENT_CATEGORIES = ["mood", "fan_engagement", "other"] as const;
+
+const EventBranchSchema = z.object({
+  kind: z.literal("event"),
   title: z.string().min(1).describe("A short, descriptive title for the event. Preserve proper nouns and official titles in their original written form."),
   description: z.string().min(1).describe("A detailed English summary of the announcement. Preserve proper nouns and official titles in their original written form."),
   start_time: z.string().optional().describe("ISO 8601 timestamp of when the extracted event actually starts, if explicitly available or safely inferable from the source."),
@@ -25,9 +42,43 @@ export const EventExtractionSchema = z.object({
   tags: z.array(z.string()).default([]).describe("List of relevant tags"),
 });
 
+const AnnotationBranchSchema = z.object({
+  kind: z.literal("annotation"),
+  title: z.string().min(1).describe("Short, descriptive title for the annotation. Preserve proper nouns and official titles in their original written form."),
+  description: z.string().min(1).describe("English summary of what the post says about the related event."),
+  category: z.enum(ANNOTATION_CATEGORIES).describe("Which kind of annotation this is."),
+  parent_event_hint: z.string().min(1).describe("Free-form name or descriptor of the existing event the post relates to. Required for annotations — the whole point of this branch is the linkage."),
+  related_links: z.array(z.object({
+    url: z.string(),
+    title: z.string().optional(),
+  })).default([]).describe("Annotation-relevant links."),
+  tags: z.array(z.string()).default([]).describe("Short labels such as artist names, group names, platforms, product names, or campaign names."),
+});
+
+const NotAnEventBranchSchema = z.object({
+  kind: z.literal("not_an_event"),
+  category: z.enum(NON_EVENT_CATEGORIES).describe("Which orphan-post bucket this falls into."),
+  reason: z.string().min(1).describe("Short explanation of why the post is neither an event nor an annotation of one."),
+});
+
+export const ExtractionOutputSchema = z.discriminatedUnion("kind", [
+  EventBranchSchema,
+  AnnotationBranchSchema,
+  NotAnEventBranchSchema,
+]);
+
+// Backwards-compatible alias for callers that only care about the event
+// branch shape (e.g. tests, sanitize).
+export const EventExtractionSchema = EventBranchSchema;
+
 export type EventType = typeof EVENT_TYPES[number];
 export type EventScope = typeof EVENT_SCOPES[number];
-export type EventExtractionResult = z.infer<typeof EventExtractionSchema>;
+export type AnnotationCategory = typeof ANNOTATION_CATEGORIES[number];
+export type NonEventCategory = typeof NON_EVENT_CATEGORIES[number];
+export type EventExtractionResult = z.infer<typeof EventBranchSchema>;
+export type AnnotationResult = z.infer<typeof AnnotationBranchSchema>;
+export type NotAnEventResult = z.infer<typeof NotAnEventBranchSchema>;
+export type ExtractionOutput = z.infer<typeof ExtractionOutputSchema>;
 
 export interface SourceContext {
   text: string;
@@ -77,7 +128,7 @@ export class DefaultExtractionStrategy implements ExtractionStrategy {
   }
 
   buildPrompt(context: SourceContext): string {
-    return `You parse social media announcements into structured event records for a fan activity tracker.
+    return `You parse social media posts for a fan activity tracker. Each post either announces a concrete activity (an event) or it does not. Your job is to classify which, and for events, extract the structured fields.
 
 Input text:
 "${context.rawContent}"
@@ -85,16 +136,21 @@ Input text:
 Related link candidates:
 ${formatRelatedLinkCandidates(context.relatedLinkCandidates)}
 
+Output shape (pick exactly one):
+- kind="event": the post announces, updates, schedules, cancels, or links to a specific activity in one of the allowed event types.
+- kind="annotation": the post is *about* an existing event but does not itself announce a new activity. Use this for milestones (counts, rankings, playlist additions), press coverage, recaps, and reminder reposts. The post must reference an existing event clearly enough to name it.
+- kind="not_an_event": the post is neither an event nor tied to a specific existing event. Use this for greetings, personal thoughts, fan-content retweets, and other orphan posts. This is not a failure case; it is a normal classification.
+
 Language rules:
 - Write explanatory prose in English.
 - Do not translate, romanize, or rewrite proper nouns.
 - Preserve artist names, group names, concert titles, song titles, album titles, venue names, campaign names, hashtags, and quoted official titles exactly as written in the source text.
 - If a title combines an English summary with an official name, keep the official name in its original written form.
 
-Extraction rules:
+Event branch (kind="event"):
 - Extract the specific activity described by the source post. A post may announce a main event, or it may announce a sub-event such as a merch sale, ticket lottery, meet-and-greet, pre-show, after-show, campaign, booth, or stream related to a larger main event.
 - start_time should be an ISO 8601 timestamp for when the extracted activity happens, if the source gives an explicit time or enough context to infer it safely.
-- start_time and end_time MUST include a timezone offset (e.g. "2026-05-16T18:00:00+09:00" for JST, or trailing "Z" for UTC). If the source post does not state a timezone explicitly, infer it from the language, location, or venue (e.g. Japanese fan announcements default to +09:00 / JST). Never emit a bare local time like "2026-05-16T18:00:00".
+- start_time and end_time MUST include a timezone offset (e.g. "2026-05-16T18:00:00+09:00" for JST, or trailing "Z" for UTC). If the source post does not state a timezone explicitly, infer it from the language, location, or venue. Never emit a bare local time like "2026-05-16T18:00:00".
 - Leave start_time unset when the source announces a real activity but does not provide the activity's own time. Do not use the source publish time as start_time.
 - end_time should only be set when an explicit end time is available.
 - related_links must contain only event-relevant candidate URLs and optional human-readable titles.
@@ -102,18 +158,36 @@ Extraction rules:
 - event_scope must be "main" for a standalone/main event, "sub" for an activity that belongs under a larger event, or "unknown" when the relationship is unclear.
 - parent_event_hint should be set only when event_scope is "sub" and the source names or clearly implies the larger/main event. Use the official title exactly as written. If the main event is not named, leave parent_event_hint unset.
 - tags should be short labels such as artist names, group names, platforms, product names, or campaign names.
-- Classify the underlying activity being announced, not the wording of the post. For example, an informational post announcing a scheduled concert is type "concert"; a post announcing a merch sale is type "merchandise".
-- Do not invent a main event that is not named or clearly implied by the source. It is okay to extract a sub-event with parent_event_hint unset.
-- Do not use a generic "announcement" category. If the post does not announce, update, schedule, cancel, or link to a specific activity in one of the allowed event types, return an empty JSON object so validation fails.
+- Classify the underlying activity being announced, not the wording of the post. An informational post about a scheduled concert is type "concert"; a post about a merch sale is type "merchandise".
+- Do not invent a main event that is not named or clearly implied by the source. It is acceptable to extract a sub-event with parent_event_hint unset.
 
-Venue rules:
+Annotation branch (kind="annotation"):
+- Use when the post comments on, measures, or references a specific existing event without itself being an event announcement.
+- Pick exactly one category, the most specific that fits:
+  - milestone: a count, ranking, threshold, chart position, playlist addition, or other measurement update for an existing activity.
+  - press_coverage: third-party coverage (interview, feature, broadcast mention) of an existing activity.
+  - recap: backward-looking thanks, summary, or report about a completed activity.
+  - reminder_repost: restates an already-announced activity without new information (no new time, place, link, lineup, or status change).
+- parent_event_hint is required and is free-form text naming the existing event being referenced. Use the official title exactly as written when present.
+- title and description summarize what the post says about the event.
+- Do not use the annotation branch when the related event cannot be identified from the post; use kind="not_an_event" instead.
+
+Orphan branch (kind="not_an_event"):
+- Pick exactly one category, the most specific that fits:
+  - mood: greetings, personal thoughts, weather, well-wishes, or any post not tied to a specific activity.
+  - fan_engagement: retweets of fan content, shoutouts, replies, or interactions that do not announce a new activity.
+  - other: not an event, annotation, or any of the above categories.
+- reason is a short English explanation of the choice.
+- Do not classify a post as not_an_event just because details are sparse. If the post announces a specific activity, use kind="event". If the post references a specific existing event, use kind="annotation".
+
+Venue rules (event branch only):
 - venue_name and venue_url describe where the event takes place.
-- For physical venues, venue_name is the venue's actual name (e.g., "Tokyo Dome", "Yokohama Arena") and venue_url is the venue's official URL when available.
-- For virtual platforms (YouTube, Twitch, NicoNico, Streaming+, Z-aN, etc.):
-  - Prefer the channel or profile URL as venue_url (e.g., https://youtube.com/@channel_name).
-  - Put the specific stream URL (e.g., https://youtube.com/watch?v=...) into related_links instead.
+- For physical venues, venue_name is the venue's actual name and venue_url is the venue's official URL when available.
+- For virtual platforms:
+  - Prefer the channel or profile URL as venue_url.
+  - Put the specific stream URL into related_links instead.
   - If only a stream URL is available and no channel URL can be inferred, you may use the stream URL as venue_url.
-  - Never set venue_name to a bare platform name like "YouTube" without an accompanying venue_url. If no URL is available, leave both venue_name and venue_url unset.`;
+  - Never set venue_name to a bare platform name without an accompanying venue_url. If no URL is available, leave both venue_name and venue_url unset.`;
   }
 
   sanitize(_rawItem: any, _context: SourceContext, extracted: EventExtractionResult): EventExtractionResult {
@@ -125,6 +199,7 @@ Venue rules:
     const eventScope = EVENT_SCOPES.includes(extracted.event_scope) ? extracted.event_scope : "unknown";
 
     return {
+      kind: "event",
       title,
       description,
       start_time: startTime?.toISOString(),
@@ -138,6 +213,24 @@ Venue rules:
       tags: Array.isArray(extracted.tags) ? extracted.tags.map((tag) => tag.trim()).filter(Boolean) : [],
     };
   }
+}
+
+/**
+ * Annotations don't have source-specific shape divergence yet, so the
+ * sanitizer lives as a free function rather than on the strategy
+ * interface. Promote to the strategy when a real source-specific need
+ * appears.
+ */
+export function sanitizeAnnotation(context: SourceContext, extracted: AnnotationResult): AnnotationResult {
+  return {
+    kind: "annotation",
+    title: requireNonEmpty(extracted.title, "title"),
+    description: requireNonEmpty(extracted.description, "description"),
+    category: extracted.category,
+    parent_event_hint: requireNonEmpty(extracted.parent_event_hint, "parent_event_hint"),
+    related_links: mergeRelatedLinks(extracted.related_links, context.relatedLinkCandidates),
+    tags: Array.isArray(extracted.tags) ? extracted.tags.map((tag) => tag.trim()).filter(Boolean) : [],
+  };
 }
 
 export class TwitterExtractionStrategy extends DefaultExtractionStrategy {

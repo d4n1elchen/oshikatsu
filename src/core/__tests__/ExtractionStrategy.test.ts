@@ -132,6 +132,7 @@ test("Twitter buildContext parses created_at into a Date", () => {
 test("sanitize trims whitespace from title and description", () => {
   const ctx = twitter.buildContext(fakeTwitterRawItem())!;
   const result = twitter.sanitize(fakeTwitterRawItem(), ctx, {
+    kind: "event",
     title: "  Concert  ",
     description: "  A live show  ",
     type: "concert",
@@ -147,6 +148,7 @@ test("sanitize throws on empty title", () => {
   const ctx = twitter.buildContext(fakeTwitterRawItem())!;
   assert.throws(() =>
     twitter.sanitize(fakeTwitterRawItem(), ctx, {
+      kind: "event",
       title: "   ",
       description: "ok",
       type: "concert",
@@ -164,6 +166,7 @@ test("sanitize merges related_links from LLM with link candidates from context",
   const ctx = twitter.buildContext(item)!;
 
   const result = twitter.sanitize(item, ctx, {
+    kind: "event",
     title: "X",
     description: "Y",
     type: "concert",
@@ -180,6 +183,7 @@ test("sanitize merges related_links from LLM with link candidates from context",
 test("sanitize drops parent_event_hint when event_scope is not 'sub'", () => {
   const ctx = twitter.buildContext(fakeTwitterRawItem())!;
   const result = twitter.sanitize(fakeTwitterRawItem(), ctx, {
+    kind: "event",
     title: "X",
     description: "Y",
     type: "concert",
@@ -194,6 +198,7 @@ test("sanitize drops parent_event_hint when event_scope is not 'sub'", () => {
 test("sanitize keeps parent_event_hint when event_scope is 'sub'", () => {
   const ctx = twitter.buildContext(fakeTwitterRawItem())!;
   const result = twitter.sanitize(fakeTwitterRawItem(), ctx, {
+    kind: "event",
     title: "Pre-show",
     description: "Booth",
     type: "side_event",
@@ -208,6 +213,7 @@ test("sanitize keeps parent_event_hint when event_scope is 'sub'", () => {
 test("sanitize parses ISO start_time and round-trips through Date", () => {
   const ctx = twitter.buildContext(fakeTwitterRawItem())!;
   const result = twitter.sanitize(fakeTwitterRawItem(), ctx, {
+    kind: "event",
     title: "X",
     description: "Y",
     type: "concert",
@@ -223,6 +229,7 @@ test("sanitize throws on unparseable start_time", () => {
   const ctx = twitter.buildContext(fakeTwitterRawItem())!;
   assert.throws(() =>
     twitter.sanitize(fakeTwitterRawItem(), ctx, {
+      kind: "event",
       title: "X",
       description: "Y",
       type: "concert",
@@ -238,6 +245,7 @@ test("sanitize applies fallbackTimezone when start_time has no offset", () => {
   const ctx = twitter.buildContext(fakeTwitterRawItem())!;
   ctx.fallbackTimezone = "Asia/Tokyo";
   const result = twitter.sanitize(fakeTwitterRawItem(), ctx, {
+    kind: "event",
     title: "X",
     description: "Y",
     type: "concert",
@@ -256,6 +264,7 @@ test("sanitize throws MissingTimezoneError when offset-less and no fallback", ()
   assert.throws(
     () =>
       twitter.sanitize(fakeTwitterRawItem(), ctx, {
+        kind: "event",
         title: "X",
         description: "Y",
         type: "concert",

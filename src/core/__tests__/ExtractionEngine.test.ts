@@ -14,7 +14,7 @@ import * as schema from "../../db/schema";
 import { ExtractionEngine } from "../ExtractionEngine";
 import { RawStorage } from "../RawStorage";
 import type { LLMProvider } from "../LLMProvider";
-import type { EventExtractionResult } from "../ExtractionStrategy";
+import type { EventExtractionResult, ExtractionOutput } from "../ExtractionStrategy";
 
 // ---- in-memory DB ----
 
@@ -63,6 +63,7 @@ function createTestDb() {
       start_time INTEGER, end_time INTEGER,
       venue_id TEXT, venue_name TEXT, venue_url TEXT,
       type TEXT NOT NULL,
+      record_kind TEXT NOT NULL DEFAULT 'event',
       event_scope TEXT NOT NULL DEFAULT 'unknown',
       parent_event_hint TEXT,
       is_cancelled INTEGER NOT NULL DEFAULT 0,
@@ -88,7 +89,7 @@ type TestDb = ReturnType<typeof createTestDb>;
 const NOW = new Date("2025-06-01T12:00:00Z");
 
 class FakeLLM implements LLMProvider {
-  constructor(private behavior: () => Promise<EventExtractionResult> | EventExtractionResult) {}
+  constructor(private behavior: () => Promise<ExtractionOutput> | ExtractionOutput) {}
   async extract<T>(_text: string, _schema: ZodType<T>, _systemPrompt: string): Promise<T> {
     return (await this.behavior()) as unknown as T;
   }
@@ -135,6 +136,7 @@ function insertRawTwitterItem(db: TestDb, opts: {
 
 function defaultExtraction(overrides: Partial<EventExtractionResult> = {}): EventExtractionResult {
   return {
+    kind: "event",
     title: "Tokyo Dome Concert",
     description: "Live show tonight",
     type: "concert",
@@ -435,4 +437,65 @@ test("venue is NOT auto-created when extraction has bare 'YouTube' name and no U
   const events = await db.select().from(schema.extractedEvents);
   assert.equal(events[0]!.venueId, null);
   assert.equal(events[0]!.venueName, "YouTube");
+});
+
+// ---- 7. Annotation and orphan classification ----
+
+test("annotation response writes an extracted_events row with record_kind='annotation' and parent_event_hint", async () => {
+  const db = createTestDb();
+  const id = insertRawTwitterItem(db);
+
+  const llm = new FakeLLM(() => ({
+    kind: "annotation" as const,
+    category: "milestone" as const,
+    title: "1M streams milestone",
+    description: "Post celebrates the song crossing 1M streams.",
+    parent_event_hint: "放課後ボーダーライン",
+    related_links: [],
+    tags: ["streaming"],
+  }));
+  const engine = new ExtractionEngine(llm, { db: db as any });
+  const item = (await db.select().from(schema.rawItems))[0]!;
+
+  const ok = await engine.processItem(item);
+  assert.equal(ok, true);
+
+  const records = await db.select().from(schema.extractedEvents);
+  assert.equal(records.length, 1);
+  const r = records[0]!;
+  assert.equal((r as any).recordKind, "annotation");
+  assert.equal(r.type, "milestone", "annotation category lives in `type` and is disambiguated by record_kind");
+  assert.equal(r.parentEventHint, "放課後ボーダーライン");
+  assert.equal(r.startTime, null);
+  assert.equal(r.endTime, null);
+  assert.equal(r.venueId, null);
+
+  const updated = await db.select().from(schema.rawItems).where(eq(schema.rawItems.id, id));
+  assert.equal(updated[0]!.status, "processed");
+});
+
+test("not_an_event response moves the raw item to status='not_an_event' without creating an extracted_events row", async () => {
+  const db = createTestDb();
+  const id = insertRawTwitterItem(db);
+
+  const llm = new FakeLLM(() => ({
+    kind: "not_an_event" as const,
+    category: "mood" as const,
+    reason: "morning greeting, no activity announced",
+  }));
+  const engine = new ExtractionEngine(llm, { db: db as any });
+  const item = (await db.select().from(schema.rawItems))[0]!;
+
+  const ok = await engine.processItem(item);
+  // processItem returns true on a deliberate non-event; counts as `processed`
+  // in the batch summary, not as `failed`.
+  assert.equal(ok, true);
+
+  const events = await db.select().from(schema.extractedEvents);
+  assert.equal(events.length, 0, "no extracted_events row for orphan posts");
+
+  const updated = await db.select().from(schema.rawItems).where(eq(schema.rawItems.id, id));
+  assert.equal(updated[0]!.status, "not_an_event");
+  assert.equal(updated[0]!.errorClass, null);
+  assert.match(updated[0]!.errorMessage ?? "", /morning greeting/);
 });

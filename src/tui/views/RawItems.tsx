@@ -4,7 +4,7 @@ import { RawStorage } from "../../core/RawStorage";
 import type { RawItem } from "../../core/types";
 
 export default function RawItems() {
-  const [stats, setStats] = useState<{ total: number; new: number; processed: number; error: number } | null>(null);
+  const [stats, setStats] = useState<{ total: number; new: number; processed: number; error: number; notAnEvent: number } | null>(null);
   const [recentItems, setRecentItems] = useState<RawItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [cursor, setCursor] = useState(0);
@@ -96,6 +96,10 @@ export default function RawItems() {
             <Text dimColor>Errors</Text>
             <Text bold color="red">{stats.error}</Text>
           </Box>
+          <Box flexDirection="column">
+            <Text dimColor>Not an event</Text>
+            <Text bold color="gray">{stats.notAnEvent}</Text>
+          </Box>
         </Box>
       )}
 
@@ -167,7 +171,11 @@ export default function RawItems() {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const color = status === "new" ? "cyan" : status === "processed" ? "green" : "red";
+  const color =
+    status === "new" ? "cyan" :
+    status === "processed" ? "green" :
+    status === "not_an_event" ? "gray" :
+    "red";
   return <Text color={color}>[{status}]</Text>;
 }
 
