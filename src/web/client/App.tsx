@@ -5,6 +5,7 @@ import { Sidebar } from "./Sidebar";
 import { StreamsRail } from "./StreamsRail";
 import { WeekStrip } from "./WeekStrip";
 import { useUrlParam } from "./useUrlState";
+import { formatEventType } from "./format";
 
 const POLL_INTERVAL_MS = 30_000;
 
@@ -102,6 +103,7 @@ export function App() {
                 onClick={() => setEventId(ev.id)}
               >
                 <div className="event-title">
+                  {ev.type && <span className="badge type">{formatEventType(ev.type)}</span>}
                   {ev.isCancelled ? <s>{ev.title}</s> : ev.title}
                 </div>
                 <div className="event-meta">

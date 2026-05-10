@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { fetchEventDetail, type EventDetailPayload } from "./api";
+import { formatEventType } from "./format";
 
 type Props = {
   eventId: string;
@@ -166,10 +167,6 @@ function formatDateTime(startIso: string, endIso: string | null): string {
   return sameDay
     ? `${startStr} – ${end.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`
     : `${startStr} – ${end.toLocaleString()}`;
-}
-
-function formatEventType(type: string): string {
-  return type.split("_").map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
 }
 
 function formatRelative(iso: string): string {
