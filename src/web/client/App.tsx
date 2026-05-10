@@ -130,11 +130,23 @@ export function App() {
         <ul className="timeline-list">
           {data.timeline.map((post) => (
             <li key={post.id} className="timeline-post">
-              <div className="timeline-head">
-                <span className="timeline-name">{post.artistName}</span>
-                <span className="timeline-time">{formatRelative(post.postedAt ?? post.fetchedAt)}</span>
-              </div>
-              <div className="timeline-text">{extractText(post.rawData)}</div>
+              {post.sourceUrl ? (
+                <a className="timeline-link" href={post.sourceUrl} target="_blank" rel="noopener noreferrer">
+                  <div className="timeline-head">
+                    <span className="timeline-name">{post.artistName}</span>
+                    <span className="timeline-time">{formatRelative(post.postedAt ?? post.fetchedAt)}</span>
+                  </div>
+                  <div className="timeline-text">{extractText(post.rawData)}</div>
+                </a>
+              ) : (
+                <>
+                  <div className="timeline-head">
+                    <span className="timeline-name">{post.artistName}</span>
+                    <span className="timeline-time">{formatRelative(post.postedAt ?? post.fetchedAt)}</span>
+                  </div>
+                  <div className="timeline-text">{extractText(post.rawData)}</div>
+                </>
+              )}
             </li>
           ))}
         </ul>

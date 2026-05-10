@@ -24,7 +24,7 @@ export class RawStorage {
   async saveItems(
     watchTargetId: string,
     sourceName: string,
-    items: Array<{ sourceId: string; rawData: any; postedAt?: Date | null }>
+    items: Array<{ sourceId: string; sourceUrl?: string | null; rawData: any; postedAt?: Date | null }>
   ): Promise<number> {
     if (items.length === 0) return 0;
 
@@ -33,6 +33,7 @@ export class RawStorage {
       watchTargetId,
       sourceName,
       sourceId: item.sourceId,
+      sourceUrl: item.sourceUrl ?? null,
       rawData: item.rawData,
       postedAt: item.postedAt ?? null,
       fetchedAt: new Date(),

@@ -109,9 +109,16 @@ export class TwitterConnector implements BaseConnector {
                   // We found a tweet! Map it to our generic RawItem format
                   const rawTweetData = entry.content?.itemContent?.tweet_results?.result;
                   if (rawTweetData && rawTweetData.rest_id) {
+                    // Author handle for the URL: prefer the actual tweet
+                    // author from the response (handles retweets/quotes
+                    // correctly), fall back to the queried username.
+                    const authorHandle =
+                      rawTweetData?.core?.user_results?.result?.legacy?.screen_name ||
+                      username;
                     rawItems.push({
                       sourceName: "twitter",
                       sourceId: rawTweetData.rest_id,
+                      sourceUrl: `https://x.com/${authorHandle}/status/${rawTweetData.rest_id}`,
                       rawData: rawTweetData,
                       postedAt: parseTweetCreatedAt(rawTweetData?.legacy?.created_at),
                     });

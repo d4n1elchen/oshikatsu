@@ -17,6 +17,7 @@ export type RawItemTimelineEntry = {
   id: string;
   sourceName: string;
   sourceId: string;
+  sourceUrl: string | null;
   /** Source-specific payload (e.g. tweet shape for Twitter). The web UI's
    *  render layer is responsible for extracting fields per `sourceName`. */
   rawData: Record<string, unknown>;
@@ -55,6 +56,7 @@ export async function listRecentRawItems(
       id: rawItems.id,
       sourceName: rawItems.sourceName,
       sourceId: rawItems.sourceId,
+      sourceUrl: rawItems.sourceUrl,
       rawData: rawItems.rawData,
       postedAt: rawItems.postedAt,
       fetchedAt: rawItems.fetchedAt,

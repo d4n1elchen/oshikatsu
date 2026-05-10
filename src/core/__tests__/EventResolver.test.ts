@@ -59,6 +59,7 @@ function createTestDb() {
       watch_target_id TEXT NOT NULL,
       source_name TEXT NOT NULL,
       source_id TEXT NOT NULL UNIQUE,
+      source_url TEXT,
       raw_data TEXT NOT NULL,
       posted_at INTEGER,
       fetched_at INTEGER NOT NULL,

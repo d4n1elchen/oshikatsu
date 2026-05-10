@@ -71,6 +71,7 @@ export type RawItemDTO = {
   id: string;
   sourceName: string;
   sourceId: string;
+  sourceUrl: string | null;
   rawData: Record<string, unknown>;
   /** Original post time on the source platform (null when not derivable). */
   postedAt: string | null;

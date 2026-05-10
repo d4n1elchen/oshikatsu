@@ -41,6 +41,7 @@ export const rawItems = sqliteTable("raw_items", {
   watchTargetId: text("watch_target_id").notNull().references(() => watchTargets.id, { onDelete: "cascade" }),
   sourceName: text("source_name").notNull(),
   sourceId: text("source_id").notNull(),
+  sourceUrl: text("source_url"),
   rawData: text("raw_data", { mode: "json" }).$type<Record<string, any>>().notNull(),
   /** Original post time on the source platform, populated at ingestion
    *  by the connector when derivable. Falls back to fetchedAt for display. */

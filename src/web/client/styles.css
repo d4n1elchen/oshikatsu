@@ -512,6 +512,9 @@ body {
 .timeline-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 14px; }
 .timeline-post { padding-bottom: 14px; border-bottom: 1px solid var(--border-soft); }
 .timeline-post:last-child { border-bottom: none; }
+.timeline-link { display: block; color: inherit; text-decoration: none; }
+.timeline-link:hover .timeline-text { color: var(--text); }
+.timeline-link:hover .timeline-name { text-decoration: underline; }
 .timeline-head { display: flex; justify-content: space-between; margin-bottom: 4px; }
 .timeline-name { font-size: 12px; font-weight: 600; }
 .timeline-time { color: var(--text-faint); font-size: 11px; font-variant-numeric: tabular-nums; }
