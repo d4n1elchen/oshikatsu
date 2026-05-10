@@ -48,6 +48,7 @@ export function EventModal({ eventId, onClose, onOpenEvent }: Props) {
             <header className="modal-header">
               <h2 className="modal-title">{detail.isCancelled ? <s>{detail.title}</s> : detail.title}</h2>
               <div className="modal-meta">
+                {detail.type && <span className="badge type">{formatEventType(detail.type)}</span>}
                 {detail.artistName && <span>{detail.artistName}</span>}
                 {detail.venue && (
                   <>
@@ -165,6 +166,10 @@ function formatDateTime(startIso: string, endIso: string | null): string {
   return sameDay
     ? `${startStr} – ${end.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`
     : `${startStr} – ${end.toLocaleString()}`;
+}
+
+function formatEventType(type: string): string {
+  return type.split("_").map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
 }
 
 function formatRelative(iso: string): string {
