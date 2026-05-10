@@ -1,4 +1,4 @@
-import { count, inArray, lt } from "drizzle-orm";
+import { count, lt, ne } from "drizzle-orm";
 import { db } from "../db";
 import {
   artists,
@@ -241,17 +241,21 @@ async function resetVenueAliases(dryRun: boolean): Promise<void> {
 }
 
 async function resetExtractedEvents(dryRun: boolean): Promise<void> {
-  const events = await db
-    .select({ id: extractedEvents.id, rawItemId: extractedEvents.rawItemId })
-    .from(extractedEvents);
-
-  const eventCount = events.length;
-  const rawItemIds = unique(events.map((e) => e.rawItemId).filter((id): id is string => Boolean(id)));
+  const eventCount = await tableCount(extractedEvents);
   const normCount = await tableCount(normalizedEvents);
   const decisionCount = await tableCount(eventResolutionDecisions);
 
+  // Reset every non-new raw_item, not only the ones with a successful
+  // extracted_event. Failed extractions land at status='error' with no
+  // extracted_events row; without this, those rows would stay 'error' and
+  // never be retried by the extractor on its next pass.
+  const rawToReset = await db
+    .select({ id: rawItems.id })
+    .from(rawItems)
+    .where(ne(rawItems.status, "new"));
+
   console.log(`Will delete ${eventCount} extracted event(s).`);
-  console.log(`Will reset ${rawItemIds.length} linked raw item(s) to status='new'.`);
+  console.log(`Will reset ${rawToReset.length} non-new raw item(s) to status='new'.`);
   console.log(`Will also wipe resolution layer: ${normCount} normalized event(s), ${decisionCount} decision(s).`);
 
   if (dryRun) {
@@ -259,7 +263,7 @@ async function resetExtractedEvents(dryRun: boolean): Promise<void> {
     return;
   }
 
-  if (eventCount === 0 && normCount === 0 && decisionCount === 0) {
+  if (eventCount === 0 && normCount === 0 && decisionCount === 0 && rawToReset.length === 0) {
     console.log("Nothing to do.");
     return;
   }
@@ -268,12 +272,10 @@ async function resetExtractedEvents(dryRun: boolean): Promise<void> {
     // Delete normalized layer first (decisions reference both extracted and normalized)
     tx.delete(normalizedEvents).run();
     tx.delete(extractedEvents).run();
-    if (rawItemIds.length > 0) {
-      tx.update(rawItems)
-        .set({ status: "new", errorMessage: null })
-        .where(inArray(rawItems.id, rawItemIds))
-        .run();
-    }
+    tx.update(rawItems)
+      .set({ status: "new", errorMessage: null, errorClass: null })
+      .where(ne(rawItems.status, "new"))
+      .run();
   });
 
   console.log("Done.");
@@ -489,10 +491,6 @@ async function main(): Promise<void> {
     case "all": return resetAll(args.dryRun);
     case "everything": return resetEverything(args.dryRun);
   }
-}
-
-function unique(values: string[]): string[] {
-  return [...new Set(values)];
 }
 
 main().catch((error) => {
