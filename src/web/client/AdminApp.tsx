@@ -480,7 +480,7 @@ function OrphanRow({
           </button>
         </div>
       </div>
-      <div className="orphan-text">{text}</div>
+      <div className={`orphan-text ${expanded ? "expanded" : ""}`} onClick={() => setExpanded(!expanded)}>{text}</div>
       {expanded && item.reason && (
         <div className="orphan-reason">
           <span className="dim">LLM reason:</span> {item.reason}
@@ -508,7 +508,10 @@ function orphanPreview(rawData: Record<string, unknown>): string {
 }
 
 function extractAuthorHandle(rawData: Record<string, unknown>): string | null {
-  const handle = (rawData as any)?.core?.user_results?.result?.legacy?.screen_name;
+  // X's GraphQL moved screen_name from `result.legacy` to `result.core` for
+  // newer payloads; check both so we cover historical and current rows.
+  const user = (rawData as any)?.core?.user_results?.result;
+  const handle = user?.core?.screen_name ?? user?.legacy?.screen_name;
   return typeof handle === "string" && handle.length > 0 ? handle : null;
 }
 
