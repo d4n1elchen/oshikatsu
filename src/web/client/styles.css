@@ -485,6 +485,26 @@ body {
 .badge { font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 3px; }
 .badge.cancelled { background: var(--bg-elev-3); color: var(--text-faint); }
 .badge.type { background: var(--accent-soft); color: var(--accent); text-transform: uppercase; letter-spacing: 0.04em; }
+.badge.annotation { text-transform: uppercase; letter-spacing: 0.04em; }
+.badge.annotation.milestone { background: var(--accent-soft); color: var(--accent); }
+.badge.annotation.press_coverage { background: var(--bg-elev-3); color: var(--text-dim); }
+.badge.annotation.recap { background: var(--bg-elev-3); color: var(--text-dim); }
+.badge.annotation.reminder_repost { background: var(--bg-elev-3); color: var(--text-faint); }
+
+.annotation-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.annotation-item {
+  padding: 10px 12px;
+  background: var(--bg-elev-2);
+  border-radius: 6px;
+  border-left: 2px solid var(--border);
+}
+.annotation-item.category-milestone { border-left-color: var(--accent); }
+.annotation-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; font-size: 12px; }
+.annotation-head a { color: var(--accent); text-decoration: none; font-weight: 500; }
+.annotation-head a:hover { text-decoration: underline; }
+.annotation-head .source-time { margin-left: auto; }
+.annotation-title { font-size: 13px; color: var(--text); margin-bottom: 2px; }
+.annotation-description { font-size: 12px; color: var(--text-dim); line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
 
 .event-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
 .event-row { transition: border-color 0.12s ease, transform 0.12s ease; }

@@ -171,7 +171,7 @@ export const normalizedEventSources = sqliteTable("normalized_event_sources", {
   id: text("id").primaryKey(),
   normalizedEventId: text("normalized_event_id").notNull().references(() => normalizedEvents.id, { onDelete: "cascade" }),
   extractedEventId: text("extracted_event_id").notNull().references(() => extractedEvents.id, { onDelete: "cascade" }),
-  role: text("role", { enum: ["primary", "merged", "review_candidate", "ignored"] }).notNull(),
+  role: text("role", { enum: ["primary", "merged", "review_candidate", "ignored", "annotation"] }).notNull(),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 }, (table) => [
   uniqueIndex("idx_normalized_event_sources_dedup").on(table.normalizedEventId, table.extractedEventId),
@@ -182,7 +182,7 @@ export const eventResolutionDecisions = sqliteTable("event_resolution_decisions"
   id: text("id").primaryKey(),
   candidateExtractedEventId: text("candidate_extracted_event_id").notNull().references(() => extractedEvents.id, { onDelete: "cascade" }),
   matchedNormalizedEventId: text("matched_normalized_event_id").references(() => normalizedEvents.id, { onDelete: "set null" }),
-  decision: text("decision", { enum: ["new", "merged", "linked_as_sub", "needs_review", "no_match", "ignored"] }).notNull(),
+  decision: text("decision", { enum: ["new", "merged", "linked_as_sub", "needs_review", "no_match", "ignored", "annotation_attached", "annotation_no_match"] }).notNull(),
   score: real("score"),
   signals: text("signals", { mode: "json" }).$type<Record<string, unknown>>().notNull(),
   reason: text("reason").notNull(),

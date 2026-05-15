@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, ne } from "drizzle-orm";
 import { db as defaultDb } from "../../db";
 import {
   artists,
@@ -135,7 +135,12 @@ export async function listNormalizedEvents(
         cnt: count(),
       })
       .from(normalizedEventSources)
-      .where(inArray(normalizedEventSources.normalizedEventId, ids))
+      .where(
+        and(
+          inArray(normalizedEventSources.normalizedEventId, ids),
+          ne(normalizedEventSources.role, "annotation")
+        )
+      )
       .groupBy(normalizedEventSources.normalizedEventId),
 
     dbi
@@ -253,10 +258,24 @@ export type EventSubEntry = {
   isCancelled: boolean;
 };
 
+export type AnnotationCategory = "milestone" | "press_coverage" | "recap" | "reminder_repost";
+
+export type AnnotationEntry = {
+  extractedEventId: string;
+  category: AnnotationCategory;
+  title: string;
+  description: string;
+  author: string;
+  sourceUrl: string;
+  publishTime: Date;
+  rawContent: string;
+};
+
 export type NormalizedEventDetail = NormalizedEventListItem & {
   sources: EventSourceEntry[];
   relatedLinks: EventRelatedLink[];
   subEvents: EventSubEntry[];
+  annotations: AnnotationEntry[];
 };
 
 /**
@@ -272,7 +291,7 @@ export async function getNormalizedEventDetail(
   const [event] = await listNormalizedEvents({ id, limit: 1 }, dbi);
   if (!event) return null;
 
-  const [sources, links, subs] = await Promise.all([
+  const [sources, links, subs, annotations] = await Promise.all([
     dbi
       .select({
         extractedEventId: normalizedEventSources.extractedEventId,
@@ -284,7 +303,12 @@ export async function getNormalizedEventDetail(
       })
       .from(normalizedEventSources)
       .innerJoin(extractedEvents, eq(normalizedEventSources.extractedEventId, extractedEvents.id))
-      .where(eq(normalizedEventSources.normalizedEventId, id))
+      .where(
+        and(
+          eq(normalizedEventSources.normalizedEventId, id),
+          ne(normalizedEventSources.role, "annotation")
+        )
+      )
       .orderBy(desc(extractedEvents.publishTime)),
 
     dbi
@@ -298,7 +322,12 @@ export async function getNormalizedEventDetail(
         normalizedEventSources,
         eq(normalizedEventSources.extractedEventId, extractedEventRelatedLinks.extractedEventId)
       )
-      .where(eq(normalizedEventSources.normalizedEventId, id)),
+      .where(
+        and(
+          eq(normalizedEventSources.normalizedEventId, id),
+          ne(normalizedEventSources.role, "annotation")
+        )
+      ),
 
     dbi
       .select({
@@ -310,6 +339,8 @@ export async function getNormalizedEventDetail(
       .from(normalizedEvents)
       .where(eq(normalizedEvents.parentEventId, id))
       .orderBy(asc(normalizedEvents.startTime)),
+
+    listAnnotationsForEvent(id, dbi),
   ]);
 
   // Dedupe related links by URL.
@@ -335,5 +366,49 @@ export async function getNormalizedEventDetail(
       startTime: s.startTime,
       isCancelled: s.isCancelled,
     })),
+    annotations,
   };
+}
+
+/**
+ * Annotations attached to a normalized event by `AnnotationReconciler`.
+ * Reads `normalized_event_sources` rows with `role='annotation'` joined
+ * through to the source extracted_event for the displayable fields.
+ * Ordered newest-first by post time.
+ */
+export async function listAnnotationsForEvent(
+  normalizedEventId: string,
+  dbi: DbInstance = defaultDb
+): Promise<AnnotationEntry[]> {
+  const rows = await dbi
+    .select({
+      extractedEventId: normalizedEventSources.extractedEventId,
+      category: extractedEvents.type,
+      title: extractedEvents.title,
+      description: extractedEvents.description,
+      author: extractedEvents.author,
+      sourceUrl: extractedEvents.sourceUrl,
+      publishTime: extractedEvents.publishTime,
+      rawContent: extractedEvents.rawContent,
+    })
+    .from(normalizedEventSources)
+    .innerJoin(extractedEvents, eq(normalizedEventSources.extractedEventId, extractedEvents.id))
+    .where(
+      and(
+        eq(normalizedEventSources.normalizedEventId, normalizedEventId),
+        eq(normalizedEventSources.role, "annotation")
+      )
+    )
+    .orderBy(desc(extractedEvents.publishTime));
+
+  return rows.map((r) => ({
+    extractedEventId: r.extractedEventId,
+    category: r.category as AnnotationCategory,
+    title: r.title,
+    description: r.description,
+    author: r.author,
+    sourceUrl: r.sourceUrl,
+    publishTime: r.publishTime,
+    rawContent: r.rawContent,
+  }));
 }

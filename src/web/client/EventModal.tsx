@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { fetchEventDetail, type EventDetailPayload } from "./api";
+import { fetchEventDetail, type AnnotationCategoryDTO, type EventDetailPayload } from "./api";
 import { formatEventType } from "./format";
 
 type Props = {
@@ -130,6 +130,29 @@ export function EventModal({ eventId, onClose, onOpenEvent }: Props) {
               </section>
             )}
 
+            {detail.annotations.length > 0 && (
+              <section className="modal-section">
+                <h3 className="modal-section-title">
+                  Updates <span className="count">· {detail.annotations.length}</span>
+                </h3>
+                <ul className="annotation-list">
+                  {detail.annotations.map((a) => (
+                    <li key={a.extractedEventId} className={`annotation-item category-${a.category}`}>
+                      <div className="annotation-head">
+                        <span className={`badge annotation ${a.category}`}>{formatAnnotationCategory(a.category)}</span>
+                        <a href={a.sourceUrl} target="_blank" rel="noopener noreferrer">@{a.author}</a>
+                        <span className="source-time">{formatRelative(a.publishTime)}</span>
+                      </div>
+                      <div className="annotation-title">{a.title}</div>
+                      {a.description && a.description !== a.title && (
+                        <div className="annotation-description">{a.description}</div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
             {detail.sources.length > 0 && (
               <section className="modal-section">
                 <h3 className="modal-section-title">
@@ -167,6 +190,15 @@ function formatDateTime(startIso: string, endIso: string | null): string {
   return sameDay
     ? `${startStr} – ${end.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`
     : `${startStr} – ${end.toLocaleString()}`;
+}
+
+function formatAnnotationCategory(c: AnnotationCategoryDTO): string {
+  switch (c) {
+    case "milestone": return "Milestone";
+    case "press_coverage": return "Press";
+    case "recap": return "Recap";
+    case "reminder_repost": return "Reminder";
+  }
 }
 
 function formatRelative(iso: string): string {

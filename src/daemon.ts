@@ -2,6 +2,7 @@ import { Scheduler } from "./core/Scheduler";
 import { runIngestionCycle } from "./core/ingestion";
 import { ExtractionEngine } from "./core/ExtractionEngine";
 import { EventResolver } from "./core/EventResolver";
+import { AnnotationReconciler } from "./core/AnnotationReconciler";
 import { ExportQueueRepo } from "./core/ExportQueueRepo";
 import { ExportRunner } from "./core/ExportRunner";
 import type { Consumer } from "./core/Consumer";
@@ -23,6 +24,7 @@ async function main() {
   // disabled, no queue rows are written and the runner is not registered.
   const exportQueueRepo = config.export.enabled ? new ExportQueueRepo() : null;
   const resolver = new EventResolver(undefined, undefined, exportQueueRepo);
+  const annotationReconciler = new AnnotationReconciler();
 
   const consumers: Consumer[] = [];
   if (config.export.ical.enabled) {
@@ -60,6 +62,14 @@ async function main() {
       run: async (signal) => {
         const { resolved, failed } = await resolver.processBatch(50, signal);
         return { resolved, failed };
+      },
+    })
+    .add({
+      name: "AnnotationReconciliation",
+      intervalMinutes: config.scheduler.resolutionIntervalMinutes,
+      run: async (signal) => {
+        const { attached, noMatch, deferred, failed } = await annotationReconciler.processBatch(50, signal);
+        return { attached, noMatch, deferred, failed };
       },
     });
 

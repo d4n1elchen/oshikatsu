@@ -92,6 +92,19 @@ export async function fetchDashboard(opts: { oshi?: string } = {}): Promise<Dash
   return res.json();
 }
 
+export type AnnotationCategoryDTO = "milestone" | "press_coverage" | "recap" | "reminder_repost";
+
+export type AnnotationEntryDTO = {
+  extractedEventId: string;
+  category: AnnotationCategoryDTO;
+  title: string;
+  description: string;
+  author: string;
+  sourceUrl: string;
+  publishTime: string;
+  rawContent: string;
+};
+
 export type EventDetailPayload = NormalizedEventDTO & {
   sources: Array<{
     extractedEventId: string;
@@ -108,6 +121,7 @@ export type EventDetailPayload = NormalizedEventDTO & {
     startTime: string | null;
     isCancelled: boolean;
   }>;
+  annotations: AnnotationEntryDTO[];
 };
 
 export async function fetchEventDetail(id: string): Promise<EventDetailPayload> {

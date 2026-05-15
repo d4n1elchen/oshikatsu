@@ -1,4 +1,4 @@
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import { db as defaultDb } from "../db";
 import {
   artists,
@@ -217,7 +217,12 @@ export class ExportRunner {
           })
           .from(normalizedEventSources)
           .innerJoin(extractedEvents, eq(normalizedEventSources.extractedEventId, extractedEvents.id))
-          .where(inArray(normalizedEventSources.normalizedEventId, ids))
+          .where(
+            and(
+              inArray(normalizedEventSources.normalizedEventId, ids),
+              ne(normalizedEventSources.role, "annotation")
+            )
+          )
       : [];
     const sourcesByEvent = new Map<string, { sourceUrl: string; publishTime: string; author: string }[]>();
     for (const s of sourcesRows) {

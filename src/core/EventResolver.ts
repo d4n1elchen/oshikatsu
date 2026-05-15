@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { and, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, lte, ne, or, sql } from "drizzle-orm";
 import { db as defaultDb } from "../db";
 import {
   extractedEventRelatedLinks,
@@ -407,7 +407,12 @@ export class EventResolver {
           extractedEventRelatedLinks,
           eq(normalizedEventSources.extractedEventId, extractedEventRelatedLinks.extractedEventId)
         )
-        .where(inArray(extractedEventRelatedLinks.url, linkUrls));
+        .where(
+          and(
+            inArray(extractedEventRelatedLinks.url, linkUrls),
+            ne(normalizedEventSources.role, "annotation")
+          )
+        );
 
       if (normalizedWithLinks.length > 0) {
         const ids = normalizedWithLinks.map((r) => r.normalizedEventId);
@@ -468,7 +473,12 @@ export class EventResolver {
     const normSources = await this.db
       .select({ extractedEventId: normalizedEventSources.extractedEventId })
       .from(normalizedEventSources)
-      .where(eq(normalizedEventSources.normalizedEventId, norm.id));
+      .where(
+        and(
+          eq(normalizedEventSources.normalizedEventId, norm.id),
+          ne(normalizedEventSources.role, "annotation")
+        )
+      );
 
     const normExtractedIds = normSources.map((r) => r.extractedEventId);
 
@@ -497,7 +507,12 @@ export class EventResolver {
           extractedEventRelatedLinks,
           eq(normalizedEventSources.extractedEventId, extractedEventRelatedLinks.extractedEventId)
         )
-        .where(eq(normalizedEventSources.normalizedEventId, norm.id));
+        .where(
+          and(
+            eq(normalizedEventSources.normalizedEventId, norm.id),
+            ne(normalizedEventSources.role, "annotation")
+          )
+        );
 
       const normLinkUrls = new Set(normLinks.map((l) => l.url));
       const overlap = candidateLinks.some((l) => normLinkUrls.has(l.url));

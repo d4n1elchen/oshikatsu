@@ -1,0 +1,23 @@
+-- Annotation reconciliation. Extends the application-level enums on
+-- `normalized_event_sources.role` and `event_resolution_decisions.decision`
+-- so the reconciler can record its outcomes through the same join and
+-- audit tables the event resolver already uses.
+--
+-- New `role` value:
+--   'annotation'  — the source extracted_event is an annotation
+--                   (record_kind='annotation') attached to this normalized
+--                   event by AnnotationReconciler.
+--
+-- New `decision` values:
+--   'annotation_attached'  — reconciler found a parent above threshold and
+--                            wrote the matching normalized_event_sources row.
+--   'annotation_no_match'  — reconciler scanned a non-empty candidate set
+--                            and nothing scored above threshold. Recorded
+--                            so the reconciler skips this annotation on
+--                            future ticks.
+--
+-- No DDL: the columns are plain TEXT and SQLite does not enforce the
+-- enum at the database level. Drizzle's TS enum carries the contract.
+--
+-- See design_docs/2026-05-14-annotation-reconciliation/.
+CREATE INDEX IF NOT EXISTS `idx_normalized_event_sources_role` ON `normalized_event_sources` (`role`);

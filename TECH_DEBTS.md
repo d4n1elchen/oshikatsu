@@ -55,14 +55,13 @@ Follow-up:
 - Expand the strategy layer when the review queue or resolution decisions reveal a missing field or extraction rule.
 - Keep artist-, song-, concert-, and venue-specific rules out of the core engine.
 
-### Annotations land in extracted_events but are never reconciled to their parent event
+### Operator inspection surface for `not_an_event` orphan rows
 
-The extraction pipeline classifies posts that reference an existing event (milestones, press coverage, recaps, reminder reposts) as annotations and writes them to `extracted_events` with `record_kind='annotation'` and `parent_event_hint` set. The resolver filters these rows out via `WHERE record_kind = 'event'`, so they sit in the table waiting for reconciliation. Orphan posts (mood, fan_engagement, other) terminate at `raw_items.status='not_an_event'`. See `design_docs/2026-05-10-non-event-classification/`.
+Annotation reconciliation has landed (`design_docs/2026-05-14-annotation-reconciliation/`), so annotation rows now attach to their parent normalized event and surface in the event modal "Updates" section. The remaining piece is the orphan side: there is no UI today for browsing `raw_items.status='not_an_event'` rows by category, spot-checking the LLM's classification, or returning misclassified items to the queue. The reset script is the only path.
 
 Follow-up:
 
-- Build the reconciliation step that fuzzy-matches annotation rows' `parent_event_hint` against `normalized_events.title` (scoped to artist) and attaches them to the parent — likely via a new `normalized_event_annotations` join, or by extending `normalized_event_sources` with an annotation role. This is what enables a "milestones / coverage / recaps for this event" surface in the web UI.
-- An operator-facing surface to browse `not_an_event` rows (orphan posts) by category, spot-check the LLM's classification, and return misclassified items to the queue. Today the only path is the reset script. The orphan category is logged but not persisted as a column; promote it back to a `raw_items` column when a filter consumer appears.
+- Add an operator-facing surface (admin tab) to browse orphan posts by category. The orphan category is logged but not persisted as a column; promote it back to a `raw_items` column when a filter consumer appears.
 
 ## Related Links
 
