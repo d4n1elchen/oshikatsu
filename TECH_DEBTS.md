@@ -16,17 +16,6 @@ Follow-up:
 
 - Add coverage when behavior gets non-trivial enough that regressions become a real risk.
 
-### `listNormalizedEvents` N+1 regression-guard test fails
-
-`src/core/queries/__tests__/NormalizedEventsQueries.test.ts` includes a "query count is constant regardless of result size (N+1 regression guard)" test. It currently fails on `main` — the 1-row case logs 5 queries while the 20-row case logs 4 (or similar small delta), so the assertion that the counts are equal trips. The pipeline keeps the failure visible but does not block on it; everything else in the suite passes.
-
-The most likely cause is a conditional code path inside `listNormalizedEvents` that only runs when the result set contains a `parentEventId` (the parent-titles fetch in `NormalizedEventsQueries.ts` is the obvious candidate), combined with seed data that happens to satisfy that condition for one of the two cases but not the other. The query plan is not actually N+1; the test's "constant query count" invariant is too strict for the current implementation.
-
-Follow-up:
-
-- Either relax the test to assert query count grows by at most a small constant (the actual invariant we care about), or change the query to issue the conditional fetches unconditionally so the count matches.
-- Re-run the suite after fixing and confirm 195/195 pass.
-
 ### Existing extracted data may need reprocessing
 
 Some local extracted event rows were created before the prompt rule that preserves official names and titles. These rows may contain translated or romanized artist names, concert names, or song titles.

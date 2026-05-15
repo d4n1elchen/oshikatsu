@@ -234,6 +234,7 @@ test("query count is constant regardless of result size (N+1 regression guard)",
   let count1 = 0;
   const db1 = createTestDb({ logger: { logQuery: () => count1++ } });
   await seedNormalized(db1, { id: "n-1" });
+  count1 = 0; // reset after seeding so we only count the listNormalizedEvents calls
   await listNormalizedEvents({}, db1 as any);
 
   let count20 = 0;
