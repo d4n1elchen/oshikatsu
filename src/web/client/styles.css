@@ -534,6 +534,9 @@ body {
 .orphan-text { font-size: 12px; color: var(--text-dim); line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
 .orphan-reason { margin-top: 6px; font-size: 11px; color: var(--text-faint); }
 
+.orphan-author { color: var(--accent); text-decoration: none; font-weight: 500; font-size: 12px; }
+.orphan-author:hover { text-decoration: underline; }
+
 .badge.orphan { text-transform: uppercase; letter-spacing: 0.04em; background: var(--bg-elev-3); color: var(--text-dim); }
 .badge.orphan.mood { background: var(--accent-soft); color: var(--accent); }
 .badge.orphan.fan_engagement { background: var(--bg-elev-3); color: var(--text-dim); }

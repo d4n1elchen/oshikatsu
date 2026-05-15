@@ -446,6 +446,7 @@ function OrphanRow({
   const [expanded, setExpanded] = useState(false);
   const postedIso = item.postedAt ?? item.fetchedAt;
   const text = orphanPreview(item.rawData);
+  const authorHandle = extractAuthorHandle(item.rawData);
 
   return (
     <li className={`orphan-item category-${item.category ?? "uncategorized"}`}>
@@ -455,21 +456,20 @@ function OrphanRow({
             {formatOrphanCategory(item.category)}
           </span>
           {item.artistName && <span>{item.artistName}</span>}
-          <span className="dim">{item.sourceName}</span>
-          <span className="source-time">{formatRelative(postedIso)}</span>
-        </div>
-        <div className="orphan-actions">
-          {item.sourceUrl && (
+          {authorHandle && item.sourceUrl && (
             <a
               href={item.sourceUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="btn-link"
+              className="orphan-author"
               onClick={(e) => e.stopPropagation()}
             >
-              Open ↗
+              @{authorHandle}
             </a>
           )}
+          <span className="source-time">{formatRelative(postedIso)}</span>
+        </div>
+        <div className="orphan-actions">
           <button
             type="button"
             className="btn"
@@ -505,6 +505,11 @@ function orphanPreview(rawData: Record<string, unknown>): string {
   const top = (rawData?.text ?? rawData?.content ?? rawData?.full_text) as string | undefined;
   if (typeof top === "string" && top.length > 0) return top;
   return JSON.stringify(rawData).slice(0, 200);
+}
+
+function extractAuthorHandle(rawData: Record<string, unknown>): string | null {
+  const handle = (rawData as any)?.core?.user_results?.result?.legacy?.screen_name;
+  return typeof handle === "string" && handle.length > 0 ? handle : null;
 }
 
 function ExtractionFailuresPanel({ summary }: { summary: ExtractionFailureSummaryDTO }) {
