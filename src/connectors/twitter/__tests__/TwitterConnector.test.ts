@@ -265,6 +265,97 @@ test("returns parsed tweets on a normal fetch", async () => {
   );
 });
 
+// ---- 5b. sourceUrl uses the tweet author's handle, not the watched username ----
+
+function buildTweetWithAuthor(id: string, author: any): any {
+  return {
+    data: {
+      user: {
+        result: {
+          timeline_v2: {
+            timeline: {
+              instructions: [
+                {
+                  type: "TimelineAddEntries",
+                  entries: [
+                    {
+                      entryId: `tweet-${id}`,
+                      content: {
+                        itemContent: {
+                          tweet_results: {
+                            result: {
+                              rest_id: id,
+                              legacy: { full_text: `tweet ${id}` },
+                              core: { user_results: { result: author } },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      },
+    },
+  };
+}
+
+test("sourceUrl uses core.screen_name when present (new X shape)", async () => {
+  const connector = makeConnector();
+  connector.setPageForTesting(
+    makeFakePage({
+      fakeResponses: [
+        {
+          url: "https://x.com/i/api/graphql/abc/UserTweets",
+          json: buildTweetWithAuthor("999", {
+            core: { screen_name: "real_author" },
+            legacy: { screen_name: null },
+          }),
+        },
+      ],
+    })
+  );
+  const items = await connector.fetchUpdates(TARGET);
+  assert.equal(items[0]!.sourceUrl, "https://x.com/real_author/status/999");
+});
+
+test("sourceUrl falls back to legacy.screen_name when core.screen_name is absent", async () => {
+  const connector = makeConnector();
+  connector.setPageForTesting(
+    makeFakePage({
+      fakeResponses: [
+        {
+          url: "https://x.com/i/api/graphql/abc/UserTweets",
+          json: buildTweetWithAuthor("888", {
+            legacy: { screen_name: "legacy_author" },
+          }),
+        },
+      ],
+    })
+  );
+  const items = await connector.fetchUpdates(TARGET);
+  assert.equal(items[0]!.sourceUrl, "https://x.com/legacy_author/status/888");
+});
+
+test("sourceUrl falls back to queried username when no author handle is present", async () => {
+  const connector = makeConnector();
+  connector.setPageForTesting(
+    makeFakePage({
+      fakeResponses: [
+        {
+          url: "https://x.com/i/api/graphql/abc/UserTweets",
+          json: buildTweetWithAuthor("777", { core: {}, legacy: {} }),
+        },
+      ],
+    })
+  );
+  const items = await connector.fetchUpdates(TARGET);
+  assert.equal(items[0]!.sourceUrl, "https://x.com/test_user/status/777");
+});
+
 // ---- 6. Hard navigation error (regression for the existing re-throw fix) ----
 
 test("wraps a raw page.goto failure as TwitterFetchError", async () => {

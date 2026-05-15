@@ -112,8 +112,11 @@ export class TwitterConnector implements BaseConnector {
                     // Author handle for the URL: prefer the actual tweet
                     // author from the response (handles retweets/quotes
                     // correctly), fall back to the queried username.
+                    // X moved screen_name from legacy to core; check both.
+                    const author = rawTweetData?.core?.user_results?.result;
                     const authorHandle =
-                      rawTweetData?.core?.user_results?.result?.legacy?.screen_name ||
+                      author?.core?.screen_name ??
+                      author?.legacy?.screen_name ??
                       username;
                     rawItems.push({
                       sourceName: "twitter",
