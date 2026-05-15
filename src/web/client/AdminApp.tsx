@@ -499,11 +499,10 @@ function formatOrphanCategory(c: OrphanCategoryDTO | null): string {
 }
 
 function orphanPreview(rawData: Record<string, unknown>): string {
-  // Twitter raw shape carries the post text in `text`; other connectors
-  // may add their own fields. Keep this generic: try a couple of common
-  // locations, fall back to JSON.
-  const text = (rawData?.text ?? rawData?.content ?? rawData?.full_text) as string | undefined;
-  if (typeof text === "string" && text.length > 0) return text;
+  const legacy = (rawData as any).legacy;
+  if (legacy?.full_text) return String(legacy.full_text);
+  const top = (rawData?.text ?? rawData?.content ?? rawData?.full_text) as string | undefined;
+  if (typeof top === "string" && top.length > 0) return top;
   return JSON.stringify(rawData).slice(0, 200);
 }
 
