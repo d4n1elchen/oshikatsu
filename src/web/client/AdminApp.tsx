@@ -455,6 +455,7 @@ function OrphanRow({
             {formatOrphanCategory(item.category)}
           </span>
           {item.artistName && <span>{item.artistName}</span>}
+          <span className="dim">{item.sourceName}</span>
           <span className="source-time">{formatRelative(postedIso)}</span>
         </div>
         <div className="orphan-actions">
