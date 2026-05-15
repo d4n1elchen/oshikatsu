@@ -18,7 +18,7 @@ The reconciliation problem itself is a smaller, easier cousin of the Phase 3 eve
 - Attach annotation rows to their parent `normalized_events` row when the LLM-supplied `parent_event_hint` matches an existing canonical title well enough.
 - Make "annotations for this event" a queryable shape from the read layer so the web UI can render them.
 - Reuse the existing `normalized_event_sources` join and `event_resolution_decisions` audit table rather than introducing parallel infrastructure.
-- Run as its own scheduler task, independent of the event resolver. A reconciliation pass should not block event resolution and vice versa.
+- Run as the second half of the existing Resolution scheduler task, after the event resolver has created or merged normalized events in the same tick. This keeps newly-created events visible to the reconciler immediately, instead of waiting another scheduler interval.
 - Defer rather than guess on ambiguous matches. Annotations are not load-bearing; an unmatched milestone is fine, a wrongly-attached milestone is not.
 
 ## Non-Goals
@@ -108,10 +108,25 @@ Trade-off: a low-quality hint against an artist with many normalized events will
 
 New module `src/core/AnnotationReconciler.ts`, sibling to `EventResolver.ts`:
 
-- `AnnotationReconciler.processBatch({ batchSize, db })`: load up to `batchSize` deferred annotations, group by artist (so the candidate fetch is one query per artist instead of one per annotation), score, write decisions and source rows in a transaction per annotation.
-- Returns `{ attached, deferred, noMatch, errors }` for scheduler-run accounting.
+- `AnnotationReconciler.processBatch({ batchSize, db })`: load up to `batchSize` deferred annotations, score each against same-artist normalized events, write decisions and source rows in a transaction per annotation.
+- Returns `{ attached, deferred, noMatch, failed }` for scheduler-run accounting.
 
-New `ScheduledTask` `"AnnotationReconciliation"` in `Scheduler.ts`, default cadence 5 minutes (same as event resolution). It runs after the event-resolution tick so newly created normalized events are visible to the reconciler immediately.
+The reconciler runs **inside the existing Resolution scheduler task**, immediately after `EventResolver.processBatch`. Daemon wiring:
+
+```ts
+.add({
+  name: "Resolution",
+  run: async (signal) => {
+    const { resolved, failed } = await resolver.processBatch(50, signal);
+    const annotations = await annotationReconciler.processBatch(50, signal);
+    return { resolved, failed, annotationsAttached: annotations.attached, ... };
+  },
+})
+```
+
+This keeps "resolve extracted events into the canonical layer" as a single conceptual stage in `scheduler_runs` and the Monitor view, and lets newly-created normalized events be valid attachment targets without a one-interval wait. The two stages share a tick boundary cleanly: annotations need normalized events to attach to, so a stalled resolver leaves the reconciler with nothing new to do anyway — the supposed "independence" of a separate task was illusory.
+
+If the reconciler ever grows into something that should run on a different cadence or in genuine isolation (e.g. it becomes expensive enough to want its own loop), promoting it back to a standalone `ScheduledTask` is mechanically trivial. The reconciler module is decoupled from the scheduler: the daemon decides where to call it.
 
 The reconciler does *not* touch `raw_items` or `extracted_events`. It only writes to `normalized_event_sources` and `event_resolution_decisions`. This preserves the layer boundary the non-event design established.
 

@@ -83,6 +83,7 @@ Resolves extracted event candidates into canonical normalized events. This is br
 - **Identity resolution**: decide whether an extracted event represents a new real-world event or refers to one already known to the system.
 - **Record consolidation (merge / dedup)**: when an extracted event matches an existing canonical event, merge its provenance and related links without overwriting trustworthy canonical fields.
 - **Hierarchy resolution**: decide whether an extracted event is a main event in its own right, or a sub-event that should be linked to an existing canonical main event (e.g., a merch booth or pre-show talk attached to a concert).
+- **Annotation attachment**: for extracted rows with `record_kind='annotation'` (milestones, press coverage, recaps, reminder reposts), fuzzy-match `parent_event_hint` against canonical event titles within the same artist and attach via `normalized_event_sources` with `role='annotation'`. Runs as the second half of the same scheduler tick so newly-created normalized events are visible immediately as attachment targets.
 
 Operating notes:
 

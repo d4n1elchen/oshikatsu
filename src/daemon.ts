@@ -61,15 +61,18 @@ async function main() {
       intervalMinutes: config.scheduler.resolutionIntervalMinutes,
       run: async (signal) => {
         const { resolved, failed } = await resolver.processBatch(50, signal);
-        return { resolved, failed };
-      },
-    })
-    .add({
-      name: "AnnotationReconciliation",
-      intervalMinutes: config.scheduler.resolutionIntervalMinutes,
-      run: async (signal) => {
-        const { attached, noMatch, deferred, failed } = await annotationReconciler.processBatch(50, signal);
-        return { attached, noMatch, deferred, failed };
+        // Annotations attach to normalized events created by the resolver in
+        // the same tick, so running back-to-back keeps newly-created events
+        // visible to the reconciler without waiting another interval.
+        const annotations = await annotationReconciler.processBatch(50, signal);
+        return {
+          resolved,
+          failed,
+          annotationsAttached: annotations.attached,
+          annotationsNoMatch: annotations.noMatch,
+          annotationsDeferred: annotations.deferred,
+          annotationsFailed: annotations.failed,
+        };
       },
     });
 
