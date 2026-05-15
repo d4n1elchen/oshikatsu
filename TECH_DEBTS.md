@@ -55,13 +55,13 @@ Follow-up:
 - Expand the strategy layer when the review queue or resolution decisions reveal a missing field or extraction rule.
 - Keep artist-, song-, concert-, and venue-specific rules out of the core engine.
 
-### Operator inspection surface for `not_an_event` orphan rows
+### Orphan misclassifications have no auto-retry
 
-Annotation reconciliation has landed (`design_docs/2026-05-14-annotation-reconciliation/`), so annotation rows now attach to their parent normalized event and surface in the event modal "Updates" section. The remaining piece is the orphan side: there is no UI today for browsing `raw_items.status='not_an_event'` rows by category, spot-checking the LLM's classification, or returning misclassified items to the queue. The reset script is the only path.
+The admin Orphan posts panel lets an operator manually requeue misclassified rows (`POST /api/admin/orphans/:id/requeue` flips status back to `new`). The reset script is no longer the only path. What's still missing is any automated retry path: a row stays `not_an_event` indefinitely unless a human revisits it. Live with this until LLM-misclassification rate becomes a real signal.
 
 Follow-up:
 
-- Add an operator-facing surface (admin tab) to browse orphan posts by category. The orphan category is logged but not persisted as a column; promote it back to a `raw_items` column when a filter consumer appears.
+- If the orphan misclassification rate is observably high, add an `extract:once --not-an-event` filter or a periodic re-classification pass guarded by model-version bump.
 
 ## Related Links
 

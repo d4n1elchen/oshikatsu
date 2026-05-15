@@ -189,12 +189,40 @@ export type ReviewQueueItemDTO = {
   matchedVenueName: string | null;
 };
 
+export type OrphanCategoryDTO = "mood" | "fan_engagement" | "other";
+
+export type OrphanCategoryCountDTO = {
+  category: OrphanCategoryDTO | "uncategorized";
+  count: number;
+};
+
+export type OrphanItemDTO = {
+  id: string;
+  category: OrphanCategoryDTO | null;
+  reason: string | null;
+  sourceName: string;
+  sourceUrl: string | null;
+  postedAt: string | null;
+  fetchedAt: string;
+  artistId: string | null;
+  artistName: string | null;
+  artistHandle: string | null;
+  rawData: Record<string, unknown>;
+};
+
+export type OrphansSummaryDTO = {
+  total: number;
+  byCategory: OrphanCategoryCountDTO[];
+  items: OrphanItemDTO[];
+};
+
 export type AdminDashboardPayload = {
   cards: TaskCardDTO[];
   recentRuns: SchedulerRunDTO[];
   extractionFailures: ExtractionFailureSummaryDTO;
   reviewQueue: ReviewQueueItemDTO[];
   events: NormalizedEventDTO[];
+  orphans: OrphansSummaryDTO;
   serverTime: string;
 };
 
@@ -257,4 +285,18 @@ export async function adminReleaseEvent(id: string): Promise<void> {
     method: "POST",
   });
   if (!res.ok) throw new Error(`Release failed: ${res.status} ${await res.text()}`);
+}
+
+export async function fetchOrphans(category?: OrphanCategoryDTO): Promise<OrphansSummaryDTO> {
+  const qs = category ? `?category=${encodeURIComponent(category)}` : "";
+  const res = await fetch(`/api/admin/orphans${qs}`);
+  if (!res.ok) throw new Error(`Orphans fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export async function adminRequeueOrphan(id: string): Promise<void> {
+  const res = await fetch(`/api/admin/orphans/${encodeURIComponent(id)}/requeue`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(`Requeue failed: ${res.status} ${await res.text()}`);
 }

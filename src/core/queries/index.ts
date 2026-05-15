@@ -5,3 +5,4 @@ export * from "./NormalizedEventsQueries";
 export * from "./RawItemsQueries";
 export * from "./WatchedArtistsQueries";
 export * from "./StreamsQueries";
+export * from "./OrphansQueries";

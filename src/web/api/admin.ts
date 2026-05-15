@@ -7,6 +7,7 @@ import { SchedulerRunsRepo } from "../../core/SchedulerRunsRepo";
 import { listNormalizedEvents } from "../../core/queries/NormalizedEventsQueries";
 import { getExtractionFailureSummary } from "../../core/queries/MonitorQueries";
 import { listReviewQueue } from "../../core/queries/ReviewQueueQueries";
+import { listOrphans, requeueOrphan, type OrphanCategory } from "../../core/queries/OrphansQueries";
 
 export const adminRoute = new Hono();
 
@@ -20,13 +21,14 @@ const HOUR_MS = 60 * 60 * 1000;
 adminRoute.get("/admin/dashboard", async (c) => {
   const sinceHour = new Date(Date.now() - HOUR_MS);
 
-  const [recent, countsRows, taskNames, failures, reviewQueue, events] = await Promise.all([
+  const [recent, countsRows, taskNames, failures, reviewQueue, events, orphans] = await Promise.all([
     runsRepo.recent(50),
     runsRepo.countsSince(sinceHour),
     runsRepo.distinctTaskNames(),
     getExtractionFailureSummary(),
     listReviewQueue({ limit: 50 }),
     listNormalizedEvents({ orderBy: "updatedAt", limit: 100 }),
+    listOrphans({ limit: 50 }),
   ]);
 
   const cards = taskNames.map((name) => {
@@ -48,8 +50,29 @@ adminRoute.get("/admin/dashboard", async (c) => {
     extractionFailures: failures,
     reviewQueue,
     events,
+    orphans,
     serverTime: new Date().toISOString(),
   });
+});
+
+adminRoute.get("/admin/orphans", async (c) => {
+  const categoryParam = c.req.query("category");
+  const allowed: OrphanCategory[] = ["mood", "fan_engagement", "other"];
+  const category = allowed.includes(categoryParam as OrphanCategory)
+    ? (categoryParam as OrphanCategory)
+    : undefined;
+  const summary = await listOrphans({ limit: 100, category });
+  return c.json(summary);
+});
+
+adminRoute.post("/admin/orphans/:id/requeue", async (c) => {
+  const id = c.req.param("id");
+  try {
+    await requeueOrphan(id);
+    return c.json({ ok: true });
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
+  }
 });
 
 adminRoute.post("/admin/review/:id/merge", async (c) => {

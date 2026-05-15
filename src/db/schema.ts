@@ -48,9 +48,17 @@ export const rawItems = sqliteTable("raw_items", {
   status: text("status", { enum: ["new", "processed", "error", "not_an_event"] }).notNull().default("new"),
   errorMessage: text("error_message"),
   errorClass: text("error_class"),
+  /**
+   * For `status='not_an_event'` rows, which orphan bucket the LLM
+   * picked: `mood | fan_engagement | other`. Null otherwise. Populated
+   * by `RawStorage.markNotAnEvent`; consumed by the admin orphan
+   * inspection surface.
+   */
+  notAnEventCategory: text("not_an_event_category", { enum: ["mood", "fan_engagement", "other"] }),
 }, (table) => [
   uniqueIndex("idx_source_dedup").on(table.sourceName, table.sourceId),
   index("idx_raw_items_status").on(table.status),
+  index("idx_raw_items_not_an_event_category").on(table.notAnEventCategory),
 ]);
 
 export const venues = sqliteTable("venues", {

@@ -2,10 +2,15 @@ import React, { useCallback, useEffect, useState } from "react";
 import {
   adminAcceptMerge,
   adminAcceptNew,
+  adminRequeueOrphan,
   fetchAdminDashboard,
+  fetchOrphans,
   type AdminDashboardPayload,
   type ExtractionFailureSummaryDTO,
   type NormalizedEventDTO,
+  type OrphanCategoryDTO,
+  type OrphanItemDTO,
+  type OrphansSummaryDTO,
   type ReviewQueueItemDTO,
   type SchedulerRunDTO,
   type TaskCardDTO,
@@ -97,6 +102,8 @@ export function AdminApp() {
           onMerge={onMerge}
           onAcceptNew={onAcceptNew}
         />
+
+        <OrphansPanel initialSummary={data.orphans} />
 
         <CanonicalEventsPanel
           events={data.events}
@@ -328,6 +335,176 @@ function CanonicalEventsPanel({
       )}
     </section>
   );
+}
+
+function OrphansPanel({ initialSummary }: { initialSummary: OrphansSummaryDTO }) {
+  const [summary, setSummary] = useState(initialSummary);
+  const [filter, setFilter] = useState<OrphanCategoryDTO | null>(null);
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState(initialSummary.total > 0);
+
+  useEffect(() => {
+    setSummary(initialSummary);
+  }, [initialSummary]);
+
+  const reload = async (next: OrphanCategoryDTO | null) => {
+    try {
+      const s = await fetchOrphans(next ?? undefined);
+      setSummary(s);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const onFilter = (next: OrphanCategoryDTO | null) => {
+    setFilter(next);
+    void reload(next);
+  };
+
+  const onRequeue = async (id: string) => {
+    setPendingId(id);
+    try {
+      await adminRequeueOrphan(id);
+      await reload(filter);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPendingId(null);
+    }
+  };
+
+  const counts = new Map<string, number>();
+  for (const c of summary.byCategory) counts.set(c.category, c.count);
+  const visible = summary.items;
+
+  return (
+    <section className="admin-section">
+      <button
+        type="button"
+        className="admin-collapse-head"
+        onClick={() => setOpen(!open)}
+      >
+        <span>{open ? "▾" : "▸"}</span>
+        <h2 className="section-title">
+          Orphan posts{" "}
+          <span className={`count ${summary.total > 0 ? "" : "dim"}`}>· {summary.total}</span>
+        </h2>
+      </button>
+      {open && (
+        <>
+          <div className="orphan-filter-bar">
+            <OrphanFilterChip label="All" count={summary.total} active={filter === null} onClick={() => onFilter(null)} />
+            <OrphanFilterChip label="Mood" count={counts.get("mood") ?? 0} active={filter === "mood"} onClick={() => onFilter("mood")} />
+            <OrphanFilterChip label="Fan engagement" count={counts.get("fan_engagement") ?? 0} active={filter === "fan_engagement"} onClick={() => onFilter("fan_engagement")} />
+            <OrphanFilterChip label="Other" count={counts.get("other") ?? 0} active={filter === "other"} onClick={() => onFilter("other")} />
+            {(counts.get("uncategorized") ?? 0) > 0 && (
+              <span className="orphan-filter-chip dim" title="Rows from before the category column was added">
+                Uncategorized · {counts.get("uncategorized")}
+              </span>
+            )}
+          </div>
+          {error && <div className="admin-error-pill">{error}</div>}
+          {visible.length === 0 ? (
+            <div className="admin-empty">No orphan posts in this bucket.</div>
+          ) : (
+            <ul className="orphan-list">
+              {visible.map((o) => (
+                <OrphanRow
+                  key={o.id}
+                  item={o}
+                  pending={pendingId === o.id}
+                  onRequeue={() => onRequeue(o.id)}
+                />
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+function OrphanFilterChip({
+  label, count, active, onClick,
+}: { label: string; count: number; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className={`orphan-filter-chip ${active ? "active" : ""}`}
+      onClick={onClick}
+    >
+      {label} <span className="dim">· {count}</span>
+    </button>
+  );
+}
+
+function OrphanRow({
+  item, pending, onRequeue,
+}: { item: OrphanItemDTO; pending: boolean; onRequeue: () => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const postedIso = item.postedAt ?? item.fetchedAt;
+  const text = orphanPreview(item.rawData);
+
+  return (
+    <li className={`orphan-item category-${item.category ?? "uncategorized"}`}>
+      <div className="orphan-head" onClick={() => setExpanded(!expanded)}>
+        <div className="orphan-meta">
+          <span className={`badge orphan ${item.category ?? "uncategorized"}`}>
+            {formatOrphanCategory(item.category)}
+          </span>
+          {item.artistHandle && <span>@{item.artistHandle}</span>}
+          <span className="source-time">{formatRelative(postedIso)}</span>
+        </div>
+        <div className="orphan-actions">
+          {item.sourceUrl && (
+            <a
+              href={item.sourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-link"
+              onClick={(e) => e.stopPropagation()}
+            >
+              Open ↗
+            </a>
+          )}
+          <button
+            type="button"
+            className="btn"
+            disabled={pending}
+            onClick={(e) => { e.stopPropagation(); onRequeue(); }}
+          >
+            Requeue
+          </button>
+        </div>
+      </div>
+      <div className="orphan-text">{text}</div>
+      {expanded && item.reason && (
+        <div className="orphan-reason">
+          <span className="dim">LLM reason:</span> {item.reason}
+        </div>
+      )}
+    </li>
+  );
+}
+
+function formatOrphanCategory(c: OrphanCategoryDTO | null): string {
+  switch (c) {
+    case "mood": return "Mood";
+    case "fan_engagement": return "Fan";
+    case "other": return "Other";
+    default: return "—";
+  }
+}
+
+function orphanPreview(rawData: Record<string, unknown>): string {
+  // Twitter raw shape carries the post text in `text`; other connectors
+  // may add their own fields. Keep this generic: try a couple of common
+  // locations, fall back to JSON.
+  const text = (rawData?.text ?? rawData?.content ?? rawData?.full_text) as string | undefined;
+  if (typeof text === "string" && text.length > 0) return text;
+  return JSON.stringify(rawData).slice(0, 200);
 }
 
 function ExtractionFailuresPanel({ summary }: { summary: ExtractionFailureSummaryDTO }) {

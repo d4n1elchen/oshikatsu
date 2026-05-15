@@ -111,17 +111,17 @@ export class RawStorage {
    * Mark an item as an orphan post (mood, fan_engagement, other) that
    * is neither an event nor an annotation of one. Annotations of an
    * existing event flow through `extracted_events` instead, with
-   * `record_kind='annotation'`. The category is recorded only in the
-   * log line and the human-readable reason; we deliberately don't
-   * persist it as a column until a consumer needs it. `error_message`
-   * carries the reason so the RawItems detail panel renders it.
+   * `record_kind='annotation'`. `error_message` carries the human
+   * reason; `not_an_event_category` carries the structured bucket
+   * the admin orphan-inspection surface groups on.
    */
-  async markNotAnEvent(itemId: string, _category: string, reason: string): Promise<void> {
+  async markNotAnEvent(itemId: string, category: string, reason: string): Promise<void> {
     await this.db.update(rawItems)
       .set({
         status: "not_an_event",
         errorMessage: reason,
         errorClass: null,
+        notAnEventCategory: category as "mood" | "fan_engagement" | "other",
       })
       .where(eq(rawItems.id, itemId));
   }

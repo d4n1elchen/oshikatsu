@@ -41,7 +41,7 @@ function createTestDb() {
       source_name TEXT NOT NULL, source_id TEXT NOT NULL UNIQUE,
       source_url TEXT, raw_data TEXT NOT NULL, posted_at INTEGER, fetched_at INTEGER NOT NULL,
       status TEXT NOT NULL DEFAULT 'new', error_message TEXT,
-      error_class TEXT
+      error_class TEXT, not_an_event_category TEXT
     );
     CREATE TABLE venues (
       id TEXT PRIMARY KEY, name TEXT NOT NULL,
