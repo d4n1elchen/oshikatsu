@@ -31,7 +31,7 @@ adminRoute.get("/admin/dashboard", async (c) => {
     listOrphans({ limit: 50 }),
   ]);
 
-  const cards = taskNames.map((name) => {
+  const cards = sortByPipelineOrder(taskNames).map((name) => {
     const taskRecent = recent.filter((r) => r.taskName === name);
     const lastRun = taskRecent[0] ?? null;
     const lastSuccess = taskRecent.find((r) => r.status === "completed") ?? null;
@@ -141,6 +141,22 @@ adminRoute.post("/admin/events/:id/release", async (c) => {
     return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
   }
 });
+
+// Order the Pipeline health cards by the actual data flow (Ingestion →
+// Extraction → Resolution → Export). Unknown task names sort alphabetically
+// after the known order so future tasks surface in a stable spot.
+const PIPELINE_ORDER = ["Ingestion", "Extraction", "Resolution", "Export"];
+function sortByPipelineOrder(names: string[]): string[] {
+  const rank = (n: string) => {
+    const i = PIPELINE_ORDER.indexOf(n);
+    return i === -1 ? PIPELINE_ORDER.length : i;
+  };
+  return [...names].sort((a, b) => {
+    const ra = rank(a);
+    const rb = rank(b);
+    return ra !== rb ? ra - rb : a.localeCompare(b);
+  });
+}
 
 function parseDateOrNull(value: unknown): Date | null {
   if (value == null || value === "") return null;
