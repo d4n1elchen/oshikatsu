@@ -195,10 +195,25 @@ export const eventResolutionDecisions = sqliteTable("event_resolution_decisions"
   signals: text("signals", { mode: "json" }).$type<Record<string, unknown>>().notNull(),
   reason: text("reason").notNull(),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  /**
+   * In-place history. When the operator overrides a decision (or one
+   * manual decision is itself superseded by another), the prior row is
+   * not deleted: `superseded_at` is set to the supersession time and
+   * `superseded_by_id` points at the new row. Readers showing "current
+   * state" filter `superseded_at IS NULL`. The full chain per extracted
+   * event is `ORDER BY created_at` over rows sharing
+   * `candidate_extracted_event_id`. Preserves training signal for
+   * future resolver tuning.
+   */
+  supersededAt: integer("superseded_at", { mode: "timestamp" }),
+  supersededById: text("superseded_by_id"),
+  /** Optional free-text operator reason for a manual override. */
+  note: text("note"),
 }, (table) => [
   index("idx_resolution_decisions_extracted").on(table.candidateExtractedEventId),
   index("idx_resolution_decisions_normalized").on(table.matchedNormalizedEventId),
   index("idx_resolution_decisions_decision").on(table.decision),
+  index("idx_resolution_decisions_superseded").on(table.supersededAt),
 ]);
 
 export const exportQueue = sqliteTable("export_queue", {

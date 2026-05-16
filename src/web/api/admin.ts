@@ -80,13 +80,14 @@ adminRoute.post("/admin/review/:id/merge", async (c) => {
   const body = await c.req.json().catch(() => ({})) as {
     extractedEventId?: string;
     normalizedEventId?: string;
+    note?: string;
   };
-  const { extractedEventId, normalizedEventId } = body;
+  const { extractedEventId, normalizedEventId, note } = body;
   if (!extractedEventId || !normalizedEventId) {
     return c.json({ error: "extractedEventId and normalizedEventId required" }, 400);
   }
   try {
-    await resolver.acceptAsMerge(extractedEventId, normalizedEventId);
+    await resolver.acceptAsMerge(extractedEventId, normalizedEventId, note ?? null);
     return c.json({ ok: true, decisionId });
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
@@ -95,12 +96,36 @@ adminRoute.post("/admin/review/:id/merge", async (c) => {
 
 adminRoute.post("/admin/review/:id/new", async (c) => {
   const decisionId = c.req.param("id");
-  const body = await c.req.json().catch(() => ({})) as { extractedEventId?: string };
-  const { extractedEventId } = body;
+  const body = await c.req.json().catch(() => ({})) as { extractedEventId?: string; note?: string };
+  const { extractedEventId, note } = body;
   if (!extractedEventId) return c.json({ error: "extractedEventId required" }, 400);
   try {
-    await resolver.acceptAsNew(extractedEventId);
+    await resolver.acceptAsNew(extractedEventId, note ?? null);
     return c.json({ ok: true, decisionId });
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
+  }
+});
+
+adminRoute.post("/admin/events/:id/merge-into", async (c) => {
+  const loserId = c.req.param("id");
+  const body = await c.req.json().catch(() => ({})) as { targetId?: string; note?: string };
+  if (!body.targetId) return c.json({ error: "targetId required" }, 400);
+  try {
+    await eventsRepo.mergeNormalizedEvents(loserId, body.targetId, body.note ?? null);
+    return c.json({ ok: true });
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
+  }
+});
+
+adminRoute.post("/admin/events/:id/attach-to-parent", async (c) => {
+  const eventId = c.req.param("id");
+  const body = await c.req.json().catch(() => ({})) as { parentId?: string; note?: string };
+  if (!body.parentId) return c.json({ error: "parentId required" }, 400);
+  try {
+    await eventsRepo.reparentNormalizedEvent(eventId, body.parentId, body.note ?? null);
+    return c.json({ ok: true });
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
   }

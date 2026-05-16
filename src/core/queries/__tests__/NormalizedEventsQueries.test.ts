@@ -56,7 +56,8 @@ function createTestDb(opts: { logger?: { logQuery: () => void } } = {}) {
       id TEXT PRIMARY KEY, candidate_extracted_event_id TEXT NOT NULL,
       matched_normalized_event_id TEXT, decision TEXT NOT NULL,
       score REAL, signals TEXT NOT NULL, reason TEXT NOT NULL,
-      created_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL,
+      superseded_at INTEGER, superseded_by_id TEXT, note TEXT
     );
   `);
   return db;

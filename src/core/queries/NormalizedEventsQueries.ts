@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, inArray, ne } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull, ne } from "drizzle-orm";
 import { db as defaultDb } from "../../db";
 import {
   artists,
@@ -166,7 +166,8 @@ export async function listNormalizedEvents(
       .where(
         and(
           inArray(normalizedEventSources.normalizedEventId, ids),
-          eq(normalizedEventSources.role, "primary")
+          eq(normalizedEventSources.role, "primary"),
+          isNull(eventResolutionDecisions.supersededAt)
         )
       ),
 

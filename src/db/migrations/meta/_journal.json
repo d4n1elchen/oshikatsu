@@ -183,6 +183,13 @@
       "when": 1778968400000,
       "tag": "0025_raw_items_not_an_event_category",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1779054800000,
+      "tag": "0026_decision_history",
+      "breakpoints": true
     }
   ]
 }

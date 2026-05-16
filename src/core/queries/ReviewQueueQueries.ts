@@ -1,4 +1,4 @@
-import { aliasedTable, desc, eq } from "drizzle-orm";
+import { aliasedTable, and, desc, eq, isNull } from "drizzle-orm";
 import { db as defaultDb } from "../../db";
 import {
   artists,
@@ -91,7 +91,10 @@ export async function listReviewQueue(
     .leftJoin(candidateVenue, eq(extractedEvents.venueId, candidateVenue.id))
     .leftJoin(normalizedEvents, eq(eventResolutionDecisions.matchedNormalizedEventId, normalizedEvents.id))
     .leftJoin(matchedVenue, eq(normalizedEvents.venueId, matchedVenue.id))
-    .where(eq(eventResolutionDecisions.decision, "needs_review"))
+    .where(and(
+      eq(eventResolutionDecisions.decision, "needs_review"),
+      isNull(eventResolutionDecisions.supersededAt)
+    ))
     .orderBy(desc(eventResolutionDecisions.createdAt))
     .limit(limit);
 

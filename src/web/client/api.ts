@@ -236,11 +236,12 @@ export async function adminAcceptMerge(
   decisionId: string,
   extractedEventId: string,
   normalizedEventId: string,
+  note?: string,
 ): Promise<void> {
   const res = await fetch(`/api/admin/review/${encodeURIComponent(decisionId)}/merge`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ extractedEventId, normalizedEventId }),
+    body: JSON.stringify({ extractedEventId, normalizedEventId, note }),
   });
   if (!res.ok) throw new Error(`Merge failed: ${res.status} ${await res.text()}`);
 }
@@ -248,13 +249,40 @@ export async function adminAcceptMerge(
 export async function adminAcceptNew(
   decisionId: string,
   extractedEventId: string,
+  note?: string,
 ): Promise<void> {
   const res = await fetch(`/api/admin/review/${encodeURIComponent(decisionId)}/new`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ extractedEventId }),
+    body: JSON.stringify({ extractedEventId, note }),
   });
   if (!res.ok) throw new Error(`Accept-as-new failed: ${res.status} ${await res.text()}`);
+}
+
+export async function adminMergeEvent(
+  loserId: string,
+  targetId: string,
+  note?: string,
+): Promise<void> {
+  const res = await fetch(`/api/admin/events/${encodeURIComponent(loserId)}/merge-into`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ targetId, note }),
+  });
+  if (!res.ok) throw new Error(`Merge events failed: ${res.status} ${await res.text()}`);
+}
+
+export async function adminAttachAsSubEvent(
+  eventId: string,
+  parentId: string,
+  note?: string,
+): Promise<void> {
+  const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}/attach-to-parent`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ parentId, note }),
+  });
+  if (!res.ok) throw new Error(`Attach to parent failed: ${res.status} ${await res.text()}`);
 }
 
 export type EventEditFields = {

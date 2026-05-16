@@ -44,6 +44,9 @@ type ResolutionResult = {
   signals: ResolutionSignals;
   reason: string;
   score: number;
+  /** Optional free-text note carried through to the audit row. Used by
+   *  operator-initiated decisions; auto-resolver leaves this undefined. */
+  note?: string | null;
 };
 
 export class EventResolver {
@@ -108,20 +111,15 @@ export class EventResolver {
   }
 
   /**
-   * Manually clear all decisions for an extracted event so resolve() can
-   * be re-run from a clean slate. Used by the review queue for "redo".
-   */
-  async resetDecision(extractedEventId: string): Promise<void> {
-    await this.db
-      .delete(eventResolutionDecisions)
-      .where(eq(eventResolutionDecisions.candidateExtractedEventId, extractedEventId));
-  }
-
-  /**
    * Manually accept a needs_review item as a merge into the matched
-   * normalized event. Replaces any prior decision for this extracted event.
+   * normalized event. Supersedes any prior decision for this extracted
+   * event (the prior row stays, marked with `superseded_at`).
    */
-  async acceptAsMerge(extractedEventId: string, normalizedEventId: string): Promise<void> {
+  async acceptAsMerge(
+    extractedEventId: string,
+    normalizedEventId: string,
+    note?: string | null
+  ): Promise<void> {
     const [candidate] = await this.db
       .select()
       .from(extractedEvents)
@@ -130,7 +128,6 @@ export class EventResolver {
     if (!candidate) throw new Error(`Extracted event ${extractedEventId} not found`);
 
     const candidateLinks = await this.getRelatedLinks(extractedEventId);
-    await this.resetDecision(extractedEventId);
 
     await this.applyDecision(candidate, candidateLinks, {
       decision: "merged",
@@ -138,14 +135,16 @@ export class EventResolver {
       score: 1,
       signals: { manual_override: true },
       reason: "Manually accepted as merge from review queue.",
+      note: note ?? null,
     });
   }
 
   /**
-   * Manually mark a needs_review item as a new canonical event. Replaces
-   * any prior decision for this extracted event.
+   * Manually mark a needs_review item as a new canonical event.
+   * Supersedes any prior decision (the prior row stays, marked with
+   * `superseded_at`).
    */
-  async acceptAsNew(extractedEventId: string): Promise<void> {
+  async acceptAsNew(extractedEventId: string, note?: string | null): Promise<void> {
     const [candidate] = await this.db
       .select()
       .from(extractedEvents)
@@ -154,7 +153,6 @@ export class EventResolver {
     if (!candidate) throw new Error(`Extracted event ${extractedEventId} not found`);
 
     const candidateLinks = await this.getRelatedLinks(extractedEventId);
-    await this.resetDecision(extractedEventId);
 
     await this.applyDecision(candidate, candidateLinks, {
       decision: "new",
@@ -162,6 +160,7 @@ export class EventResolver {
       score: 1,
       signals: { manual_override: true },
       reason: "Manually accepted as new canonical event from review queue.",
+      note: note ?? null,
     });
   }
 
@@ -597,7 +596,8 @@ export class EventResolver {
     candidateLinks: RelatedLinkRow[],
     result: ResolutionResult
   ): Promise<void> {
-    const { decision, normalizedEventId, signals, reason, score } = result;
+    const { decision, normalizedEventId, signals, reason, score, note } = result;
+    const decisionId = randomUUID();
 
     if (decision === "new" || decision === "no_match") {
       // Create a new normalized event from this candidate
@@ -605,6 +605,8 @@ export class EventResolver {
       const effectiveDecision: ResolutionDecisionType = "new";
 
       await this.db.transaction((tx) => {
+        supersedePriorDecisions(tx, candidate.id, decisionId);
+
         tx.insert(normalizedEvents).values({
           id: newNormId,
           parentEventId: null,
@@ -632,7 +634,7 @@ export class EventResolver {
         }).run();
 
         tx.insert(eventResolutionDecisions).values({
-          id: randomUUID(),
+          id: decisionId,
           candidateExtractedEventId: candidate.id,
           matchedNormalizedEventId: newNormId,
           decision: effectiveDecision,
@@ -640,6 +642,7 @@ export class EventResolver {
           signals,
           reason: decision === "new" ? reason : `No strong signals (score ${score.toFixed(2)}); created as new.`,
           createdAt: new Date(),
+          note: note ?? null,
         }).run();
 
         this.exportQueue?.enqueueSync(tx, newNormId, candidate.isCancelled ? "cancelled" : "created");
@@ -653,6 +656,8 @@ export class EventResolver {
       // they do not edit the parent's canonical fields.
       const subId = randomUUID();
       await this.db.transaction((tx) => {
+        supersedePriorDecisions(tx, candidate.id, decisionId);
+
         tx.insert(normalizedEvents).values({
           id: subId,
           parentEventId: normalizedEventId,
@@ -680,7 +685,7 @@ export class EventResolver {
         }).run();
 
         tx.insert(eventResolutionDecisions).values({
-          id: randomUUID(),
+          id: decisionId,
           candidateExtractedEventId: candidate.id,
           matchedNormalizedEventId: normalizedEventId,
           decision: "linked_as_sub",
@@ -688,6 +693,7 @@ export class EventResolver {
           signals,
           reason,
           createdAt: new Date(),
+          note: note ?? null,
         }).run();
 
         this.exportQueue?.enqueueSync(tx, subId, candidate.isCancelled ? "cancelled" : "created");
@@ -698,6 +704,8 @@ export class EventResolver {
     } else if (decision === "merged" && normalizedEventId) {
       // Merge into existing normalized event
       await this.db.transaction((tx) => {
+        supersedePriorDecisions(tx, candidate.id, decisionId);
+
         // Link candidate to existing normalized event
         tx.insert(normalizedEventSources).values({
           id: randomUUID(),
@@ -731,7 +739,7 @@ export class EventResolver {
         }
 
         tx.insert(eventResolutionDecisions).values({
-          id: randomUUID(),
+          id: decisionId,
           candidateExtractedEventId: candidate.id,
           matchedNormalizedEventId: normalizedEventId,
           decision: "merged",
@@ -739,6 +747,7 @@ export class EventResolver {
           signals,
           reason,
           createdAt: new Date(),
+          note: note ?? null,
         }).run();
 
         if (cancellationFlipped) {
@@ -773,21 +782,41 @@ export class EventResolver {
       log.info(`Merged extracted ${candidate.id} into normalized ${normalizedEventId}`);
 
     } else if (decision === "needs_review") {
-      // Record for human review but do not create or merge
-      await this.db.insert(eventResolutionDecisions).values({
-        id: randomUUID(),
-        candidateExtractedEventId: candidate.id,
-        matchedNormalizedEventId: normalizedEventId,
-        decision: "needs_review",
-        score,
-        signals,
-        reason,
-        createdAt: new Date(),
-      }).run();
+      // Record for human review but do not create or merge.
+      // Supersede inside a transaction to keep the chain consistent.
+      await this.db.transaction((tx) => {
+        supersedePriorDecisions(tx, candidate.id, decisionId);
+        tx.insert(eventResolutionDecisions).values({
+          id: decisionId,
+          candidateExtractedEventId: candidate.id,
+          matchedNormalizedEventId: normalizedEventId,
+          decision: "needs_review",
+          score,
+          signals,
+          reason,
+          createdAt: new Date(),
+          note: note ?? null,
+        }).run();
+      });
 
       log.info(`Flagged extracted ${candidate.id} for review (score ${score.toFixed(2)})`);
     }
   }
+}
+
+/**
+ * Mark every current decision for `candidateExtractedEventId` as
+ * superseded by `newDecisionId`. Idempotent and safe to call before
+ * each insert.
+ */
+function supersedePriorDecisions(tx: any, candidateExtractedEventId: string, newDecisionId: string): void {
+  tx.update(eventResolutionDecisions)
+    .set({ supersededAt: new Date(), supersededById: newDecisionId })
+    .where(and(
+      eq(eventResolutionDecisions.candidateExtractedEventId, candidateExtractedEventId),
+      sql`${eventResolutionDecisions.supersededAt} IS NULL`
+    ))
+    .run();
 }
 
 function timeWindowSignal(

@@ -140,3 +140,6 @@ browser_data/
 
 # Temporary / Scratch Files
 scratch/
+
+# Claude Code per-session worktrees
+.claude/worktrees/

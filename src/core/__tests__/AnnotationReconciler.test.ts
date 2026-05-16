@@ -99,7 +99,10 @@ function createTestDb() {
       score REAL,
       signals TEXT NOT NULL,
       reason TEXT NOT NULL,
-      created_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL,
+      superseded_at INTEGER,
+      superseded_by_id TEXT,
+      note TEXT
     );
   `);
   return db;

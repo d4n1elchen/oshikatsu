@@ -136,7 +136,10 @@ function createTestDb() {
       score REAL,
       signals TEXT NOT NULL,
       reason TEXT NOT NULL,
-      created_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL,
+      superseded_at INTEGER,
+      superseded_by_id TEXT,
+      note TEXT
     );
   `);
 
@@ -617,4 +620,76 @@ test("hierarchy resolution does not run for event_scope=main", async () => {
   const ev2Decision = decisions.find((d) => d.candidateExtractedEventId === ev2);
   assert.ok(ev2Decision);
   assert.notEqual(ev2Decision!.decision, "linked_as_sub", "main events should not be linked as sub");
+});
+
+
+// ---- Manual override + decision history tests ----
+
+test("acceptAsMerge supersedes the prior decision in-place; original row stays", async () => {
+  const db = createTestDb();
+  insertArtist(db);
+  const ev1 = insertExtractedEvent(db, { artistId: "artist-1", sourceUrl: "https://src/1" });
+  const resolver = new EventResolver(db as any);
+  await resolver.resolve(ev1);
+
+  const ev2 = insertExtractedEvent(db, {
+    artistId: "artist-1",
+    title: "Different title",
+    sourceUrl: "https://src/2",
+  });
+  await resolver.resolve(ev2);
+
+  const beforeDecisions = getDecisions(db).filter((d) => d.candidateExtractedEventId === ev2);
+  assert.equal(beforeDecisions.length, 1, "auto-resolve writes one decision");
+  assert.equal(beforeDecisions[0]!.supersededAt, null);
+
+  const norm = getNormalizedEvents(db);
+  const target = norm[0]!.id;
+
+  await resolver.acceptAsMerge(ev2, target, "operator note");
+
+  const after = getDecisions(db).filter((d) => d.candidateExtractedEventId === ev2);
+  assert.equal(after.length, 2, "supersede preserves the original row");
+
+  const original = after.find((d) => d.id === beforeDecisions[0]!.id)!;
+  const override = after.find((d) => d.id !== beforeDecisions[0]!.id)!;
+  assert.ok(original.supersededAt, "original row marked superseded");
+  assert.equal(original.supersededById, override.id, "supersededBy points at override");
+  assert.equal(override.decision, "merged");
+  assert.equal(override.matchedNormalizedEventId, target);
+  assert.equal(override.note, "operator note");
+  assert.equal((override.signals as any).manual_override, true);
+});
+
+test("acceptAsNew also supersedes in-place", async () => {
+  const db = createTestDb();
+  insertArtist(db);
+  const ev = insertExtractedEvent(db, { artistId: "artist-1" });
+  const resolver = new EventResolver(db as any);
+  await resolver.resolve(ev);
+
+  await resolver.acceptAsNew(ev);
+
+  const decs = getDecisions(db).filter((d) => d.candidateExtractedEventId === ev);
+  assert.equal(decs.length, 2);
+  const superseded = decs.filter((d) => d.supersededAt != null);
+  const current = decs.filter((d) => d.supersededAt == null);
+  assert.equal(superseded.length, 1);
+  assert.equal(current.length, 1);
+  assert.equal(current[0]!.decision, "new");
+  assert.equal((current[0]!.signals as any).manual_override, true);
+});
+
+test("resolve() skips an extracted event with any prior decision, even if superseded", async () => {
+  const db = createTestDb();
+  insertArtist(db);
+  const ev = insertExtractedEvent(db, { artistId: "artist-1" });
+  const resolver = new EventResolver(db as any);
+  await resolver.resolve(ev);
+  await resolver.acceptAsNew(ev);
+
+  await resolver.resolve(ev);
+
+  const decs = getDecisions(db).filter((d) => d.candidateExtractedEventId === ev);
+  assert.equal(decs.length, 2, "resolve should not run again after manual override");
 });

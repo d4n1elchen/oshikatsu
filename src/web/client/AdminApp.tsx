@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useState } from "react";
 import {
   adminAcceptMerge,
   adminAcceptNew,
+  adminAttachAsSubEvent,
+  adminMergeEvent,
   adminRequeueOrphan,
   fetchAdminDashboard,
   fetchOrphans,
@@ -25,6 +27,7 @@ export function AdminApp() {
   const [error, setError] = useState<string | null>(null);
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [actionPending, setActionPending] = useState<string | null>(null);
+  const [picker, setPicker] = useState<{ source: NormalizedEventDTO; mode: "merge" | "attach" } | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -108,6 +111,8 @@ export function AdminApp() {
         <CanonicalEventsPanel
           events={data.events}
           onEdit={(id) => setEditingEventId(id)}
+          onMerge={(ev) => setPicker({ source: ev, mode: "merge" })}
+          onAttach={(ev) => setPicker({ source: ev, mode: "attach" })}
         />
 
         <ExtractionFailuresPanel summary={data.extractionFailures} />
@@ -122,6 +127,28 @@ export function AdminApp() {
           onSaved={() => {
             setEditingEventId(null);
             refresh();
+          }}
+        />
+      )}
+
+      {picker && (
+        <EventTargetPicker
+          source={picker.source}
+          mode={picker.mode}
+          events={data.events}
+          onClose={() => setPicker(null)}
+          onSubmit={async (targetId, note) => {
+            try {
+              if (picker.mode === "merge") {
+                await adminMergeEvent(picker.source.id, targetId, note);
+              } else {
+                await adminAttachAsSubEvent(picker.source.id, targetId, note);
+              }
+              setPicker(null);
+              refresh();
+            } catch (e) {
+              setError(e instanceof Error ? e.message : String(e));
+            }
           }}
         />
       )}
@@ -285,9 +312,13 @@ function ReviewQueuePanel({
 function CanonicalEventsPanel({
   events,
   onEdit,
+  onMerge,
+  onAttach,
 }: {
   events: NormalizedEventDTO[];
   onEdit: (id: string) => void;
+  onMerge: (ev: NormalizedEventDTO) => void;
+  onAttach: (ev: NormalizedEventDTO) => void;
 }) {
   const [filter, setFilter] = useState("");
   const lower = filter.trim().toLowerCase();
@@ -319,21 +350,155 @@ function CanonicalEventsPanel({
         <ul className="event-list admin-events">
           {filtered.slice(0, 50).map((ev) => (
             <li key={ev.id} className="event-row clickable" onClick={() => onEdit(ev.id)}>
-              <div className="event-title">
-                {ev.isCancelled ? <s>{ev.title}</s> : ev.title}
-                {ev.operatorOwned && <span className="badge owned">owned</span>}
+              <div className="event-row-main">
+                <div className="event-title">
+                  {ev.isCancelled ? <s>{ev.title}</s> : ev.title}
+                  {ev.operatorOwned && <span className="badge owned">owned</span>}
+                </div>
+                <div className="event-meta">
+                  {ev.artistName ?? "—"}
+                  {ev.startTime && ` · ${new Date(ev.startTime).toLocaleString()}`}
+                  {(ev.venue?.name ?? ev.venueName) && ` · ${ev.venue?.name ?? ev.venueName}`}
+                  {` · ${ev.sourceCount} source${ev.sourceCount === 1 ? "" : "s"}`}
+                </div>
               </div>
-              <div className="event-meta">
-                {ev.artistName ?? "—"}
-                {ev.startTime && ` · ${new Date(ev.startTime).toLocaleString()}`}
-                {(ev.venue?.name ?? ev.venueName) && ` · ${ev.venue?.name ?? ev.venueName}`}
-                {` · ${ev.sourceCount} source${ev.sourceCount === 1 ? "" : "s"}`}
+              <div className="event-row-actions">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={(e) => { e.stopPropagation(); onMerge(ev); }}
+                  title="Fold this event into another (this row is deleted)."
+                >
+                  Merge…
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={(e) => { e.stopPropagation(); onAttach(ev); }}
+                  title="Attach this event as a sub-event of another (this row is kept)."
+                >
+                  Sub-of…
+                </button>
               </div>
             </li>
           ))}
         </ul>
       )}
     </section>
+  );
+}
+
+function EventTargetPicker({
+  source,
+  mode,
+  events,
+  onClose,
+  onSubmit,
+}: {
+  source: NormalizedEventDTO;
+  mode: "merge" | "attach";
+  events: NormalizedEventDTO[];
+  onClose: () => void;
+  onSubmit: (targetId: string, note?: string) => void | Promise<void>;
+}) {
+  const [filter, setFilter] = useState("");
+  const [targetId, setTargetId] = useState<string | null>(null);
+  const [note, setNote] = useState("");
+  const [pending, setPending] = useState(false);
+  const lower = filter.trim().toLowerCase();
+
+  const candidates = events.filter((e) => {
+    if (e.id === source.id) return false;
+    // For attach mode, only top-level events can be parents.
+    if (mode === "attach" && e.parentEventId) return false;
+    if (!lower) return true;
+    return (
+      e.title.toLowerCase().includes(lower) ||
+      (e.artistName ?? "").toLowerCase().includes(lower)
+    );
+  });
+
+  const submit = async () => {
+    if (!targetId) return;
+    setPending(true);
+    try {
+      await onSubmit(targetId, note.trim() || undefined);
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop open" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal" role="dialog" aria-modal="true">
+        <button className="modal-close" onClick={onClose} aria-label="Close">×</button>
+        <header className="modal-header">
+          <h2 className="modal-title">
+            {mode === "merge" ? "Merge into…" : "Attach as sub-event of…"}
+          </h2>
+          <div className="modal-meta">
+            <span className="dim">{mode === "merge" ? "this event will be deleted" : "this event will keep its own row"}</span>
+          </div>
+        </header>
+
+        <section className="modal-section">
+          <h3 className="modal-section-title">Source</h3>
+          <div>{source.title}</div>
+          <div className="dim">{source.artistName ?? "—"}</div>
+        </section>
+
+        <section className="modal-section">
+          <h3 className="modal-section-title">Target</h3>
+          <input
+            type="search"
+            placeholder="Filter by title or artist…"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            className="admin-search"
+            autoFocus
+          />
+          <ul className="target-list">
+            {candidates.slice(0, 50).map((ev) => (
+              <li
+                key={ev.id}
+                className={`target-row ${targetId === ev.id ? "selected" : ""}`}
+                onClick={() => setTargetId(ev.id)}
+              >
+                <div className="event-title">{ev.title}</div>
+                <div className="event-meta">
+                  {ev.artistName ?? "—"}
+                  {ev.startTime && ` · ${new Date(ev.startTime).toLocaleString()}`}
+                </div>
+              </li>
+            ))}
+            {candidates.length === 0 && <li className="admin-empty">No eligible targets.</li>}
+          </ul>
+        </section>
+
+        <section className="modal-section">
+          <h3 className="modal-section-title">Note (optional)</h3>
+          <input
+            type="text"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Why are you doing this? (logged for future resolver tuning)"
+            className="admin-search"
+          />
+        </section>
+
+        <div className="modal-actions">
+          <button type="button" className="btn" onClick={onClose} disabled={pending}>Cancel</button>
+          <button
+            type="button"
+            className="btn primary"
+            disabled={!targetId || pending}
+            onClick={submit}
+          >
+            {mode === "merge" ? "Merge" : "Attach"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
