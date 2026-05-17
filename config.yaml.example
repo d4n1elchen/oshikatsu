@@ -1,58 +1,84 @@
-# Oshikatsu Configuration File
-# This file overrides the default application settings.
+# Oshikatsu configuration.
+#
+# Copy this file to `config.yaml` (gitignored) and override only the keys you
+# care about — missing keys fall back to the defaults in src/config.ts.
+# The daemon reads this once at startup; restart after editing.
 
+# Cadence for each pipeline stage. The stages run as independent loops and
+# are individually idempotent, so a slow extraction batch won't block the
+# resolver from catching up. Pick intervals that fit your source's update
+# frequency vs. your tolerance for staleness; ingestion is usually the
+# coarsest because scraping is the most expensive step.
 scheduler:
-  ingestionIntervalMinutes: 60      # how often to fetch new raw items from sources
-  extractionIntervalMinutes: 5      # how often to run LLM extraction over unprocessed raw items
-  resolutionIntervalMinutes: 2      # how often to resolve newly extracted events into normalized events
-  exportIntervalMinutes: 5          # how often to push canonical events to registered consumers
+  ingestionIntervalMinutes: 60      # fetch new raw items from sources
+  extractionIntervalMinutes: 5      # LLM-extract structured events from unprocessed raw items
+  resolutionIntervalMinutes: 2      # resolve newly extracted events into normalized events
+  exportIntervalMinutes: 5          # push canonical events to registered consumers
 
+# LLM used for structured extraction. Must support Ollama's structured-output
+# (format) feature; extraction validates JSON against zod schemas and a model
+# that can't follow the schema will produce extraction failures. Larger models
+# in the llama3 family handle this well; very small models may fail validation.
 llm:
   provider: "ollama"
   host: "http://127.0.0.1:11434"   # shared with the embedding service below
   model: "llama3"
 
 # Optional: embedding-based same-artist signal. Catches cross-script aliases
-# (e.g. 花譜 ↔ KAF) the deterministic tokenizer can't see. Off by default —
-# enable after running `ollama pull bge-m3` (or your chosen model).
+# (e.g. 花譜 ↔ KAF) that the deterministic tokenizer can't see. Off by default
+# because it needs a separate `ollama pull <model>` step.
 #
-# Uses the same Ollama endpoint as `llm.host` above. There is no separate
-# host setting today — embedding traffic shares the LLM daemon.
+# Shares the Ollama endpoint with `llm.host` above — embedding requests and
+# LLM extraction requests both go to the same daemon. There is no separate
+# host setting today; add one if you need to point them at different boxes.
+#
+# `cosineThreshold` is the floor below which a candidate's cosine adds zero
+# to the resolver score. The contribution is then weighted by time-window
+# confidence (see design_docs/2026-04-25-phase3-event-resolution/event-resolution.md).
 embeddings:
   enabled: false
-  model: "bge-m3"                 # any Ollama-installed embedding model
-  cosineThreshold: 0.75           # cosine below this contributes nothing
+  model: "bge-m3"                 # any Ollama-installed embedding model; bge-m3 is multilingual JP/EN
+  cosineThreshold: 0.75           # bge-m3 duplicates typically land ≥ 0.75
 
+# Twitter / X scraping. Login state and cookies live in `paths.browserData`;
+# run `npm run login:twitter` once to populate it.
 twitter:
-  maxTweetsPerSource: 50
-  headless: false                    # headful reduces anti-bot detection on X; flipping to true increases lock risk
-  interTargetDelayMs: 3000           # delay between successive target fetches (with ±25% jitter); set to 0 to disable
+  maxTweetsPerSource: 50             # per fetch cycle; the scraper grabs newest-first and stops at this cap
+  headless: false                    # headful reduces anti-bot detection on X; flipping to true increases lock risk (font/GPU fingerprints, missing-permissions APIs)
+  interTargetDelayMs: 3000           # gap between successive target fetches (with ±25% jitter); set to 0 to disable
 
+# Filesystem paths. Relative paths are resolved against the current working
+# directory at startup, so run the daemon from the repo root for these to
+# point where you expect.
 paths:
-  browserData: "./browser_data"
-  database: "./data/oshikatsu.db"
+  browserData: "./browser_data"   # Playwright user-data dir; holds Twitter login state
+  database: "./data/oshikatsu.db" # SQLite file (WAL mode); migrations live in src/db/migrations
 
-# Event resolution thresholds. Tune these to be more or less aggressive about
-# auto-merging duplicate events. Lower thresholds merge more; higher thresholds
-# defer more to the review queue.
+# Event resolution thresholds. Tune to bias toward auto-merge (lower
+# thresholds) vs. the human review queue (higher thresholds). The scoring
+# formula and per-signal weights are documented in:
+#   design_docs/2026-04-25-phase3-event-resolution/event-resolution.md
 resolution:
-  titleSimilarityThreshold: 0.6   # min title similarity for venue+time merges
-  autoMergeScoreThreshold: 0.7    # aggregate score required to auto-merge
-  needsReviewScoreThreshold: 0.25 # below auto-merge but above this → review queue
-  candidateWindowHours: 48        # ± window for considering events the same
+  titleSimilarityThreshold: 0.6   # floor for title-sim contribution (gates the venue+time path and the same-artist+title-sim path)
+  autoMergeScoreThreshold: 0.7    # aggregate score at or above this auto-merges
+  needsReviewScoreThreshold: 0.25 # below auto-merge but at or above this → review queue (else: no_match → new event)
+  candidateWindowHours: 48        # candidate selection time window; matters because most strong signals are gated on `within_window`
 
 # Downstream export. When enabled, the resolver enqueues canonical event
-# changes into export_queue and the daemon registers an Export task that
-# drives registered consumers.
+# changes into `export_queue` inside the same transaction that mutates the
+# canonical row, and the daemon registers an Export task that drives each
+# consumer with its own cursor. While disabled, no rows are enqueued and the
+# Export task is not registered; any queue rows from previous enabled runs
+# stay in place and will be picked up when you re-enable.
 export:
   enabled: false
   ical:
     enabled: false
-    outputDir: "./data/ical"   # one <artist-id>.ics file per artist
-    calendarPrefix: "Oshikatsu" # X-WR-CALNAME prefix; full name is "<prefix> — <artist name>"
+    outputDir: "./data/ical"     # one <artist-handle>.ics file per artist
+    calendarPrefix: "Oshikatsu"  # X-WR-CALNAME prefix; rendered as "<prefix> — <artist name>"
 
 # Last-resort timezone applied during extraction when the LLM emits an
 # offset-less timestamp and the artist has no `timezone` set. IANA name.
-# Set to null to disable the fallback (offset-less timestamps will then
-# fail extraction loudly instead of being coerced).
+# Set to null to disable the fallback — offset-less timestamps will then
+# fail extraction loudly instead of being silently coerced.
 defaultTimezone: "Asia/Tokyo"
