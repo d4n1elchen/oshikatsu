@@ -2,6 +2,32 @@
 
 This document tracks known technical debts, follow-up decisions, and intentionally deferred work. It should be updated whenever we choose a pragmatic shortcut so the project does not lose the context.
 
+## Code Health Cleanup (2026-05-17 audit)
+
+Solo project; no external consumers — back-compat shims should be deleted, not preserved. Priority reflects effort vs. value, not urgency.
+
+### P1 — Dead code, delete now
+
+- **`EventExtractionSchema` alias in `src/core/ExtractionStrategy.ts:70-72`.** Aliased to `EventBranchSchema` "for backwards-compatible callers"; grep shows zero importers. Delete the alias and the comment.
+- **`NoopConsumer` in `src/core/Consumer.ts:34-37`.** Only imported by `ExportRunner.test.ts`. Move into the test file (or a `__tests__/fixtures.ts`); stop shipping test scaffolding in `src/core`.
+- **`FixedEmbeddingService` in `src/core/EmbeddingService.ts:45-87`.** Only imported by `EventResolver.test.ts`. Same treatment as above.
+
+### P2 — Legacy config shim, drop after one-time config update
+
+- **`preprocessingIntervalMinutes` / `normalizationIntervalMinutes` fallbacks in `src/config.ts:114-141`.** Renamed to `extractionIntervalMinutes`. Update local `config.yaml` if needed, then remove the destructuring + fallback block and the `RawConfig` extension fields.
+
+### P3 — Legacy data shim, verify before removing
+
+- **"Uncategorized" orphan bucket in `src/core/queries/OrphansQueries.ts:90-95`.** Covers `notAnEventCategory IS NULL` rows from before migration 0025. Run `SELECT COUNT(*) FROM raw_items WHERE status='not_an_event' AND not_an_event_category IS NULL`; if zero, drop the bucket. Otherwise backfill, then drop.
+
+### P3 — Type-safety pass
+
+- **Five `(userConfig as any).<field>` casts in `src/config.ts:147-161`** (`embeddings`, `resolution`, `export`, `defaultTimezone`). `RawConfig` is missing these fields, so TS can't catch typos in `config.yaml` parsing. Extend `RawConfig` with the missing keys and drop the casts.
+
+### Out of scope — keep
+
+X GraphQL `core` ↔ `legacy` fallback (`twitter/index.ts:115-119`, `ExtractionStrategy.ts:242-253`, `AdminApp.tsx:676-680`, `App.tsx:177`) is legitimate external-API compat during X's response-shape rollout, not internal legacy code.
+
 ## Phase 2 Event Extraction
 
 ### Test coverage gaps
