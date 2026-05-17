@@ -128,14 +128,15 @@ Follow-up:
 
 ## Phase 3 Event Resolution
 
-### Title similarity is deterministic only
+### Title similarity is deterministic; embeddings are an opt-in layer
 
-The current `titleSimilarity` uses Jaccard token overlap + substring containment, CJK-safe. Per the design doc, semantic vector similarity was deferred. If false-merges or missed-merges become a recurring pattern in the review queue, revisit.
+The deterministic `titleSimilarity` (Intl.Segmenter token overlap + substring containment) is the always-on signal. An optional **embedding cosine signal** (Ollama-based, default `bge-m3`, cached in `event_embeddings`) layers on top to catch cross-script aliases (花譜 ↔ KAF) the tokenizer can't see — controlled via `config.embeddings.enabled` (default off, since it requires `ollama pull <model>`).
 
-Follow-up:
+Open items:
 
-- Inspect the review queue periodically to see whether semantic matching would actually move the needle.
-- Document and add semantic matching as a layered pass (not a replacement) if needed.
+- Tune `cosineThreshold` (default 0.75) and the per-time-window weights against the review queue once there's enough labelled merge/no-merge data.
+- Embeddings are computed inline in the resolve transaction's after-hook (~100ms per `Ollama embed` call on Apple Silicon Metal). If batch resolution latency becomes a bottleneck, move to a background embedding queue.
+- The cache invalidates on model swap (rows with stale `model` are skipped on read). There's no scheduled re-embed for events whose `title`/`venue_name` later changes outside of `NormalizedEventsRepo.updateNormalizedEvent` (e.g. if title-rewrite logic is added to merge handling). Revisit when that happens.
 
 ### Sub-event hint matching only checks normalized titles, not aliases
 

@@ -19,11 +19,21 @@ function normalizeTitle(title: string): string {
     .replace(/[A-Za-z]/g, (c) => c.toLowerCase());
 }
 
+// `ja` locale segments mixed Japanese + ASCII correctly: ASCII splits on
+// whitespace/punctuation, CJK splits on dictionary-known word boundaries
+// (e.g. "栃木放送" → ["栃木", "放送"]). Treating each CJK run as a single
+// token — the previous behavior — defeated Jaccard for partial-prefix duplicates.
+const segmenter = new Intl.Segmenter("ja", { granularity: "word" });
+
 function tokenize(title: string): Set<string> {
   const normalized = normalizeTitle(title);
-  // Split on ASCII whitespace and punctuation, keep CJK chars as individual tokens.
-  const tokens = normalized.match(/[　-鿿가-힯豈-﫿]+|[^\s\p{P}]+/gu) ?? [];
-  return new Set(tokens.filter((t) => t.length > 0));
+  const tokens = new Set<string>();
+  for (const segment of segmenter.segment(normalized)) {
+    if (segment.isWordLike && segment.segment.length > 0) {
+      tokens.add(segment.segment);
+    }
+  }
+  return tokens;
 }
 
 function jaccardSimilarity(a: Set<string>, b: Set<string>): number {

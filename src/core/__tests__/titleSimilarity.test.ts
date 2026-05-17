@@ -35,6 +35,32 @@ test("partial Japanese title overlap", () => {
   assert.ok(score > 0, `score was ${score}`);
 });
 
+test("Japanese partial-prefix duplicate crosses threshold", () => {
+  // Models real data: a campaign title and the same title with a sub-hashtag.
+  // With the prior CJK-run-as-one-token tokenizer, this scored 0.53 and missed
+  // the merge threshold; segmented tokens push it over.
+  const score = titleSimilarity(
+    "栃木放送パワープレイキャンペーン",
+    "栃木放送パワープレイキャンペーン「#放課後ボーダーライン」"
+  );
+  assert.ok(
+    score >= TITLE_SIMILARITY_AUTO_MERGE_THRESHOLD,
+    `score was ${score}`
+  );
+});
+
+test("Japanese partial-suffix overlap crosses threshold", () => {
+  // "東京ドーム公演" vs "アニバーサリー東京ドーム公演" — shared multi-token suffix.
+  const score = titleSimilarity(
+    "東京ドーム公演",
+    "アニバーサリー東京ドーム公演"
+  );
+  assert.ok(
+    score >= TITLE_SIMILARITY_AUTO_MERGE_THRESHOLD,
+    `score was ${score}`
+  );
+});
+
 test("empty strings score 1 (both empty = identical)", () => {
   assert.equal(titleSimilarity("", ""), 1);
 });

@@ -1,4 +1,8 @@
 import { EventResolver } from "../core/EventResolver";
+import { EmbeddingsRepo } from "../core/EmbeddingsRepo";
+import { OllamaEmbeddingService } from "../core/EmbeddingService";
+import { db } from "../db";
+import { getConfig } from "../config";
 import { tagged } from "../core/logger";
 
 const log = tagged("resolve:once");
@@ -11,7 +15,13 @@ function parseArgs(argv: string[]): { limit: number } {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const resolver = new EventResolver();
+  const embeddings = getConfig().embeddings.enabled
+    ? new EmbeddingsRepo(db, new OllamaEmbeddingService())
+    : null;
+  if (embeddings) {
+    log.info(`Embeddings enabled (model=${embeddings.modelId()}, cosineThreshold=${embeddings.cosineThreshold()})`);
+  }
+  const resolver = new EventResolver(undefined, undefined, null, embeddings);
   const result = await resolver.processBatch(args.limit);
   log.info(`Done; resolved ${result.resolved}, failed ${result.failed}`);
 }

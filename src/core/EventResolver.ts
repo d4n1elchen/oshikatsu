@@ -13,6 +13,8 @@ import { titleSimilarity } from "./titleSimilarity";
 import type { ResolutionSignals, ResolutionDecisionType } from "./types";
 import { getConfig } from "../config";
 import { tagged } from "./logger";
+import { EmbeddingsRepo } from "./EmbeddingsRepo";
+import { cosineSimilarity } from "./EmbeddingService";
 
 const log = tagged("EventResolver");
 
@@ -53,15 +55,18 @@ export class EventResolver {
   private db: DbInstance;
   private thresholds: EventResolverThresholds;
   private exportQueue: ExportQueueRepo | null;
+  private embeddings: EmbeddingsRepo | null;
 
   constructor(
     db: DbInstance = defaultDb,
     thresholds?: Partial<EventResolverThresholds>,
-    exportQueue: ExportQueueRepo | null = null
+    exportQueue: ExportQueueRepo | null = null,
+    embeddings: EmbeddingsRepo | null = null
   ) {
     this.db = db;
     this.thresholds = { ...defaultThresholds(), ...thresholds };
     this.exportQueue = exportQueue;
+    this.embeddings = embeddings;
   }
   /**
    * Resolve a single extracted event: match against existing normalized events,
@@ -94,7 +99,23 @@ export class EventResolver {
     const candidateLinks = await this.getRelatedLinks(extractedEventId);
     const normalizedCandidates = await this.selectNormalizedCandidates(candidate, candidateLinks);
 
-    let result = await this.decideResolution(candidate, candidateLinks, normalizedCandidates);
+    // Embedding signal: compute query vector once, batch-load candidates'
+    // cached vectors. Best-effort — failures degrade to "no cosine signal".
+    let extractedVec: Float32Array | null = null;
+    let candidateVecs = new Map<string, Float32Array>();
+    if (this.embeddings && this.embeddings.enabled() && normalizedCandidates.length > 0) {
+      extractedVec = await this.embeddings.embedQuery({
+        title: candidate.title,
+        venueName: candidate.venueName,
+      });
+      if (extractedVec) {
+        candidateVecs = this.embeddings.loadForNormalizedEvents(
+          normalizedCandidates.map((c) => c.id)
+        );
+      }
+    }
+
+    let result = await this.decideResolution(candidate, candidateLinks, normalizedCandidates, extractedVec, candidateVecs);
 
     // Phase 3.1 hierarchy resolution: if no merge match, try sub-event linking.
     if (
@@ -435,7 +456,9 @@ export class EventResolver {
   private async decideResolution(
     candidate: ExtractedEventRow,
     candidateLinks: RelatedLinkRow[],
-    normalizedCandidates: NormalizedEventRow[]
+    normalizedCandidates: NormalizedEventRow[],
+    extractedVec: Float32Array | null,
+    candidateVecs: Map<string, Float32Array>
   ): Promise<ResolutionResult> {
     if (normalizedCandidates.length === 0) {
       return {
@@ -450,7 +473,11 @@ export class EventResolver {
     let bestResult: ResolutionResult | null = null;
 
     for (const norm of normalizedCandidates) {
-      const result = await this.scoreMatch(candidate, candidateLinks, norm);
+      const cosine =
+        extractedVec && candidateVecs.has(norm.id)
+          ? cosineSimilarity(extractedVec, candidateVecs.get(norm.id)!)
+          : null;
+      const result = await this.scoreMatch(candidate, candidateLinks, norm, cosine);
       if (!bestResult || result.score > bestResult.score) {
         bestResult = result;
       }
@@ -462,7 +489,8 @@ export class EventResolver {
   private async scoreMatch(
     candidate: ExtractedEventRow,
     candidateLinks: RelatedLinkRow[],
-    norm: NormalizedEventRow
+    norm: NormalizedEventRow,
+    cosine: number | null
   ): Promise<ResolutionResult> {
     const signals: ResolutionSignals = {};
     let score = 0;
@@ -535,6 +563,7 @@ export class EventResolver {
     }
 
     // --- Strong signal: same venue + close time + similar title ---
+    let titleCreditedViaVenue = false;
     if (
       candidate.venueId &&
       norm.venueId &&
@@ -553,6 +582,7 @@ export class EventResolver {
       ) {
         score += 0.75;
         reasons.push(`same venue + close time + title similarity ${titSim.toFixed(2)}`);
+        titleCreditedViaVenue = true;
       } else if (timeWindowLabel === "within_window") {
         // Same venue + close time but title doesn't match
         score += 0.2;
@@ -571,6 +601,57 @@ export class EventResolver {
     // --- Moderate: time window ---
     if (!signals.time_window) {
       signals.time_window = timeWindowSignal(candidate.startTime, norm.startTime, this.thresholds.candidateWindowMs);
+    }
+
+    // --- Moderate: same-artist + title similarity (independent signal) ---
+    // Many extracted events from posts have no venue and no start_time, so the
+    // strong signals above can't fire even on clear duplicates. When the artist
+    // matches and titles are similar in a plausible time window, credit it here.
+    // Same-artist is usually guaranteed by candidate selection, but related-link
+    // candidates can be cross-artist, so check explicitly. Skipped when the venue
+    // branch already credited the title-sim signal to avoid double-counting.
+    const sameArtist = !!candidate.artistId && candidate.artistId === norm.artistId;
+    signals.same_artist = sameArtist;
+    if (sameArtist && !titleCreditedViaVenue) {
+      const titSim = signals.title_similarity!;
+      if (titSim >= this.thresholds.titleSimilarityThreshold) {
+        // Weight by time-window confidence. within_window auto-merges at
+        // titSim≥0.7; weaker time signals stay below the merge threshold so
+        // they surface for review instead of silently collapsing recurring
+        // events like weekly streams.
+        let weight = 0;
+        if (signals.time_window === "within_window") weight = 1.0;
+        else if (signals.time_window === "same_event_no_time") weight = 0.5;
+        else if (signals.time_window === "within_7d") weight = 0.3;
+        if (weight > 0) {
+          score += weight * titSim;
+          reasons.push(`same artist + title similarity ${titSim.toFixed(2)} (${signals.time_window})`);
+        }
+      }
+    }
+
+    // --- Moderate: same-artist + embedding cosine ---
+    // Catches cross-script aliases (e.g. 花譜 ↔ KAF) the deterministic
+    // tokenizer can't see. Independent of titleSimilarity — both signals
+    // can stack when both fire. Gated by same-artist + plausible time
+    // window for the same reasons as the title-sim branch.
+    if (cosine !== null) {
+      signals.embedding_cosine = cosine;
+      signals.embedding_model = this.embeddings?.modelId();
+      if (
+        sameArtist &&
+        this.embeddings &&
+        cosine >= this.embeddings.cosineThreshold()
+      ) {
+        let weight = 0;
+        if (signals.time_window === "within_window") weight = 0.7;
+        else if (signals.time_window === "same_event_no_time") weight = 0.5;
+        else if (signals.time_window === "within_7d") weight = 0.3;
+        if (weight > 0) {
+          score += weight * cosine;
+          reasons.push(`same artist + embedding cosine ${cosine.toFixed(2)} (${signals.time_window})`);
+        }
+      }
     }
 
     // Determine final decision based on score
@@ -648,6 +729,12 @@ export class EventResolver {
         this.exportQueue?.enqueueSync(tx, newNormId, candidate.isCancelled ? "cancelled" : "created");
       });
 
+      await this.embeddings?.embedAndStore({
+        normalizedEventId: newNormId,
+        title: candidate.title,
+        venueName: candidate.venueName,
+      });
+
       log.info(`Created new normalized event ${newNormId} for extracted ${candidate.id}`);
 
     } else if (decision === "linked_as_sub" && normalizedEventId) {
@@ -697,6 +784,12 @@ export class EventResolver {
         }).run();
 
         this.exportQueue?.enqueueSync(tx, subId, candidate.isCancelled ? "cancelled" : "created");
+      });
+
+      await this.embeddings?.embedAndStore({
+        normalizedEventId: subId,
+        title: candidate.title,
+        venueName: candidate.venueName,
       });
 
       log.info(`Linked extracted ${candidate.id} as sub-event ${subId} of ${normalizedEventId}`);

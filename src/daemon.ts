@@ -8,6 +8,9 @@ import { ExportRunner } from "./core/ExportRunner";
 import type { Consumer } from "./core/Consumer";
 import { ICalConsumer } from "./core/consumers/ICalConsumer";
 import { OllamaProvider } from "./core/LLMProvider";
+import { OllamaEmbeddingService } from "./core/EmbeddingService";
+import { EmbeddingsRepo } from "./core/EmbeddingsRepo";
+import { db } from "./db";
 import { tagged } from "./core/logger";
 import { getConfig } from "./config";
 
@@ -23,7 +26,16 @@ async function main() {
   // changes into export_queue inside its existing write transactions. When
   // disabled, no queue rows are written and the runner is not registered.
   const exportQueueRepo = config.export.enabled ? new ExportQueueRepo() : null;
-  const resolver = new EventResolver(undefined, undefined, exportQueueRepo);
+  // Embeddings are opt-in via config.embeddings.enabled. When off, the repo
+  // is still constructed but its methods early-return; the resolver behavior
+  // matches pre-embedding builds.
+  const embeddingsRepo = config.embeddings.enabled
+    ? new EmbeddingsRepo(db, new OllamaEmbeddingService())
+    : null;
+  if (embeddingsRepo) {
+    log.info(`Embeddings enabled (model=${embeddingsRepo.modelId()}, cosineThreshold=${embeddingsRepo.cosineThreshold()})`);
+  }
+  const resolver = new EventResolver(undefined, undefined, exportQueueRepo, embeddingsRepo);
   const annotationReconciler = new AnnotationReconciler();
 
   const consumers: Consumer[] = [];

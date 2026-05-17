@@ -37,7 +37,10 @@ export type ResolutionSignals = {
   time_window?: string;
   related_link_overlap?: boolean;
   venue_id_match?: boolean;
+  same_artist?: boolean;
   title_similarity?: number;
+  embedding_cosine?: number;
+  embedding_model?: string;
   source_identity_overlap?: boolean;
   event_scope?: string;
   parent_event_hint_matched?: boolean;

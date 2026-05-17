@@ -9,6 +9,8 @@ import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import * as schema from "../../db/schema";
 import { EventResolver } from "../EventResolver";
+import { EmbeddingsRepo } from "../EmbeddingsRepo";
+import { FixedEmbeddingService } from "../EmbeddingService";
 
 // ---- in-memory DB setup ----
 
@@ -140,6 +142,14 @@ function createTestDb() {
       superseded_at INTEGER,
       superseded_by_id TEXT,
       note TEXT
+    );
+    CREATE TABLE event_embeddings (
+      normalized_event_id TEXT PRIMARY KEY REFERENCES normalized_events(id) ON DELETE CASCADE,
+      model TEXT NOT NULL,
+      dim INTEGER NOT NULL,
+      vector BLOB NOT NULL,
+      source_text TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
     );
   `);
 
@@ -385,6 +395,224 @@ test("same generic virtual venue only — no merge", async () => {
   // Both should become separate normalized events (no merge)
   const normalized = getNormalizedEvents(db);
   assert.equal(normalized.length, 2, "should create two separate normalized events");
+});
+
+test("same artist + similar title + close time (no venue) triggers merge", async () => {
+  // Models duplicates that lack venue info on either side. Strong signals
+  // (source URL, related link, venue match) all miss, so the same-artist +
+  // title-similarity signal is what surfaces the duplicate.
+  const db = createTestDb();
+  insertArtist(db);
+
+  const firstId = insertExtractedEvent(db, {
+    artistId: "artist-1",
+    title: "Tokyo Dome Concert",
+    startTime: NOW,
+    sourceUrl: "https://src/1",
+  });
+  const resolver = new EventResolver(db as any);
+  await resolver.resolve(firstId);
+
+  const secondId = insertExtractedEvent(db, {
+    artistId: "artist-1",
+    title: "Tokyo Dome Concert (Special)",
+    startTime: new Date(NOW.getTime() + 3600_000),
+    sourceUrl: "https://src/2",
+  });
+  await resolver.resolve(secondId);
+
+  const decisions = getDecisions(db);
+  const mergeDecision = decisions.find((d) => d.decision === "merged");
+  assert.ok(mergeDecision, "should merge on same artist + close time + similar title");
+});
+
+test("same artist + similar title but > 7 days apart does NOT merge", async () => {
+  // Recurring "weekly stream" pattern: identical titles, different weeks.
+  // beyond_7d has weight 0, so the title-sim signal must not stack into a merge.
+  const db = createTestDb();
+  insertArtist(db);
+
+  const firstId = insertExtractedEvent(db, {
+    artistId: "artist-1",
+    title: "未確認少女観測部",
+    startTime: NOW,
+    sourceUrl: "https://src/1",
+  });
+  const resolver = new EventResolver(db as any);
+  await resolver.resolve(firstId);
+
+  const secondId = insertExtractedEvent(db, {
+    artistId: "artist-1",
+    title: "未確認少女観測部",
+    startTime: new Date(NOW.getTime() + 14 * 24 * 60 * 60 * 1000),
+    sourceUrl: "https://src/2",
+  });
+  await resolver.resolve(secondId);
+
+  const normalized = getNormalizedEvents(db);
+  assert.equal(normalized.length, 2, "weekly recurrence must not collapse to one event");
+});
+
+test("cross-artist candidate via shared link does NOT get title-sim bonus", async () => {
+  // A related-link candidate can be cross-artist. Title similarity must only
+  // contribute when artists actually match — otherwise a collab announcement
+  // could pull in a different artist's same-titled event.
+  const db = createTestDb();
+  insertArtist(db, "artist-1");
+  insertArtist(db, "artist-2");
+  const sharedLink = "https://event.example.com/tickets";
+  const farTime = new Date(NOW.getTime() + 10 * 24 * 60 * 60 * 1000);
+
+  const firstId = insertExtractedEvent(db, {
+    artistId: "artist-1",
+    title: "Joint Live",
+    startTime: NOW,
+    sourceUrl: "https://src/1",
+  });
+  addLink(db, firstId, sharedLink);
+  const resolver = new EventResolver(db as any);
+  await resolver.resolve(firstId);
+
+  // Different artist, same title, time far enough out that related-link path
+  // adds only +0.3. Without the same-artist guard, title-sim could push it
+  // over the merge threshold.
+  const secondId = insertExtractedEvent(db, {
+    artistId: "artist-2",
+    title: "Joint Live",
+    startTime: farTime,
+    sourceUrl: "https://src/2",
+  });
+  addLink(db, secondId, sharedLink);
+  await resolver.resolve(secondId);
+
+  const decisions = getDecisions(db);
+  const mergeDecision = decisions.find(
+    (d) => d.candidateExtractedEventId === secondId && d.decision === "merged"
+  );
+  assert.equal(mergeDecision, undefined, "cross-artist must not auto-merge on title alone");
+});
+
+// ---- embedding signal tests ----
+
+function unit(...nums: number[]): Float32Array {
+  let mag = 0;
+  for (const n of nums) mag += n * n;
+  mag = Math.sqrt(mag);
+  const v = new Float32Array(nums.length);
+  for (let i = 0; i < nums.length; i++) v[i] = nums[i] / mag;
+  return v;
+}
+
+test("cross-script duplicate auto-merges via embedding cosine", async () => {
+  // Models the 花譜 ↔ KAF case: same-artist posts about one event, in two
+  // scripts. Token-based titleSim returns ~0; only the embedding signal
+  // catches the duplicate. Fixture vectors are identical so cosine == 1.0
+  // and the within_window weight (0.7) reaches the auto-merge threshold.
+  const db = createTestDb();
+  insertArtist(db);
+  const sharedVec = unit(1, 0);
+  const embeddings = new EmbeddingsRepo(
+    db as any,
+    new FixedEmbeddingService(
+      new Map([
+        ["花譜 OffKai Expo 出演", sharedVec],
+        ["KAF performance at OffKai Expo", sharedVec],
+      ])
+    )
+  );
+
+  const firstId = insertExtractedEvent(db, {
+    artistId: "artist-1",
+    title: "花譜 OffKai Expo 出演",
+    startTime: NOW,
+    sourceUrl: "https://src/1",
+  });
+  const resolver = new EventResolver(db as any, undefined, null, embeddings);
+  await resolver.resolve(firstId);
+
+  const secondId = insertExtractedEvent(db, {
+    artistId: "artist-1",
+    title: "KAF performance at OffKai Expo",
+    startTime: new Date(NOW.getTime() + 3600_000),
+    sourceUrl: "https://src/2",
+  });
+  await resolver.resolve(secondId);
+
+  const decisions = getDecisions(db);
+  const mergeDecision = decisions.find((d) => d.decision === "merged");
+  assert.ok(
+    mergeDecision,
+    "cross-script duplicate should merge via embedding signal"
+  );
+  assert.ok(
+    typeof mergeDecision!.signals === "object" &&
+      (mergeDecision!.signals as any).embedding_cosine !== undefined,
+    "decision row should record the cosine signal"
+  );
+});
+
+test("embedding cosine below threshold does not contribute", async () => {
+  // Same setup as above but vectors are orthogonal (cosine 0). The
+  // embedding branch must not push the decision past needs_review.
+  const db = createTestDb();
+  insertArtist(db);
+  const embeddings = new EmbeddingsRepo(
+    db as any,
+    new FixedEmbeddingService(
+      new Map([
+        ["First Event", unit(1, 0)],
+        ["Completely Different Event", unit(0, 1)],
+      ])
+    )
+  );
+
+  const firstId = insertExtractedEvent(db, {
+    artistId: "artist-1",
+    title: "First Event",
+    startTime: NOW,
+    sourceUrl: "https://src/1",
+  });
+  const resolver = new EventResolver(db as any, undefined, null, embeddings);
+  await resolver.resolve(firstId);
+
+  const secondId = insertExtractedEvent(db, {
+    artistId: "artist-1",
+    title: "Completely Different Event",
+    startTime: new Date(NOW.getTime() + 3600_000),
+    sourceUrl: "https://src/2",
+  });
+  await resolver.resolve(secondId);
+
+  const decisions = getDecisions(db);
+  const mergeDecision = decisions.find((d) => d.decision === "merged");
+  assert.equal(
+    mergeDecision,
+    undefined,
+    "orthogonal embedding must not produce a merge"
+  );
+});
+
+test("embedAndStore populates event_embeddings on create", async () => {
+  // Verifies the resolver writes a cached vector after creating a new
+  // normalized event, so later resolutions can find it.
+  const db = createTestDb();
+  insertArtist(db);
+  const embeddings = new EmbeddingsRepo(
+    db as any,
+    new FixedEmbeddingService(new Map([["My Event", unit(1, 0)]]))
+  );
+
+  const evId = insertExtractedEvent(db, {
+    artistId: "artist-1",
+    title: "My Event",
+  });
+  const resolver = new EventResolver(db as any, undefined, null, embeddings);
+  await resolver.resolve(evId);
+
+  const rows = db.select().from(schema.eventEmbeddings).all();
+  assert.equal(rows.length, 1, "should cache one embedding row");
+  assert.equal(rows[0]!.sourceText, "My Event");
+  assert.equal(rows[0]!.model, "test-fixed");
 });
 
 test("cancellation flag is propagated on merge", async () => {

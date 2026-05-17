@@ -1,4 +1,4 @@
-import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { blob, index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const artists = sqliteTable("artists", {
   id: text("id").primaryKey(),
@@ -229,6 +229,22 @@ export const exportQueue = sqliteTable("export_queue", {
 export const exportCursors = sqliteTable("export_cursors", {
   consumerName: text("consumer_name").primaryKey(),
   cursorPosition: integer("cursor_position").notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+});
+
+// Cached title+venue embedding per normalized event, used as a same-artist
+// title-similarity signal that handles cross-script aliasing (e.g. 花譜 ↔ KAF)
+// the deterministic tokenizer can't see. `model` is stored so a model swap
+// invalidates rather than silently mixing dimensions/spaces; readers must
+// check it before treating the cached vector as comparable.
+export const eventEmbeddings = sqliteTable("event_embeddings", {
+  normalizedEventId: text("normalized_event_id")
+    .primaryKey()
+    .references(() => normalizedEvents.id, { onDelete: "cascade" }),
+  model: text("model").notNull(),
+  dim: integer("dim").notNull(),
+  vector: blob("vector").notNull(),
+  sourceText: text("source_text").notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 });
 

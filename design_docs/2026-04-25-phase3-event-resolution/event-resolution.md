@@ -170,10 +170,13 @@ Example:
 
 ```json
 {
-  "time_window": "within_6_hours",
+  "time_window": "within_window",
   "related_link_overlap": true,
   "venue_id_match": false,
+  "same_artist": true,
   "title_similarity": 0.82,
+  "embedding_cosine": 0.87,
+  "embedding_model": "bge-m3",
   "source_identity_overlap": false,
   "event_scope": "sub",
   "parent_event_hint_matched": true
@@ -206,12 +209,15 @@ Any of these can heavily influence a merge:
 - Same source reference URL or same `(source_name, source_id)`.
 - Same related link URL and close event time.
 - Same `venue_id`, close event time, and similar title.
+- Same `artist_id`, close event time, and high title similarity. Catches duplicates from sources that don't carry venue or precise timing (the dominant miss mode for post-derived events).
+- Same `artist_id`, close event time, and high **embedding cosine** between extracted and normalized title text. Catches cross-script aliases (e.g. 花譜 ↔ KAF, ぼっち・ざ・ろっく ↔ Bocchi the Rock) the deterministic tokenizer can't see. Opt-in via `config.embeddings.enabled`.
 
 ### Moderate Signals
 
 These help when combined:
 
-- Similar title.
+- Similar title (weighted by time-window confidence — see *Title Similarity Scoring* below).
+- Embedding cosine (weighted by time-window confidence — see *Embedding Signal* below).
 - Same extracted `venue_name`.
 - Same event type.
 - Same or nearby event time.
@@ -258,11 +264,17 @@ Recommended automatic merge cases:
    - Event times are within 48 hours.
    - Title similarity passes threshold.
 
+4. **Same artist + close time + high title similarity**
+   - Same `artist_id` (guaranteed by candidate selection except when a candidate is pulled in via shared related link from another artist — checked explicitly to avoid cross-artist merges).
+   - `time_window = within_window` (both start times present and within 48 hours).
+   - Title similarity at or above the auto-merge threshold (≥ 0.7 with the default weight). Weaker time alignment (`same_event_no_time`, `within_7d`) only contributes partial score and stays in review territory.
+
 Recommended review cases:
 
 - Same related link but event times differ by more than 48 hours.
 - Same venue and similar title but no related link overlap.
-- Similar title and close time, but no venue or link support.
+- Same artist + similar title with weak time alignment — one side has no `start_time`, or times are within a week but outside 48h.
+- Similar title and close time, but title similarity below the merge threshold.
 
 Recommended no-match cases:
 
@@ -307,6 +319,39 @@ Possible first-pass approach:
 Avoid romanizing Japanese titles or names for matching in the first pass.
 
 If deterministic similarity is not enough later, document and add semantic matching separately.
+
+### Embedding Signal
+
+When `config.embeddings.enabled = true`, the resolver:
+
+- Embeds each new normalized event's `title | venue_name` via Ollama (default model: `bge-m3`) after the creating transaction commits. The vector is cached in `event_embeddings` keyed by `normalized_event_id`, with the model name stored alongside so a model swap invalidates rather than mixes spaces.
+- For each resolution, embeds the extracted event's text once and batch-loads cached vectors for the same-artist candidate set. Cosine is computed in JS — no vector index is needed at the current scale (≤50 candidates per resolve after filtering).
+- Adds a same-artist + cosine signal to `scoreMatch`, gated by `config.embeddings.cosineThreshold` (default 0.75) and weighted by time-window confidence:
+
+  | `time_window`         | weight |
+  |-----------------------|--------|
+  | `within_window`       | 0.7    |
+  | `same_event_no_time`  | 0.5    |
+  | `within_7d`           | 0.3    |
+  | `beyond_7d` / missing | 0      |
+
+  The contribution `weight × cosine` is independent of the title-similarity contribution — both can stack when both fire. Best-effort: if Ollama is unreachable or the model is missing, the signal is silently skipped and the resolver behaves as if embeddings were disabled.
+
+### Title Similarity Scoring
+
+Title similarity contributes to the aggregate score in two paths:
+
+1. **Venue path** — when `venue_id` matches and the time window is `within_window` or `same_event_no_time`, a title similarity at or above threshold adds a fixed `+0.75` (already covered by merge case 3). No further title bonus is applied on this path.
+2. **Same-artist path** — when the venue path does not credit title similarity, score is incremented by `weight × titSim` (merge case 4), where `weight` depends on the time signal:
+
+   | `time_window`         | weight |
+   |-----------------------|--------|
+   | `within_window`       | 1.0    |
+   | `same_event_no_time`  | 0.5    |
+   | `within_7d`           | 0.3    |
+   | `beyond_7d` / missing | 0      |
+
+   The artist guard skips this path entirely when the candidate's `artist_id` doesn't match (possible only when the candidate was pulled in via shared related links). Title similarity below threshold (currently 0.6) contributes nothing on either path.
 
 ## Resolution Behavior
 

@@ -30,6 +30,14 @@ resolution:
   needsReviewScoreThreshold: 0.25 # below auto-merge but above this → review queue
   candidateWindowHours: 48        # ± window for considering events the same
 
+# Optional: embedding-based same-artist signal. Catches cross-script aliases
+# (e.g. 花譜 ↔ KAF) the deterministic tokenizer can't see. Off by default —
+# enable after running `ollama pull bge-m3` (or your chosen model).
+embeddings:
+  enabled: false
+  model: "bge-m3"                 # any Ollama-installed embedding model
+  cosineThreshold: 0.75           # cosine below this contributes nothing
+
 # Phase 5: downstream export. When enabled, the resolver enqueues canonical
 # event changes into export_queue and the daemon registers an Export task
 # that drives registered consumers.

@@ -7,6 +7,7 @@ import {
   normalizedEvents,
 } from "../db/schema";
 import { ExportQueueRepo } from "./ExportQueueRepo";
+import { EmbeddingsRepo } from "./EmbeddingsRepo";
 import { tagged } from "./logger";
 
 const log = tagged("NormalizedEventsRepo");
@@ -44,10 +45,16 @@ const ALLOWED_FIELDS: Array<keyof UpdateNormalizedEventFields> = [
 export class NormalizedEventsRepo {
   private db: DbInstance;
   private exportQueue: ExportQueueRepo | null;
+  private embeddings: EmbeddingsRepo | null;
 
-  constructor(db: DbInstance = defaultDb, exportQueue: ExportQueueRepo | null = null) {
+  constructor(
+    db: DbInstance = defaultDb,
+    exportQueue: ExportQueueRepo | null = null,
+    embeddings: EmbeddingsRepo | null = null
+  ) {
     this.db = db;
     this.exportQueue = exportQueue;
+    this.embeddings = embeddings;
   }
 
   /**
@@ -91,6 +98,25 @@ export class NormalizedEventsRepo {
         sanitized.isCancelled === true && !wasCancelled;
       this.exportQueue?.enqueueSync(tx, id, cancellationFlippedOn ? "cancelled" : "updated", now);
     });
+
+    // Refresh the cached embedding when text-bearing fields could have changed.
+    // We re-read the canonical row instead of relying on `fields` because the
+    // operator may have changed only one of title/venueName and we want the
+    // current canonical state to be embedded.
+    if (this.embeddings && ("title" in fields || "venueName" in fields)) {
+      const row = await this.db
+        .select({ title: normalizedEvents.title, venueName: normalizedEvents.venueName })
+        .from(normalizedEvents)
+        .where(eq(normalizedEvents.id, id))
+        .limit(1);
+      if (row[0]) {
+        await this.embeddings.embedAndStore({
+          normalizedEventId: id,
+          title: row[0].title,
+          venueName: row[0].venueName,
+        });
+      }
+    }
 
     log.info(`Operator-edited normalized event ${id}`);
   }

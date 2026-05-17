@@ -29,6 +29,19 @@ export interface OshikatsuConfig {
     needsReviewScoreThreshold: number;
     candidateWindowHours: number;
   };
+  embeddings: {
+    /**
+     * Off by default — the user has to `ollama pull` the model first. When
+     * enabled, EventResolver embeds each new normalized event and adds a
+     * cosine-based same-artist signal in scoreMatch. Graceful if Ollama is
+     * unreachable or model is missing — the signal just doesn't contribute.
+     */
+    enabled: boolean;
+    /** Embedding model pulled in Ollama (default: bge-m3 for multilingual JP/EN). */
+    model: string;
+    /** Cosine below this contributes nothing. bge-m3 duplicates typically ≥ 0.75. */
+    cosineThreshold: number;
+  };
   export: {
     enabled: boolean;
     ical: {
@@ -76,6 +89,11 @@ const DEFAULT_CONFIG: OshikatsuConfig = {
     autoMergeScoreThreshold: 0.7,
     needsReviewScoreThreshold: 0.25,
     candidateWindowHours: 48,
+  },
+  embeddings: {
+    enabled: false,
+    model: "bge-m3",
+    cosineThreshold: 0.75,
   },
   export: {
     enabled: false,
@@ -128,6 +146,7 @@ export function getConfig(): OshikatsuConfig {
     twitter: { ...DEFAULT_CONFIG.twitter, ...userConfig.twitter },
     paths: { ...DEFAULT_CONFIG.paths, ...userConfig.paths },
     resolution: { ...DEFAULT_CONFIG.resolution, ...(userConfig as any).resolution },
+    embeddings: { ...DEFAULT_CONFIG.embeddings, ...(userConfig as any).embeddings },
     export: {
       ...DEFAULT_CONFIG.export,
       ...((userConfig as any).export ?? {}),

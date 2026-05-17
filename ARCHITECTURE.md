@@ -90,7 +90,7 @@ Operating notes:
 - **Goal**: present one canonical normalized event per real-world activity, with sub-events correctly attached to their parents, while preserving all source provenance.
 - **Execution**: Runs synchronously as the final step of the ingestion pipeline.
 - **Candidate selection**: Queries extracted and canonical event storage for candidates within a specific time constraint (e.g., +/- 48 hours of `start_time`), or — for sub-event candidates — by `parent_event_hint` against existing canonical main events.
-- **Signals**: Uses conservative signals such as exact source references, related link overlap, canonical venue ID, title similarity, source-derived `event_scope`, and `parent_event_hint` to drive merge and hierarchy decisions.
+- **Signals**: Uses conservative signals such as exact source references, related link overlap, canonical venue ID, same-artist + title similarity within a plausible time window, optional embedding cosine (Ollama-based, cached in `event_embeddings`) for cross-script aliases, source-derived `event_scope`, and `parent_event_hint` to drive merge and hierarchy decisions.
 - **Auditability**: Resolution decisions (merge, sub-event link, new, needs-review) should be recorded with matched signals and a human-readable reason so false positives can be inspected.
 
 ### 5. Downstream Integration

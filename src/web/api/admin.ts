@@ -2,6 +2,9 @@ import { Hono } from "hono";
 import { getConfig } from "../../config";
 import { EventResolver } from "../../core/EventResolver";
 import { ExportQueueRepo } from "../../core/ExportQueueRepo";
+import { EmbeddingsRepo } from "../../core/EmbeddingsRepo";
+import { OllamaEmbeddingService } from "../../core/EmbeddingService";
+import { db } from "../../db";
 import { NormalizedEventsRepo, type UpdateNormalizedEventFields } from "../../core/NormalizedEventsRepo";
 import { SchedulerRunsRepo } from "../../core/SchedulerRunsRepo";
 import { listNormalizedEvents } from "../../core/queries/NormalizedEventsQueries";
@@ -12,8 +15,11 @@ import { listOrphans, requeueOrphan, type OrphanCategory } from "../../core/quer
 export const adminRoute = new Hono();
 
 const exportQueue = getConfig().export.enabled ? new ExportQueueRepo() : null;
-const resolver = new EventResolver(undefined, undefined, exportQueue);
-const eventsRepo = new NormalizedEventsRepo(undefined, exportQueue);
+const embeddingsRepo = getConfig().embeddings.enabled
+  ? new EmbeddingsRepo(db, new OllamaEmbeddingService())
+  : null;
+const resolver = new EventResolver(undefined, undefined, exportQueue, embeddingsRepo);
+const eventsRepo = new NormalizedEventsRepo(undefined, exportQueue, embeddingsRepo);
 const runsRepo = new SchedulerRunsRepo();
 
 const HOUR_MS = 60 * 60 * 1000;
