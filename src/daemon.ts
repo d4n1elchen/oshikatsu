@@ -22,9 +22,9 @@ async function main() {
   const llm = new OllamaProvider();
   const extractor = new ExtractionEngine(llm);
 
-  // Phase 5: when export is enabled, the resolver enqueues consumer-visible
-  // changes into export_queue inside its existing write transactions. When
-  // disabled, no queue rows are written and the runner is not registered.
+  // When export is enabled, the resolver enqueues consumer-visible changes
+  // into export_queue inside its existing write transactions. When disabled,
+  // no queue rows are written and the runner is not registered.
   const exportQueueRepo = config.export.enabled ? new ExportQueueRepo() : null;
   // Embeddings are opt-in via config.embeddings.enabled. When off, the repo
   // is still constructed but its methods early-return; the resolver behavior

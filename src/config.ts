@@ -14,6 +14,20 @@ export interface OshikatsuConfig {
     host: string;
     model: string;
   };
+  embeddings: {
+    /**
+     * Off by default — the user has to `ollama pull` the model first. When
+     * enabled, EventResolver embeds each new normalized event and adds a
+     * cosine-based same-artist signal in scoreMatch. Graceful if Ollama is
+     * unreachable or model is missing — the signal just doesn't contribute.
+     * Shares the Ollama endpoint with `llm.host`; no separate host today.
+     */
+    enabled: boolean;
+    /** Embedding model pulled in Ollama (default: bge-m3 for multilingual JP/EN). */
+    model: string;
+    /** Cosine below this contributes nothing. bge-m3 duplicates typically ≥ 0.75. */
+    cosineThreshold: number;
+  };
   twitter: {
     maxTweetsPerSource: number;
     headless: boolean;
@@ -28,19 +42,6 @@ export interface OshikatsuConfig {
     autoMergeScoreThreshold: number;
     needsReviewScoreThreshold: number;
     candidateWindowHours: number;
-  };
-  embeddings: {
-    /**
-     * Off by default — the user has to `ollama pull` the model first. When
-     * enabled, EventResolver embeds each new normalized event and adds a
-     * cosine-based same-artist signal in scoreMatch. Graceful if Ollama is
-     * unreachable or model is missing — the signal just doesn't contribute.
-     */
-    enabled: boolean;
-    /** Embedding model pulled in Ollama (default: bge-m3 for multilingual JP/EN). */
-    model: string;
-    /** Cosine below this contributes nothing. bge-m3 duplicates typically ≥ 0.75. */
-    cosineThreshold: number;
   };
   export: {
     enabled: boolean;
@@ -71,6 +72,11 @@ const DEFAULT_CONFIG: OshikatsuConfig = {
     host: "http://127.0.0.1:11434",
     model: "llama3",
   },
+  embeddings: {
+    enabled: false,
+    model: "bge-m3",
+    cosineThreshold: 0.75,
+  },
   twitter: {
     maxTweetsPerSource: 50,
     // Headful is the default to reduce anti-bot detection on X. Flipping
@@ -89,11 +95,6 @@ const DEFAULT_CONFIG: OshikatsuConfig = {
     autoMergeScoreThreshold: 0.7,
     needsReviewScoreThreshold: 0.25,
     candidateWindowHours: 48,
-  },
-  embeddings: {
-    enabled: false,
-    model: "bge-m3",
-    cosineThreshold: 0.75,
   },
   export: {
     enabled: false,
@@ -143,10 +144,10 @@ export function getConfig(): OshikatsuConfig {
   cachedConfig = {
     scheduler: schedulerConfig,
     llm: { ...DEFAULT_CONFIG.llm, ...userConfig.llm },
+    embeddings: { ...DEFAULT_CONFIG.embeddings, ...(userConfig as any).embeddings },
     twitter: { ...DEFAULT_CONFIG.twitter, ...userConfig.twitter },
     paths: { ...DEFAULT_CONFIG.paths, ...userConfig.paths },
     resolution: { ...DEFAULT_CONFIG.resolution, ...(userConfig as any).resolution },
-    embeddings: { ...DEFAULT_CONFIG.embeddings, ...(userConfig as any).embeddings },
     export: {
       ...DEFAULT_CONFIG.export,
       ...((userConfig as any).export ?? {}),

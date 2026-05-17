@@ -1,5 +1,5 @@
 /**
- * Fixture tests for EventResolver (Phase 3.0).
+ * Fixture tests for EventResolver.
  * Uses an in-memory SQLite database so no real database is required.
  */
 import { test, before } from "node:test";
@@ -690,7 +690,7 @@ test("related links are accessible via normalized_event_sources join after merge
   assert.ok(urls.has(extraLink), "extra link from second source should be accessible");
 });
 
-// ---- Phase 3.1 hierarchy tests ----
+// ---- hierarchy tests ----
 
 test("event_scope=sub with matching parent_event_hint links as sub-event", async () => {
   const db = createTestDb();

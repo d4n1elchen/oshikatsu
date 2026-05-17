@@ -117,7 +117,7 @@ export class EventResolver {
 
     let result = await this.decideResolution(candidate, candidateLinks, normalizedCandidates, extractedVec, candidateVecs);
 
-    // Phase 3.1 hierarchy resolution: if no merge match, try sub-event linking.
+    // Hierarchy resolution: if no merge match, try sub-event linking.
     if (
       (result.decision === "new" || result.decision === "no_match") &&
       candidate.eventScope === "sub"
@@ -186,7 +186,7 @@ export class EventResolver {
   }
 
   /**
-   * Phase 3.1: try to attach a sub-event candidate to a canonical main event.
+   * Try to attach a sub-event candidate to a canonical main event.
    * Returns null if no plausible parent is found and the candidate has no hint
    * (i.e. fall through to "new"). Returns a `linked_as_sub`, or `needs_review`
    * result when the candidate has a sub-event hint but parent identification
@@ -738,7 +738,7 @@ export class EventResolver {
       log.info(`Created new normalized event ${newNormId} for extracted ${candidate.id}`);
 
     } else if (decision === "linked_as_sub" && normalizedEventId) {
-      // Phase 3.1: create a new normalized event as a sub-event of the matched main event.
+      // Create a new normalized event as a sub-event of the matched main event.
       // Sub-events are independent canonical records linked back via parent_event_id;
       // they do not edit the parent's canonical fields.
       const subId = randomUUID();
