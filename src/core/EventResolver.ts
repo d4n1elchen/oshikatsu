@@ -999,24 +999,57 @@ export class EventResolver {
           createdAt: new Date(),
         }).onConflictDoNothing().run();
 
-        // Merge cancellation flag — only enqueue if the canonical flag
-        // actually flips, to avoid sending consumers redundant cancellations.
-        // Operator-owned rows are frozen: skip the UPDATE entirely so the
-        // operator's edits aren't clobbered by a downstream cancellation.
+        // Read the canonical row once. We use it for two merge actions:
+        // (a) backfilling null fields from the merged candidate when the
+        //     first-seen extraction didn't surface a date/venue (common
+        //     when two accounts cover the same event and only one carries
+        //     the structured details), and (b) flipping is_cancelled.
+        // Both actions skip operator-owned rows so manual edits aren't
+        // clobbered.
+        const existing = tx
+          .select({
+            isCancelled: normalizedEvents.isCancelled,
+            operatorOwned: normalizedEvents.operatorOwned,
+            startTime: normalizedEvents.startTime,
+            endTime: normalizedEvents.endTime,
+            venueId: normalizedEvents.venueId,
+            venueName: normalizedEvents.venueName,
+            venueUrl: normalizedEvents.venueUrl,
+          })
+          .from(normalizedEvents)
+          .where(eq(normalizedEvents.id, normalizedEventId))
+          .all();
+
         let cancellationFlipped = false;
-        if (candidate.isCancelled) {
-          const existing = tx
-            .select({
-              isCancelled: normalizedEvents.isCancelled,
-              operatorOwned: normalizedEvents.operatorOwned,
-            })
-            .from(normalizedEvents)
-            .where(eq(normalizedEvents.id, normalizedEventId))
-            .all();
-          if (existing[0] && !existing[0].isCancelled && !existing[0].operatorOwned) {
+        let fieldsBackfilled = false;
+        const e = existing[0];
+
+        if (e && !e.operatorOwned) {
+          const patch: Record<string, unknown> = {};
+
+          // Null-fill from merging candidate. Existing values win; we only
+          // ever fill gaps. Title/description/type stay as canonical
+          // (those are required at extraction time, so never null on the
+          // first-seen row).
+          if (e.startTime == null && candidate.startTime != null) patch.startTime = candidate.startTime;
+          if (e.endTime == null && candidate.endTime != null) patch.endTime = candidate.endTime;
+          if (e.venueId == null && candidate.venueId != null) patch.venueId = candidate.venueId;
+          if (e.venueName == null && candidate.venueName != null) patch.venueName = candidate.venueName;
+          if (e.venueUrl == null && candidate.venueUrl != null) patch.venueUrl = candidate.venueUrl;
+
+          if (Object.keys(patch).length > 0) {
+            fieldsBackfilled = true;
+          }
+
+          if (candidate.isCancelled && !e.isCancelled) {
+            patch.isCancelled = true;
             cancellationFlipped = true;
+          }
+
+          if (Object.keys(patch).length > 0) {
+            patch.updatedAt = new Date();
             tx.update(normalizedEvents)
-              .set({ isCancelled: true, updatedAt: new Date() })
+              .set(patch)
               .where(eq(normalizedEvents.id, normalizedEventId))
               .run();
           }
@@ -1034,8 +1067,12 @@ export class EventResolver {
           note: note ?? null,
         }).run();
 
+        // Cancellation is the more salient consumer signal; if both happen
+        // in the same merge, enqueue "cancelled" rather than "updated".
         if (cancellationFlipped) {
           this.exportQueue?.enqueueSync(tx, normalizedEventId, "cancelled");
+        } else if (fieldsBackfilled) {
+          this.exportQueue?.enqueueSync(tx, normalizedEventId, "updated");
         }
       });
 

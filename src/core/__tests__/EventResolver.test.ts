@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "crypto";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
+import { eq } from "drizzle-orm";
 import * as schema from "../../db/schema";
 import { EventResolver } from "../EventResolver";
 import { EmbeddingsRepo } from "../EmbeddingsRepo";
@@ -920,6 +921,106 @@ test("resolve() skips an extracted event with any prior decision, even if supers
 
   const decs = getDecisions(db).filter((d) => d.candidateExtractedEventId === ev);
   assert.equal(decs.length, 2, "resolve should not run again after manual override");
+});
+
+// ---- Field backfill on merge ----
+
+test("merge backfills null canonical fields from the merging source", async () => {
+  const db = createTestDb();
+  insertArtist(db);
+
+  // First post: same source URL (drives a same-source-url merge) but
+  // missing start_time and venue. Models the "fan-engagement / signal-boost"
+  // tweet that lacks structured detail.
+  const sharedUrl = "https://example.com/concert";
+  const firstId = insertExtractedEvent(db, {
+    artistId: "artist-1",
+    title: "Tokyo Dome show coming up",
+    type: "concert",
+    eventScope: "main",
+    sourceUrl: sharedUrl,
+    startTime: undefined as unknown as Date, // explicit null
+  });
+
+  // Stomp start_time + venue to null directly (the helper defaults them).
+  db.update(schema.extractedEvents)
+    .set({ startTime: null, venueId: null, venueName: null, venueUrl: null })
+    .where(eq(schema.extractedEvents.id, firstId))
+    .run();
+
+  const resolver = new EventResolver(db as any);
+  await resolver.resolve(firstId);
+
+  const beforeMerge = getNormalizedEvents(db);
+  assert.equal(beforeMerge.length, 1);
+  assert.equal(beforeMerge[0]!.startTime, null);
+  assert.equal(beforeMerge[0]!.venueName, null);
+
+  // Second post: full event info from a different account but same canonical
+  // URL. Resolver merges via same_source_url; the backfill rule should fill
+  // start_time and venue_name on the canonical row.
+  const venueId = insertVenue(db);
+  const concertTime = new Date("2026-09-05T10:00:00Z");
+  const secondId = insertExtractedEvent(db, {
+    artistId: "artist-1",
+    title: "Tokyo Dome show",
+    type: "concert",
+    eventScope: "main",
+    sourceUrl: sharedUrl,
+    startTime: concertTime,
+    venueId,
+  });
+  db.update(schema.extractedEvents)
+    .set({ venueName: "Tokyo Dome", venueUrl: "https://tokyodome.example/" })
+    .where(eq(schema.extractedEvents.id, secondId))
+    .run();
+
+  await resolver.resolve(secondId);
+
+  const afterMerge = getNormalizedEvents(db);
+  assert.equal(afterMerge.length, 1, "still one canonical event after merge");
+  const canonical = afterMerge[0]!;
+  // First-seen title wins (we don't overwrite populated fields).
+  assert.equal(canonical.title, "Tokyo Dome show coming up");
+  // Null fields backfilled from the merging candidate.
+  assert.equal(canonical.startTime?.toISOString(), concertTime.toISOString());
+  assert.equal(canonical.venueId, venueId);
+  assert.equal(canonical.venueName, "Tokyo Dome");
+  assert.equal(canonical.venueUrl, "https://tokyodome.example/");
+});
+
+test("merge does not overwrite populated canonical fields", async () => {
+  const db = createTestDb();
+  insertArtist(db);
+
+  const sharedUrl = "https://example.com/concert2";
+  const earlyTime = new Date("2026-09-05T10:00:00Z");
+  const firstId = insertExtractedEvent(db, {
+    artistId: "artist-1",
+    title: "Concert",
+    type: "concert",
+    eventScope: "main",
+    sourceUrl: sharedUrl,
+    startTime: earlyTime,
+  });
+
+  const resolver = new EventResolver(db as any);
+  await resolver.resolve(firstId);
+
+  // Second post claims a different time; canonical should NOT change.
+  const wrongerTime = new Date("2026-10-01T10:00:00Z");
+  const secondId = insertExtractedEvent(db, {
+    artistId: "artist-1",
+    title: "Concert",
+    type: "concert",
+    eventScope: "main",
+    sourceUrl: sharedUrl,
+    startTime: wrongerTime,
+  });
+  await resolver.resolve(secondId);
+
+  const canonical = getNormalizedEvents(db)[0]!;
+  assert.equal(canonical.startTime?.toISOString(), earlyTime.toISOString(), "first-seen value wins");
 });
 
 // ---- Multi-event tweets ----
