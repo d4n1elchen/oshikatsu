@@ -6,3 +6,4 @@ export * from "./RawItemsQueries";
 export * from "./WatchedArtistsQueries";
 export * from "./StreamsQueries";
 export * from "./OrphansQueries";
+export * from "./VenuesQueries";

@@ -11,6 +11,7 @@ import { listNormalizedEvents } from "../../core/queries/NormalizedEventsQueries
 import { getExtractionFailureSummary } from "../../core/queries/MonitorQueries";
 import { listReviewQueue } from "../../core/queries/ReviewQueueQueries";
 import { listOrphans, requeueOrphan, type OrphanCategory } from "../../core/queries/OrphansQueries";
+import { listVenues, updateVenue, type UpdateVenueFields } from "../../core/queries/VenuesQueries";
 
 export const adminRoute = new Hono();
 
@@ -167,6 +168,45 @@ adminRoute.post("/admin/events/:id/release", async (c) => {
   const id = c.req.param("id");
   try {
     await eventsRepo.releaseFromOperator(id);
+    return c.json({ ok: true });
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
+  }
+});
+
+adminRoute.get("/admin/venues", async (c) => {
+  const statusParam = c.req.query("status");
+  const allowed = ["discovered", "verified", "ignored"] as const;
+  const status = allowed.includes(statusParam as typeof allowed[number])
+    ? (statusParam as typeof allowed[number])
+    : undefined;
+  const items = await listVenues({ status });
+  return c.json({ items });
+});
+
+adminRoute.patch("/admin/venues/:id", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body) return c.json({ error: "json body required" }, 400);
+
+  const fields: UpdateVenueFields = {};
+  if (typeof body.name === "string") fields.name = body.name;
+  if (typeof body.kind === "string" && ["physical", "virtual", "unknown"].includes(body.kind)) {
+    fields.kind = body.kind as UpdateVenueFields["kind"];
+  }
+  if (typeof body.status === "string" && ["discovered", "verified", "ignored"].includes(body.status)) {
+    fields.status = body.status as UpdateVenueFields["status"];
+  }
+  if ("url" in body) fields.url = body.url == null || body.url === "" ? null : String(body.url);
+  if ("address" in body) fields.address = body.address == null || body.address === "" ? null : String(body.address);
+  if ("city" in body) fields.city = body.city == null || body.city === "" ? null : String(body.city);
+  if ("region" in body) fields.region = body.region == null || body.region === "" ? null : String(body.region);
+  if ("country" in body) fields.country = body.country == null || body.country === "" ? null : String(body.country);
+  if ("latitude" in body) fields.latitude = body.latitude == null ? null : Number(body.latitude);
+  if ("longitude" in body) fields.longitude = body.longitude == null ? null : Number(body.longitude);
+
+  try {
+    await updateVenue(id, fields);
     return c.json({ ok: true });
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
