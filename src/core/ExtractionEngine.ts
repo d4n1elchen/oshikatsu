@@ -185,7 +185,11 @@ export class ExtractionEngine {
         endTime,
         venueId: venueResolution?.venue.id || null,
         venueName: extracted.venue_name || null,
-        venueUrl: extracted.venue_url || null,
+        // Fall back to the resolved venue's curated URL when the LLM didn't
+        // surface one (the common case — posts rarely include the venue URL
+        // inline). Operator edits to venues.url thus propagate to new events
+        // for that venue without re-extraction.
+        venueUrl: extracted.venue_url || venueResolution?.venue.url || null,
         type: extracted.type,
         recordKind: "event",
         eventScope: extracted.event_scope,
