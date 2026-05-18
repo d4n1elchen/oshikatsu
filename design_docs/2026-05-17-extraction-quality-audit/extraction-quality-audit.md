@@ -110,9 +110,19 @@ Two choices:
 
 Recommend the first — cheaper, doesn't grow an admin queue.
 
-#### P3d — Matcher fuzziness for the variant-phrasing case
+#### P3d — Asymmetric containment in `titleSimilarity` (LANDED)
 
-`コラボ企画「#組曲2」第九弾` vs the actual title `コラボ企画「#組曲2」第九弾「放課後ボーダーライン」プレイリストイン` is 70% of one inside the other — `titleSimilarity` should clear this at a 0.6 threshold. The resolver's current annotation matcher doesn't use `titleSimilarity` at all (verify in [AnnotationReconciler.ts](../../src/core/AnnotationReconciler.ts)); pointing it at the existing similarity util is the entire fix.
+**Audit's original framing was wrong.** I claimed the annotation matcher "doesn't use titleSimilarity at all" — it always did, at the same 0.6 threshold the event resolver uses. The real bug was at the scoring level: `substringScore` divided by the **longer** string's length, so a hint that was a strict prefix of a full event title was penalized for the title's added detail.
+
+The F3 case `コラボ企画「#組曲2」第九弾` vs `コラボ企画「#組曲2」第九弾「放課後ボーダーライン」プレイリストイン` scored ~0.54 (= 19/35), just below 0.6. Asymmetric containment — score full containment of the shorter string in the longer one as 1 — fixes it. Shipped in [602e73e](../../src/core/titleSimilarity.ts).
+
+The same fix applies to event-merge scoring (single shared function), which is the right tradeoff — event resolution has other signals (artist, time, venue) that dampen over-merge risk, and the audit's other findings note the resolver is *under-*merging more than over-merging.
+
+#### Bonus that landed alongside: AnnotationReconciler merged into EventResolver
+
+While auditing P3d, the two passes turned out to be doing the same thing with different downstream actions: load extracted rows → find best same-artist normalized event by hint similarity → write a source row + decision row. They lived as separate classes only because annotation reconciliation [landed later](../2026-05-14-annotation-reconciliation/) as its own pass. The daemon already ran them back-to-back in the same scheduled task with a comment explaining why the order mattered — a workaround for the split.
+
+`AnnotationReconciler` is now folded into `EventResolver`, with `findParentByHint` ([titleSimilarity.ts](../../src/core/titleSimilarity.ts)) as the shared matcher used by both annotation attachment and sub-event hierarchy. The daemon's Resolution task is a single `processBatch` call. This isn't a "fix" per the original audit, but it eliminated the duplication that made my P3d framing wrong in the first place.
 
 ### F4 — HIGH: `venue_url` set on 4% of events
 
@@ -163,10 +173,10 @@ The Singing My Favorite Songs cover went live on YouTube *at the moment of the t
 
 ## Recommended landing order
 
-1. **P1 (date anchor)** — single prompt addition, fixes the most rows, cheap to ship.
-2. **P2 (worked examples)** — measured against P1; only land if P1 alone doesn't lift concert/release `start_time` rates.
+1. ✅ **P1 (date anchor)** — landed [723cbae](../../src/core/ExtractionStrategy.ts). Single prompt addition + sanitizer guard.
+2. **P2 (worked examples)** — measure against P1 first; only land if P1 alone doesn't lift concert/release `start_time` rates.
 3. **P4 (venue alias lookup)** — wires up existing tables, no model changes. High-impact on UI usability.
-4. **P3d (matcher fuzziness)** — single-file change, recovers the variant-phrasing failures immediately. Land before P3a/P3b so we measure their gain net of the easy wins.
+4. ✅ **P3d (asymmetric containment)** — landed [602e73e](../../src/core/titleSimilarity.ts) alongside the resolver merge.
 5. **P3a + P3b (series_name + series-fallback annotation match)** — schema + prompt + resolver. Biggest structural gain on annotation rate; together because P3b depends on P3a's column.
 6. **P3c (cross-artist drop)** — only land if cross-artist annotations remain a meaningful slice of the no-match queue after P3a+b. Possibly never needed.
 7. **P6 (annotation_category column)** — schema hygiene; do before any downstream consumer starts reading `type` for annotations.
