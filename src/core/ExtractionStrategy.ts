@@ -67,10 +67,6 @@ export const ExtractionOutputSchema = z.discriminatedUnion("kind", [
   NotAnEventBranchSchema,
 ]);
 
-// Backwards-compatible alias for callers that only care about the event
-// branch shape (e.g. tests, sanitize).
-export const EventExtractionSchema = EventBranchSchema;
-
 export type EventType = typeof EVENT_TYPES[number];
 export type EventScope = typeof EVENT_SCOPES[number];
 export type AnnotationCategory = typeof ANNOTATION_CATEGORIES[number];
