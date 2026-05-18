@@ -129,7 +129,10 @@ export const extractedEvents = sqliteTable("extracted_events", {
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 }, (table) => [
-  uniqueIndex("idx_extracted_events_raw_item").on(table.rawItemId),
+  // raw_item_id is intentionally NOT unique: a single tweet can announce a
+  // main event plus several sub-events (e.g. a concert + multiple ticket
+  // lottery windows). The extraction step writes one row per emitted event.
+  index("idx_extracted_events_raw_item").on(table.rawItemId),
   index("idx_extracted_events_artist_start_time").on(table.artistId, table.startTime),
   index("idx_extracted_events_start_time").on(table.startTime),
   index("idx_extracted_events_record_kind").on(table.recordKind),
