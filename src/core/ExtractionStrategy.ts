@@ -126,6 +126,8 @@ export class DefaultExtractionStrategy implements ExtractionStrategy {
   buildPrompt(context: SourceContext): string {
     return `You parse social media posts for a fan activity tracker. Each post either announces a concrete activity (an event) or it does not. Your job is to classify which, and for events, extract the structured fields.
 
+Source posted at: ${context.publishTime.toISOString()}
+
 Input text:
 "${context.rawContent}"
 
@@ -147,6 +149,7 @@ Event branch (kind="event"):
 - Extract the specific activity described by the source post. A post may announce a main event, or it may announce a sub-event such as a merch sale, ticket lottery, meet-and-greet, pre-show, after-show, campaign, booth, or stream related to a larger main event.
 - start_time should be an ISO 8601 timestamp for when the extracted activity happens, if the source gives an explicit time or enough context to infer it safely.
 - start_time and end_time MUST include a timezone offset (e.g. "2026-05-16T18:00:00+09:00" for JST, or trailing "Z" for UTC). If the source post does not state a timezone explicitly, infer it from the language, location, or venue. Never emit a bare local time like "2026-05-16T18:00:00".
+- When the source states a date without a year (e.g. "5/16", "9.5 Sat.", "4月30日(木)"), resolve the year against the "Source posted at" timestamp above: pick the next occurrence of that month/day on or after the source post date. Never emit a start_time more than 7 days before the source post date.
 - Leave start_time unset when the source announces a real activity but does not provide the activity's own time. Do not use the source publish time as start_time.
 - end_time should only be set when an explicit end time is available.
 - related_links must contain only event-relevant candidate URLs and optional human-readable titles.
@@ -192,6 +195,9 @@ Venue rules (event branch only):
     const fallbackTz = _context.fallbackTimezone ?? null;
     const startTime = extracted.start_time ? parseDateOrThrow(extracted.start_time, "start_time", fallbackTz) : undefined;
     const endTime = extracted.end_time ? parseDateOrThrow(extracted.end_time, "end_time", fallbackTz) : undefined;
+    if (startTime) {
+      assertStartTimeNotStale(startTime, _context.publishTime);
+    }
     const eventScope = EVENT_SCOPES.includes(extracted.event_scope) ? extracted.event_scope : "unknown";
 
     return {
@@ -282,6 +288,21 @@ export function parseDateOrDefault(value: string | undefined, defaultIso: string
 
   const defaultDate = new Date(defaultIso);
   return Number.isNaN(defaultDate.getTime()) ? new Date() : defaultDate;
+}
+
+const STALE_START_TIME_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
+
+// Mirrors the prompt rule that forbids resolving a year-less date to a year in
+// the past. The LLM without a current-date anchor will silently default to its
+// training-cutoff year; this guard turns that drift into a loud extraction
+// error rather than a wrong-year row in the calendar.
+function assertStartTimeNotStale(startTime: Date, publishTime: Date): void {
+  const delta = publishTime.getTime() - startTime.getTime();
+  if (delta > STALE_START_TIME_GRACE_MS) {
+    throw new Error(
+      `start_time ${startTime.toISOString()} precedes source publish time ${publishTime.toISOString()} by more than 7 days; likely wrong-year inference`,
+    );
+  }
 }
 
 function parseDateOrThrow(value: string, fieldName: string, fallbackTimezone: string | null): Date {

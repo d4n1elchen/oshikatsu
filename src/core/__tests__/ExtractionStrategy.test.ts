@@ -276,3 +276,71 @@ test("sanitize throws MissingTimezoneError when offset-less and no fallback", ()
     /MissingTimezoneError|no fallback timezone/i
   );
 });
+
+// Regression guard for the wrong-year inference observed in the 2026-05-17
+// extraction quality audit: source posts dated 2026 produced start_times in
+// 2024 because the LLM had no current-date anchor. The prompt now ships one;
+// this sanitizer guard backstops it.
+
+test("sanitize throws when start_time is more than 7 days before publishTime", () => {
+  const item = fakeTwitterRawItem({ created_at: "Sat May 16 09:00:00 +0000 2026" });
+  const ctx = twitter.buildContext(item)!;
+  assert.throws(
+    () =>
+      twitter.sanitize(item, ctx, {
+        kind: "event",
+        title: "X",
+        description: "Y",
+        type: "live_stream",
+        event_scope: "main",
+        // Wrong-year inference: source says "5/16(土)" (Saturday in 2026), LLM
+        // resolved to 2024-05-16 (a Thursday — also wrong day of week).
+        start_time: "2024-05-16T19:00:00+09:00",
+        related_links: [],
+        tags: [],
+      }),
+    /precedes source publish time/
+  );
+});
+
+test("sanitize allows start_time within the 7-day grace window before publishTime", () => {
+  const item = fakeTwitterRawItem({ created_at: "Sat May 16 09:00:00 +0000 2026" });
+  const ctx = twitter.buildContext(item)!;
+  // 6 days before publishTime — within the grace window, accepted.
+  const result = twitter.sanitize(item, ctx, {
+    kind: "event",
+    title: "Recap post",
+    description: "Posted a few days after the event",
+    type: "concert",
+    event_scope: "main",
+    start_time: "2026-05-10T19:00:00+09:00",
+    related_links: [],
+    tags: [],
+  });
+  assert.equal(result.start_time, "2026-05-10T10:00:00.000Z");
+});
+
+test("sanitize allows start_time after publishTime (the normal future-event case)", () => {
+  const item = fakeTwitterRawItem({ created_at: "Sun May 17 09:00:00 +0000 2026" });
+  const ctx = twitter.buildContext(item)!;
+  const result = twitter.sanitize(item, ctx, {
+    kind: "event",
+    title: "KAMITSUBAKI FES",
+    description: "Future concert",
+    type: "concert",
+    event_scope: "main",
+    start_time: "2026-09-05T00:00:00+09:00",
+    related_links: [],
+    tags: [],
+  });
+  assert.equal(result.start_time, "2026-09-04T15:00:00.000Z");
+});
+
+// ---- buildPrompt() ----
+
+test("buildPrompt embeds the source publish time as a date anchor", () => {
+  const item = fakeTwitterRawItem({ created_at: "Sun May 17 09:00:00 +0000 2026" });
+  const ctx = twitter.buildContext(item)!;
+  const prompt = twitter.buildPrompt(ctx);
+  assert.match(prompt, /Source posted at: 2026-05-17T09:00:00\.000Z/);
+});
