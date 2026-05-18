@@ -328,3 +328,53 @@ export async function adminRequeueOrphan(id: string): Promise<void> {
   });
   if (!res.ok) throw new Error(`Requeue failed: ${res.status} ${await res.text()}`);
 }
+
+export type VenueKindDTO = "physical" | "virtual" | "unknown";
+export type VenueStatusDTO = "discovered" | "verified" | "ignored";
+
+export type VenueDTO = {
+  id: string;
+  name: string;
+  kind: VenueKindDTO;
+  status: VenueStatusDTO;
+  url: string | null;
+  address: string | null;
+  city: string | null;
+  region: string | null;
+  country: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  aliasCount: number;
+  eventMentionCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type VenueUpdateFields = Partial<{
+  name: string;
+  kind: VenueKindDTO;
+  status: VenueStatusDTO;
+  url: string | null;
+  address: string | null;
+  city: string | null;
+  region: string | null;
+  country: string | null;
+  latitude: number | null;
+  longitude: number | null;
+}>;
+
+export async function fetchVenues(status?: VenueStatusDTO): Promise<{ items: VenueDTO[] }> {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+  const res = await fetch(`/api/admin/venues${qs}`);
+  if (!res.ok) throw new Error(`Venues fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export async function adminUpdateVenue(id: string, fields: VenueUpdateFields): Promise<void> {
+  const res = await fetch(`/api/admin/venues/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) throw new Error(`Update venue failed: ${res.status} ${await res.text()}`);
+}

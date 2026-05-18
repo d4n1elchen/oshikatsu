@@ -5,8 +5,10 @@ import {
   adminAttachAsSubEvent,
   adminMergeEvent,
   adminRequeueOrphan,
+  adminUpdateVenue,
   fetchAdminDashboard,
   fetchOrphans,
+  fetchVenues,
   type AdminDashboardPayload,
   type ExtractionFailureSummaryDTO,
   type NormalizedEventDTO,
@@ -16,6 +18,8 @@ import {
   type ReviewQueueItemDTO,
   type SchedulerRunDTO,
   type TaskCardDTO,
+  type VenueDTO,
+  type VenueStatusDTO,
 } from "./api";
 import { EditEventModal } from "./EditEventModal";
 import { Sidebar } from "./Sidebar";
@@ -107,6 +111,8 @@ export function AdminApp() {
         />
 
         <OrphansPanel initialSummary={data.orphans} />
+
+        <VenuesPanel />
 
         <CanonicalEventsPanel
           events={data.events}
@@ -678,6 +684,201 @@ function extractAuthorHandle(rawData: Record<string, unknown>): string | null {
   const user = (rawData as any)?.core?.user_results?.result;
   const handle = user?.core?.screen_name ?? user?.legacy?.screen_name;
   return typeof handle === "string" && handle.length > 0 ? handle : null;
+}
+
+function VenuesPanel() {
+  const [items, setItems] = useState<VenueDTO[]>([]);
+  const [filter, setFilter] = useState<VenueStatusDTO | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+
+  const reload = useCallback(async (next: VenueStatusDTO | null) => {
+    setLoading(true);
+    try {
+      const r = await fetchVenues(next ?? undefined);
+      setItems(r.items);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (open) void reload(filter);
+    // We intentionally lazy-load on first open to avoid hitting the
+    // venues endpoint on every dashboard render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const onFilter = (next: VenueStatusDTO | null) => {
+    setFilter(next);
+    void reload(next);
+  };
+
+  const onPatch = async (id: string, fields: Parameters<typeof adminUpdateVenue>[1]) => {
+    try {
+      await adminUpdateVenue(id, fields);
+      await reload(filter);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const counts = items.reduce(
+    (acc, v) => {
+      acc[v.status] = (acc[v.status] ?? 0) + 1;
+      return acc;
+    },
+    {} as Record<VenueStatusDTO, number>,
+  );
+  const totalShown = items.length;
+
+  return (
+    <section className="admin-section">
+      <button
+        type="button"
+        className="admin-collapse-head"
+        onClick={() => setOpen(!open)}
+      >
+        <span>{open ? "▾" : "▸"}</span>
+        <h2 className="section-title">
+          Venues <span className="count dim">· curate URLs &amp; status</span>
+        </h2>
+      </button>
+      {open && (
+        <>
+          <div className="orphan-filter-bar">
+            <OrphanFilterChip label="All" count={totalShown} active={filter === null} onClick={() => onFilter(null)} />
+            <OrphanFilterChip label="Discovered" count={counts.discovered ?? 0} active={filter === "discovered"} onClick={() => onFilter("discovered")} />
+            <OrphanFilterChip label="Verified" count={counts.verified ?? 0} active={filter === "verified"} onClick={() => onFilter("verified")} />
+            <OrphanFilterChip label="Ignored" count={counts.ignored ?? 0} active={filter === "ignored"} onClick={() => onFilter("ignored")} />
+          </div>
+          {error && <div className="admin-error-pill">{error}</div>}
+          {loading ? (
+            <div className="admin-empty">Loading…</div>
+          ) : items.length === 0 ? (
+            <div className="admin-empty">No venues in this bucket.</div>
+          ) : (
+            <table className="venues-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Kind</th>
+                  <th>Status</th>
+                  <th>URL</th>
+                  <th>City</th>
+                  <th>Aliases</th>
+                  <th>Mentions</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((v) => (
+                  <VenueRow key={v.id} venue={v} onPatch={(f) => onPatch(v.id, f)} />
+                ))}
+              </tbody>
+            </table>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+function VenueRow({
+  venue,
+  onPatch,
+}: {
+  venue: VenueDTO;
+  onPatch: (fields: Parameters<typeof adminUpdateVenue>[1]) => Promise<void>;
+}) {
+  const [urlDraft, setUrlDraft] = useState(venue.url ?? "");
+  const [cityDraft, setCityDraft] = useState(venue.city ?? "");
+  useEffect(() => setUrlDraft(venue.url ?? ""), [venue.url]);
+  useEffect(() => setCityDraft(venue.city ?? ""), [venue.city]);
+
+  const commitUrl = () => {
+    const next = urlDraft.trim();
+    if (next === (venue.url ?? "")) return;
+    void onPatch({ url: next || null });
+  };
+  const commitCity = () => {
+    const next = cityDraft.trim();
+    if (next === (venue.city ?? "")) return;
+    void onPatch({ city: next || null });
+  };
+
+  return (
+    <tr className={`venue-row status-${venue.status}`}>
+      <td className="venue-name">{venue.name}</td>
+      <td>
+        <select
+          value={venue.kind}
+          onChange={(e) => void onPatch({ kind: e.target.value as VenueDTO["kind"] })}
+        >
+          <option value="unknown">unknown</option>
+          <option value="physical">physical</option>
+          <option value="virtual">virtual</option>
+        </select>
+      </td>
+      <td>
+        <select
+          value={venue.status}
+          onChange={(e) => void onPatch({ status: e.target.value as VenueStatusDTO })}
+        >
+          <option value="discovered">discovered</option>
+          <option value="verified">verified</option>
+          <option value="ignored">ignored</option>
+        </select>
+      </td>
+      <td className="venue-url">
+        <input
+          type="url"
+          value={urlDraft}
+          placeholder="https://…"
+          onChange={(e) => setUrlDraft(e.target.value)}
+          onBlur={commitUrl}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          }}
+        />
+        {venue.url && (
+          <a href={venue.url} target="_blank" rel="noopener noreferrer" className="venue-url-open" title="Open">
+            ↗
+          </a>
+        )}
+      </td>
+      <td>
+        <input
+          type="text"
+          value={cityDraft}
+          placeholder="—"
+          onChange={(e) => setCityDraft(e.target.value)}
+          onBlur={commitCity}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          }}
+        />
+      </td>
+      <td className="dim">{venue.aliasCount}</td>
+      <td className="dim">{venue.eventMentionCount}</td>
+      <td>
+        {venue.status !== "verified" && (
+          <button type="button" onClick={() => void onPatch({ status: "verified" })}>
+            Verify
+          </button>
+        )}
+        {venue.status !== "ignored" && (
+          <button type="button" onClick={() => void onPatch({ status: "ignored" })}>
+            Ignore
+          </button>
+        )}
+      </td>
+    </tr>
+  );
 }
 
 function ExtractionFailuresPanel({ summary }: { summary: ExtractionFailureSummaryDTO }) {
