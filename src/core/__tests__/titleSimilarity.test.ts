@@ -1,6 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { titleSimilarity, TITLE_SIMILARITY_AUTO_MERGE_THRESHOLD } from "../titleSimilarity";
+import {
+  TITLE_SIMILARITY_AUTO_MERGE_THRESHOLD,
+  findParentByHint,
+  titleSimilarity,
+} from "../titleSimilarity";
+
+const DEFAULT_HINT_THRESHOLDS = { matchThreshold: 0.6, ambiguityMargin: 0.05 };
 
 test("identical titles score 1", () => {
   assert.equal(titleSimilarity("Tokyo Dome Concert", "Tokyo Dome Concert"), 1);
@@ -63,4 +69,75 @@ test("Japanese partial-suffix overlap crosses threshold", () => {
 
 test("empty strings score 1 (both empty = identical)", () => {
   assert.equal(titleSimilarity("", ""), 1);
+});
+
+// ---- findParentByHint() ----
+
+test("findParentByHint returns no_match when candidate set is empty", () => {
+  const result = findParentByHint("any hint", [], DEFAULT_HINT_THRESHOLDS);
+  assert.equal(result.kind, "no_match");
+  assert.deepEqual(result.topCandidates, []);
+});
+
+test("findParentByHint returns match for a clear best", () => {
+  const result = findParentByHint(
+    "東京ドーム公演",
+    [
+      { id: "a", title: "アニバーサリー東京ドーム公演" },
+      { id: "b", title: "大阪グッズ販売" },
+    ],
+    DEFAULT_HINT_THRESHOLDS,
+  );
+  assert.equal(result.kind, "match");
+  if (result.kind === "match") {
+    assert.equal(result.id, "a");
+  }
+});
+
+test("findParentByHint returns no_match when best score is below threshold", () => {
+  const result = findParentByHint(
+    "Concert",
+    [{ id: "a", title: "Merch Booth Opening" }],
+    DEFAULT_HINT_THRESHOLDS,
+  );
+  assert.equal(result.kind, "no_match");
+  assert.equal(result.topCandidates.length, 1);
+});
+
+test("findParentByHint returns ambiguous when top two are within the margin", () => {
+  // Two near-identical titles both contain the hint exactly — they tie at 1.0.
+  const result = findParentByHint(
+    "東京ドーム公演",
+    [
+      { id: "a", title: "東京ドーム公演" },
+      { id: "b", title: "東京ドーム公演" },
+    ],
+    DEFAULT_HINT_THRESHOLDS,
+  );
+  assert.equal(result.kind, "ambiguous");
+});
+
+test("findParentByHint returns match (not ambiguous) when runner-up is below threshold", () => {
+  // Best ties with itself technically but runner-up is unrelated and well below.
+  const result = findParentByHint(
+    "東京ドーム公演",
+    [
+      { id: "a", title: "東京ドーム公演" },
+      { id: "b", title: "大阪グッズ販売" },
+    ],
+    DEFAULT_HINT_THRESHOLDS,
+  );
+  assert.equal(result.kind, "match");
+});
+
+test("findParentByHint topCandidates is sorted descending and capped at 5", () => {
+  const candidates = Array.from({ length: 8 }, (_, i) => ({
+    id: `c${i}`,
+    title: `東京ドーム公演 ${i}`,
+  }));
+  const result = findParentByHint("東京ドーム公演", candidates, DEFAULT_HINT_THRESHOLDS);
+  assert.equal(result.topCandidates.length, 5);
+  for (let i = 1; i < result.topCandidates.length; i++) {
+    assert.ok(result.topCandidates[i - 1]!.score >= result.topCandidates[i]!.score);
+  }
 });
