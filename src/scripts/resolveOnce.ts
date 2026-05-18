@@ -9,8 +9,10 @@ const log = tagged("resolve:once");
 
 function parseArgs(argv: string[]): { limit: number } {
   const limitArg = argv.find((arg) => arg.startsWith("--limit="));
-  const limit = limitArg ? Number(limitArg.split("=")[1]) : 50;
-  return { limit: Number.isFinite(limit) && limit > 0 ? limit : 50 };
+  const parsed = limitArg ? Number(limitArg.split("=")[1]) : NaN;
+  // Default to "process all pending" — one-shot script is usually run to
+  // drain the queue. Pass --limit=N to cap for partial runs.
+  return { limit: Number.isFinite(parsed) && parsed > 0 ? parsed : Number.MAX_SAFE_INTEGER };
 }
 
 async function main() {
@@ -23,7 +25,11 @@ async function main() {
   }
   const resolver = new EventResolver(undefined, undefined, null, embeddings);
   const result = await resolver.processBatch(args.limit);
-  log.info(`Done; resolved ${result.resolved}, failed ${result.failed}`);
+  log.info(
+    `Done; resolved ${result.resolved}, failed ${result.failed}; ` +
+      `annotations attached ${result.annotationsAttached}, no_match ${result.annotationsNoMatch}, ` +
+      `deferred ${result.annotationsDeferred}, failed ${result.annotationsFailed}`
+  );
 }
 
 main().catch((error) => {
