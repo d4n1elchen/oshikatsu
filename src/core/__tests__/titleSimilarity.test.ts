@@ -71,6 +71,20 @@ test("empty strings score 1 (both empty = identical)", () => {
   assert.equal(titleSimilarity("", ""), 1);
 });
 
+test("full containment of shorter in longer scores 1 (F3 hint→title case)", () => {
+  // Regression for the 2026-05-17 audit, F3: an annotation hint that is a
+  // strict prefix of the full event title used to score ~0.54 (symmetric
+  // ratio-by-longer) and miss the 0.6 threshold. Asymmetric containment now
+  // scores 1.
+  assert.equal(
+    titleSimilarity(
+      "コラボ企画「#組曲2」第九弾",
+      "コラボ企画「#組曲2」第九弾「放課後ボーダーライン」プレイリストイン",
+    ),
+    1,
+  );
+});
+
 // ---- findParentByHint() ----
 
 test("findParentByHint returns no_match when candidate set is empty", () => {

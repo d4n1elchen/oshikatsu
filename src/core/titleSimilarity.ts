@@ -48,8 +48,13 @@ function substringScore(a: string, b: string): number {
   const nb = normalizeTitle(b);
   if (na === nb) return 1;
   if (na.includes(nb) || nb.includes(na)) {
-    // Partial containment — score proportional to shorter/longer ratio
-    return Math.min(na.length, nb.length) / Math.max(na.length, nb.length);
+    // Full containment of the shorter string in the longer one is a strong
+    // signal that they refer to the same thing (the longer just added detail
+    // like a venue or sub-title). Penalizing for the length difference
+    // mis-scores hint→title matches where the hint is by nature shorter —
+    // see the 2026-05-17 audit, F3. Symmetric ratio-by-longer used to score
+    // these around 0.5 and miss the 0.6 threshold; full containment now → 1.
+    return 1;
   }
   return 0;
 }
