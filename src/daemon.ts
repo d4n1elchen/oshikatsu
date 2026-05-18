@@ -2,7 +2,6 @@ import { Scheduler } from "./core/Scheduler";
 import { runIngestionCycle } from "./core/ingestion";
 import { ExtractionEngine } from "./core/ExtractionEngine";
 import { EventResolver } from "./core/EventResolver";
-import { AnnotationReconciler } from "./core/AnnotationReconciler";
 import { ExportQueueRepo } from "./core/ExportQueueRepo";
 import { ExportRunner } from "./core/ExportRunner";
 import type { Consumer } from "./core/Consumer";
@@ -36,7 +35,6 @@ async function main() {
     log.info(`Embeddings enabled (model=${embeddingsRepo.modelId()}, cosineThreshold=${embeddingsRepo.cosineThreshold()})`);
   }
   const resolver = new EventResolver(undefined, undefined, exportQueueRepo, embeddingsRepo);
-  const annotationReconciler = new AnnotationReconciler();
 
   const consumers: Consumer[] = [];
   if (config.export.ical.enabled) {
@@ -71,21 +69,7 @@ async function main() {
     .add({
       name: "Resolution",
       intervalMinutes: config.scheduler.resolutionIntervalMinutes,
-      run: async (signal) => {
-        const { resolved, failed } = await resolver.processBatch(50, signal);
-        // Annotations attach to normalized events created by the resolver in
-        // the same tick, so running back-to-back keeps newly-created events
-        // visible to the reconciler without waiting another interval.
-        const annotations = await annotationReconciler.processBatch(50, signal);
-        return {
-          resolved,
-          failed,
-          annotationsAttached: annotations.attached,
-          annotationsNoMatch: annotations.noMatch,
-          annotationsDeferred: annotations.deferred,
-          annotationsFailed: annotations.failed,
-        };
-      },
+      run: (signal) => resolver.processBatch(50, signal),
     });
 
   let exportRunner: ExportRunner | null = null;

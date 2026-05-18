@@ -9,7 +9,7 @@ import {
   normalizedEventSources,
 } from "../db/schema";
 import { ExportQueueRepo } from "./ExportQueueRepo";
-import { titleSimilarity } from "./titleSimilarity";
+import { findParentByHint, titleSimilarity } from "./titleSimilarity";
 import type { ResolutionSignals, ResolutionDecisionType } from "./types";
 import { getConfig } from "../config";
 import { tagged } from "./logger";
@@ -40,6 +40,13 @@ type NormalizedEventRow = typeof normalizedEvents.$inferSelect;
 type RelatedLinkRow = typeof extractedEventRelatedLinks.$inferSelect;
 type DbInstance = typeof defaultDb;
 
+type AnnotationOutcome = "annotation_attached" | "annotation_no_match" | "annotation_deferred";
+
+// Tuned for annotation matching specifically: hints are systematically shorter
+// than full event titles, so a tighter top-1/top-2 margin reflects the lower
+// signal density. Unrelated to sub-event hierarchy scoring's ±0.1.
+const ANNOTATION_AMBIGUITY_MARGIN = 0.05;
+
 type ResolutionResult = {
   decision: ResolutionDecisionType;
   normalizedEventId: string | null;
@@ -69,10 +76,12 @@ export class EventResolver {
     this.embeddings = embeddings;
   }
   /**
-   * Resolve a single extracted event: match against existing normalized events,
-   * create a new canonical event, or flag for review.
+   * Resolve a single extracted event or annotation: match against existing
+   * normalized events, create a new canonical event, attach an annotation,
+   * or flag for review. Returns an annotation outcome string when the
+   * candidate is an annotation row; otherwise returns void.
    */
-  async resolve(extractedEventId: string): Promise<void> {
+  async resolve(extractedEventId: string): Promise<AnnotationOutcome | void> {
     const [candidate] = await this.db
       .select()
       .from(extractedEvents)
@@ -94,6 +103,10 @@ export class EventResolver {
     if (existing.length > 0) {
       log.info(`Event ${extractedEventId} already resolved; skipping`);
       return;
+    }
+
+    if (candidate.recordKind === "annotation") {
+      return await this.resolveAnnotation(candidate);
     }
 
     const candidateLinks = await this.getRelatedLinks(extractedEventId);
@@ -330,15 +343,101 @@ export class EventResolver {
   }
 
   /**
-   * Process all unresolved extracted events in batch. If `signal` aborts
-   * mid-batch, the loop exits at the next event boundary.
+   * Attach an annotation candidate (record_kind='annotation') to its parent
+   * normalized event by fuzzy-matching parent_event_hint against same-artist
+   * titles. Returns 'attached' on success, 'no_match' when nothing scores above
+   * threshold (terminal — writes a decision row), or 'deferred' when matching
+   * can't be safely attempted (missing artist/hint, empty candidate set, or
+   * ambiguous top match). Deferred annotations write no decision row and
+   * retry on a future tick.
    */
-  async processBatch(limit: number = 50, signal?: AbortSignal): Promise<{ resolved: number; failed: number }> {
-    // Find extracted events without a resolution decision. Filter out
-    // annotation rows (record_kind='annotation') — those don't go
-    // through normalization; a future reconciliation step will attach
-    // them to their parent event by parent_event_hint.
-    const unresolved = await this.db
+  private async resolveAnnotation(candidate: ExtractedEventRow): Promise<AnnotationOutcome> {
+    if (!candidate.artistId || !candidate.parentEventHint || !candidate.parentEventHint.trim()) {
+      return "annotation_deferred";
+    }
+
+    const candidates = await this.db
+      .select({ id: normalizedEvents.id, title: normalizedEvents.title })
+      .from(normalizedEvents)
+      .where(eq(normalizedEvents.artistId, candidate.artistId));
+
+    if (candidates.length === 0) {
+      // No canonical events for this artist yet; retry next tick.
+      return "annotation_deferred";
+    }
+
+    const match = findParentByHint(candidate.parentEventHint, candidates, {
+      matchThreshold: this.thresholds.titleSimilarityThreshold,
+      ambiguityMargin: ANNOTATION_AMBIGUITY_MARGIN,
+    });
+
+    const signals = {
+      parent_event_hint: candidate.parentEventHint,
+      candidates: match.topCandidates.map((c) => ({ id: c.id, title: c.title, score: c.score })),
+    };
+
+    if (match.kind === "ambiguous") {
+      // Multiple plausible parents — defer rather than guess.
+      return "annotation_deferred";
+    }
+
+    if (match.kind === "no_match") {
+      const bestScore = match.topCandidates[0]?.score ?? 0;
+      const bestTitle = match.topCandidates[0]?.title ?? "(none)";
+      await this.db.insert(eventResolutionDecisions).values({
+        id: randomUUID(),
+        candidateExtractedEventId: candidate.id,
+        matchedNormalizedEventId: null,
+        decision: "annotation_no_match",
+        score: bestScore,
+        signals,
+        reason: `No canonical event scored above threshold; best was "${bestTitle}" (sim=${bestScore.toFixed(2)}).`,
+        createdAt: new Date(),
+      }).run();
+      return "annotation_no_match";
+    }
+
+    const matchedTitle = match.topCandidates[0]!.title;
+    const now = new Date();
+    await this.db.transaction((tx) => {
+      tx.insert(normalizedEventSources).values({
+        id: randomUUID(),
+        normalizedEventId: match.id,
+        extractedEventId: candidate.id,
+        role: "annotation",
+        createdAt: now,
+      }).run();
+
+      tx.insert(eventResolutionDecisions).values({
+        id: randomUUID(),
+        candidateExtractedEventId: candidate.id,
+        matchedNormalizedEventId: match.id,
+        decision: "annotation_attached",
+        score: match.score,
+        signals,
+        reason: `Hint "${candidate.parentEventHint}" matched "${matchedTitle}" (sim=${match.score.toFixed(2)}).`,
+        createdAt: now,
+      }).run();
+    });
+    log.info(`Attached annotation ${candidate.id} → normalized ${match.id} (sim=${match.score.toFixed(2)})`);
+    return "annotation_attached";
+  }
+
+  /**
+   * Process all unresolved extracted events in batch, then all unresolved
+   * annotations. Events run first so freshly-created normalized events are
+   * visible to annotation matching in the same tick. If `signal` aborts
+   * mid-batch, the loop exits at the next row boundary.
+   */
+  async processBatch(limit: number = 50, signal?: AbortSignal): Promise<{
+    resolved: number;
+    failed: number;
+    annotationsAttached: number;
+    annotationsNoMatch: number;
+    annotationsDeferred: number;
+    annotationsFailed: number;
+  }> {
+    const events = await this.db
       .select({ id: extractedEvents.id })
       .from(extractedEvents)
       .where(
@@ -352,10 +451,17 @@ export class EventResolver {
     let resolved = 0;
     let failed = 0;
 
-    for (const row of unresolved) {
+    for (const row of events) {
       if (signal?.aborted) {
         log.info(`Aborted; ${resolved} resolved, ${failed} failed before bail-out`);
-        break;
+        return {
+          resolved,
+          failed,
+          annotationsAttached: 0,
+          annotationsNoMatch: 0,
+          annotationsDeferred: 0,
+          annotationsFailed: 0,
+        };
       }
       try {
         await this.resolve(row.id);
@@ -366,11 +472,59 @@ export class EventResolver {
       }
     }
 
+    // Annotations: load AFTER event pass so newly-created normalized events
+    // are visible. The query excludes both attached (decision row present)
+    // and no-match annotations; deferred rows have no decision and stay in
+    // the queue for a future tick when their parent event may exist.
+    const annotations = await this.db
+      .select({ id: extractedEvents.id })
+      .from(extractedEvents)
+      .where(
+        sql`${extractedEvents.recordKind} = 'annotation' AND ${extractedEvents.id} NOT IN (
+          SELECT ${eventResolutionDecisions.candidateExtractedEventId}
+          FROM ${eventResolutionDecisions}
+        )`
+      )
+      .limit(limit);
+
+    let annotationsAttached = 0;
+    let annotationsNoMatch = 0;
+    let annotationsDeferred = 0;
+    let annotationsFailed = 0;
+
+    for (const row of annotations) {
+      if (signal?.aborted) {
+        log.info(`Aborted during annotation pass; bailing`);
+        break;
+      }
+      try {
+        const outcome = await this.resolve(row.id);
+        if (outcome === "annotation_attached") annotationsAttached++;
+        else if (outcome === "annotation_no_match") annotationsNoMatch++;
+        else if (outcome === "annotation_deferred") annotationsDeferred++;
+      } catch (e) {
+        log.error(`Failed to resolve annotation ${row.id}:`, e);
+        annotationsFailed++;
+      }
+    }
+
     if (resolved > 0 || failed > 0) {
       log.info(`Resolved ${resolved} event(s); ${failed} failed`);
     }
+    if (annotationsAttached > 0 || annotationsNoMatch > 0 || annotationsFailed > 0) {
+      log.info(
+        `Attached ${annotationsAttached}; no_match ${annotationsNoMatch}; deferred ${annotationsDeferred}; failed ${annotationsFailed}`
+      );
+    }
 
-    return { resolved, failed };
+    return {
+      resolved,
+      failed,
+      annotationsAttached,
+      annotationsNoMatch,
+      annotationsDeferred,
+      annotationsFailed,
+    };
   }
 
   private async getRelatedLinks(extractedEventId: string): Promise<RelatedLinkRow[]> {
