@@ -27,7 +27,7 @@ function createTestDb() {
       status TEXT NOT NULL DEFAULT 'new', error_message TEXT, error_class TEXT, not_an_event_category TEXT
     );
     CREATE TABLE extracted_events (
-      id TEXT PRIMARY KEY, raw_item_id TEXT NOT NULL UNIQUE, artist_id TEXT,
+      id TEXT PRIMARY KEY, raw_item_id TEXT NOT NULL, artist_id TEXT,
       title TEXT NOT NULL, description TEXT NOT NULL,
       start_time INTEGER, end_time INTEGER,
       venue_id TEXT, venue_name TEXT, venue_url TEXT,

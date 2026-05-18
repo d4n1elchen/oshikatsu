@@ -72,7 +72,7 @@ function createTestDb() {
     );
     CREATE TABLE extracted_events (
       id TEXT PRIMARY KEY,
-      raw_item_id TEXT NOT NULL UNIQUE,
+      raw_item_id TEXT NOT NULL,
       artist_id TEXT,
       title TEXT NOT NULL,
       description TEXT NOT NULL,
@@ -920,4 +920,100 @@ test("resolve() skips an extracted event with any prior decision, even if supers
 
   const decs = getDecisions(db).filter((d) => d.candidateExtractedEventId === ev);
   assert.equal(decs.length, 2, "resolve should not run again after manual override");
+});
+
+// ---- Multi-event tweets ----
+//
+// A single tweet can announce a main event plus several sub-events (e.g. a
+// concert announcement that also lists multiple ticket lottery windows).
+// processBatch must process main/unknown scopes before sub so the in-tweet
+// parent_event_hint resolves against a freshly-created normalized event.
+
+test("multi-event tweet: main and sub from one raw_item, sub links to main in same batch", async () => {
+  const db = createTestDb();
+  insertArtist(db);
+
+  // Both extracted events share one raw_item — the multi-event case.
+  const rawId = randomUUID();
+  db.insert(schema.rawItems).values({
+    id: rawId,
+    watchTargetId: "wt-1",
+    sourceName: "twitter",
+    sourceId: randomUUID(),
+    rawData: {},
+    fetchedAt: NOW,
+    status: "processed",
+  }).run();
+
+  const mainId = randomUUID();
+  const subId = randomUUID();
+
+  // Insert sub FIRST in DB order to confirm the resolver re-orders rather
+  // than relying on insertion order. Without the scope-based ORDER BY, the
+  // sub would process before the main and end up as needs_review.
+  db.insert(schema.extractedEvents).values({
+    id: subId,
+    rawItemId: rawId,
+    artistId: "artist-1",
+    title: "1次抽選先行 DAY-1",
+    description: "Ticket lottery round 1",
+    startTime: new Date("2026-05-12T12:00:00Z"),
+    endTime: new Date("2026-05-24T14:59:00Z"),
+    venueId: null,
+    venueName: null,
+    venueUrl: null,
+    type: "side_event",
+    eventScope: "sub",
+    parentEventHint: "KAMITSUBAKI FES",
+    isCancelled: false,
+    tags: [],
+    publishTime: NOW,
+    author: "testuser",
+    sourceUrl: "https://example.com/multi",
+    rawContent: "Raw content",
+    createdAt: NOW,
+    updatedAt: NOW,
+  }).run();
+
+  db.insert(schema.extractedEvents).values({
+    id: mainId,
+    rawItemId: rawId,
+    artistId: "artist-1",
+    title: "KAMITSUBAKI FES",
+    description: "The concert",
+    startTime: new Date("2026-09-05T00:00:00Z"),
+    endTime: null,
+    venueId: null,
+    venueName: null,
+    venueUrl: null,
+    type: "concert",
+    eventScope: "main",
+    parentEventHint: null,
+    isCancelled: false,
+    tags: [],
+    publishTime: NOW,
+    author: "testuser",
+    sourceUrl: "https://example.com/multi",
+    rawContent: "Raw content",
+    createdAt: NOW,
+    updatedAt: NOW,
+  }).run();
+
+  const resolver = new EventResolver(db as any);
+  const result = await resolver.processBatch(10);
+
+  assert.equal(result.resolved, 2);
+  assert.equal(result.failed, 0);
+
+  // Sub linked to main's normalized event via parent_event_id.
+  const normalized = getNormalizedEvents(db);
+  assert.equal(normalized.length, 2, "two normalized rows — main + sub");
+  const main = normalized.find((n) => n.title === "KAMITSUBAKI FES");
+  const sub = normalized.find((n) => n.title === "1次抽選先行 DAY-1");
+  assert.ok(main, "main normalized event present");
+  assert.ok(sub, "sub normalized event present");
+  assert.equal(sub!.parentEventId, main!.id, "sub points at main via parent_event_id");
+
+  const subDec = getDecisions(db).find((d) => d.candidateExtractedEventId === subId);
+  assert.equal(subDec?.decision, "linked_as_sub");
 });

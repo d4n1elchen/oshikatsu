@@ -245,6 +245,25 @@ export class EventResolver {
         : null;
     }
 
+    // Same-tweet detection: when the candidate sub-event was extracted from
+    // the same raw_item as one of the main candidates, that's structural
+    // truth — the LLM emitted them as a related pair from the same payload.
+    // Treated as a strong signal that bypasses the usual hint+time scoring,
+    // which would otherwise miss multi-event tweets where the sub has its
+    // own date (e.g. a ticket lottery months before its concert).
+    const sameTweetMainIds = new Set(
+      (await this.db
+        .selectDistinct({ normalizedEventId: normalizedEventSources.normalizedEventId })
+        .from(normalizedEventSources)
+        .innerJoin(extractedEvents, eq(normalizedEventSources.extractedEventId, extractedEvents.id))
+        .where(
+          and(
+            eq(extractedEvents.rawItemId, candidate.rawItemId),
+            ne(normalizedEventSources.role, "annotation"),
+          )
+        )).map((r) => r.normalizedEventId)
+    );
+
     // Score each main candidate for hierarchy attachment
     type Scored = { main: NormalizedEventRow; score: number; reasons: string[]; hintMatched: boolean };
     const scored: Scored[] = [];
@@ -253,6 +272,12 @@ export class EventResolver {
       let score = 0;
       const reasons: string[] = [];
       let hintMatched = false;
+
+      // Same-tweet structural link
+      if (sameTweetMainIds.has(main.id)) {
+        score += 0.6;
+        reasons.push("same source tweet as main event");
+      }
 
       // Hint match: parent_event_hint vs main.title
       if (candidate.parentEventHint) {
@@ -437,6 +462,11 @@ export class EventResolver {
     annotationsDeferred: number;
     annotationsFailed: number;
   }> {
+    // Events run in two passes: main/unknown scope first, then sub. Within a
+    // single tweet that emits a main + several sub-events, the main has to
+    // land as a normalized event before the subs try to attach via
+    // parent_event_hint. Across tweets this is a no-op (the order just
+    // matches insertion); within multi-event tweets it's load-bearing.
     const events = await this.db
       .select({ id: extractedEvents.id })
       .from(extractedEvents)
@@ -445,6 +475,10 @@ export class EventResolver {
           SELECT ${eventResolutionDecisions.candidateExtractedEventId}
           FROM ${eventResolutionDecisions}
         )`
+      )
+      .orderBy(
+        sql`CASE ${extractedEvents.eventScope} WHEN 'main' THEN 0 WHEN 'unknown' THEN 1 WHEN 'sub' THEN 2 ELSE 3 END`,
+        extractedEvents.createdAt,
       )
       .limit(limit);
 
