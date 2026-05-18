@@ -1,7 +1,7 @@
 import { db as defaultDb } from "../db";
 import { rawItems } from "../db/schema";
 import type { NewRawItem, RawItem } from "./types";
-import { eq, and, desc, count, inArray } from "drizzle-orm";
+import { eq, and, desc, count, inArray, sql } from "drizzle-orm";
 
 type DbInstance = typeof defaultDb;
 
@@ -61,7 +61,17 @@ export class RawStorage {
     return result.length > 0;
   }
 
-  /** Get unprocessed items, optionally filtered by source, ordered by fetchedAt descending. */
+  /**
+   * Get unprocessed items, optionally filtered by source. Ordered oldest →
+   * newest by the source post time (falling back to fetchedAt when the
+   * connector didn't surface a posted_at).
+   *
+   * Chronological order matters because the resolver treats the first-seen
+   * row as canonical for an event: the original announcement should become
+   * the primary normalized row, with later mentions merging in as additional
+   * sources rather than overwriting it. Annotations and reminder reposts
+   * naturally land after their parent events too.
+   */
   async getUnprocessed(sourceName?: string, limit: number = 100): Promise<RawItem[]> {
     const conditions = [eq(rawItems.status, "new")];
     if (sourceName) {
@@ -71,7 +81,7 @@ export class RawStorage {
     return this.db.select()
       .from(rawItems)
       .where(and(...conditions))
-      .orderBy(desc(rawItems.fetchedAt))
+      .orderBy(sql`COALESCE(${rawItems.postedAt}, ${rawItems.fetchedAt}) ASC`)
       .limit(limit);
   }
 

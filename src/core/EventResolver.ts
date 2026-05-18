@@ -478,7 +478,10 @@ export class EventResolver {
       )
       .orderBy(
         sql`CASE ${extractedEvents.eventScope} WHEN 'main' THEN 0 WHEN 'unknown' THEN 1 WHEN 'sub' THEN 2 ELSE 3 END`,
-        extractedEvents.createdAt,
+        // Within each scope tier, process by source post time ascending so
+        // the first-announced version of an event becomes the canonical
+        // normalized row; later mentions merge in as additional sources.
+        extractedEvents.publishTime,
       )
       .limit(limit);
 
