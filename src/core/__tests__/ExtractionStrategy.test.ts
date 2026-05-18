@@ -129,33 +129,45 @@ test("Twitter buildContext parses created_at into a Date", () => {
 
 // ---- sanitize() ----
 
+// Most sanitize tests exercise per-event behavior, so they pass a single-event
+// array. Multi-event behavior gets its own tests further below.
+type SingleEventInput = Omit<Parameters<typeof twitter.sanitize>[2]["events"][number], "related_links" | "tags"> & {
+  related_links?: { url: string; title?: string }[];
+  tags?: string[];
+};
+
+function singleEvent(input: SingleEventInput): Parameters<typeof twitter.sanitize>[2] {
+  return {
+    kind: "event",
+    events: [{
+      related_links: [],
+      tags: [],
+      ...input,
+    }],
+  };
+}
+
 test("sanitize trims whitespace from title and description", () => {
   const ctx = twitter.buildContext(fakeTwitterRawItem())!;
-  const result = twitter.sanitize(fakeTwitterRawItem(), ctx, {
-    kind: "event",
+  const result = twitter.sanitize(fakeTwitterRawItem(), ctx, singleEvent({
     title: "  Concert  ",
     description: "  A live show  ",
     type: "concert",
     event_scope: "main",
-    related_links: [],
-    tags: [],
-  });
-  assert.equal(result.title, "Concert");
-  assert.equal(result.description, "A live show");
+  }));
+  assert.equal(result.events[0]!.title, "Concert");
+  assert.equal(result.events[0]!.description, "A live show");
 });
 
 test("sanitize throws on empty title", () => {
   const ctx = twitter.buildContext(fakeTwitterRawItem())!;
   assert.throws(() =>
-    twitter.sanitize(fakeTwitterRawItem(), ctx, {
-      kind: "event",
+    twitter.sanitize(fakeTwitterRawItem(), ctx, singleEvent({
       title: "   ",
       description: "ok",
       type: "concert",
       event_scope: "main",
-      related_links: [],
-      tags: [],
-    })
+    }))
   );
 });
 
@@ -165,97 +177,80 @@ test("sanitize merges related_links from LLM with link candidates from context",
   });
   const ctx = twitter.buildContext(item)!;
 
-  const result = twitter.sanitize(item, ctx, {
-    kind: "event",
+  const result = twitter.sanitize(item, ctx, singleEvent({
     title: "X",
     description: "Y",
     type: "concert",
     event_scope: "main",
     related_links: [{ url: "https://example.com/from-llm" }],
-    tags: [],
-  });
+  }));
 
-  const urls = new Set(result.related_links.map((l) => l.url));
+  const urls = new Set(result.events[0]!.related_links.map((l) => l.url));
   assert.ok(urls.has("https://example.com/from-llm"));
   assert.ok(urls.has("https://example.com/from-context"));
 });
 
 test("sanitize drops parent_event_hint when event_scope is not 'sub'", () => {
   const ctx = twitter.buildContext(fakeTwitterRawItem())!;
-  const result = twitter.sanitize(fakeTwitterRawItem(), ctx, {
-    kind: "event",
+  const result = twitter.sanitize(fakeTwitterRawItem(), ctx, singleEvent({
     title: "X",
     description: "Y",
     type: "concert",
     event_scope: "main",
     parent_event_hint: "Some Tour",
-    related_links: [],
-    tags: [],
-  });
-  assert.equal(result.parent_event_hint, undefined);
+  }));
+  assert.equal(result.events[0]!.parent_event_hint, undefined);
 });
 
 test("sanitize keeps parent_event_hint when event_scope is 'sub'", () => {
   const ctx = twitter.buildContext(fakeTwitterRawItem())!;
-  const result = twitter.sanitize(fakeTwitterRawItem(), ctx, {
-    kind: "event",
+  const result = twitter.sanitize(fakeTwitterRawItem(), ctx, singleEvent({
     title: "Pre-show",
     description: "Booth",
     type: "side_event",
     event_scope: "sub",
     parent_event_hint: "Some Tour",
-    related_links: [],
-    tags: [],
-  });
-  assert.equal(result.parent_event_hint, "Some Tour");
+  }));
+  assert.equal(result.events[0]!.parent_event_hint, "Some Tour");
 });
 
 test("sanitize parses ISO start_time and round-trips through Date", () => {
   const ctx = twitter.buildContext(fakeTwitterRawItem())!;
-  const result = twitter.sanitize(fakeTwitterRawItem(), ctx, {
-    kind: "event",
+  const result = twitter.sanitize(fakeTwitterRawItem(), ctx, singleEvent({
     title: "X",
     description: "Y",
     type: "concert",
     event_scope: "main",
     start_time: "2025-06-01T12:00:00Z",
-    related_links: [],
-    tags: [],
-  });
-  assert.equal(result.start_time, "2025-06-01T12:00:00.000Z");
+  }));
+  assert.equal(result.events[0]!.start_time, "2025-06-01T12:00:00.000Z");
 });
 
 test("sanitize throws on unparseable start_time", () => {
   const ctx = twitter.buildContext(fakeTwitterRawItem())!;
   assert.throws(() =>
-    twitter.sanitize(fakeTwitterRawItem(), ctx, {
-      kind: "event",
+    twitter.sanitize(fakeTwitterRawItem(), ctx, singleEvent({
       title: "X",
       description: "Y",
       type: "concert",
       event_scope: "main",
       start_time: "yesterday",
-      related_links: [],
-      tags: [],
-    })
+    }))
   );
 });
 
 test("sanitize applies fallbackTimezone when start_time has no offset", () => {
   const ctx = twitter.buildContext(fakeTwitterRawItem())!;
   ctx.fallbackTimezone = "Asia/Tokyo";
-  const result = twitter.sanitize(fakeTwitterRawItem(), ctx, {
-    kind: "event",
+  const result = twitter.sanitize(fakeTwitterRawItem(), ctx, singleEvent({
     title: "X",
     description: "Y",
     type: "concert",
     event_scope: "main",
     start_time: "2026-05-16T18:00:00",
-    related_links: [],
-    tags: [],
-  });
+  }));
   // 18:00 JST = 09:00 UTC
-  assert.equal(result.start_time, "2026-05-16T09:00:00.000Z");
+  assert.equal(result.events[0]!.start_time, "2026-05-16T09:00:00.000Z");
 });
 
 test("sanitize throws MissingTimezoneError when offset-less and no fallback", () => {
@@ -263,16 +258,13 @@ test("sanitize throws MissingTimezoneError when offset-less and no fallback", ()
   ctx.fallbackTimezone = null;
   assert.throws(
     () =>
-      twitter.sanitize(fakeTwitterRawItem(), ctx, {
-        kind: "event",
+      twitter.sanitize(fakeTwitterRawItem(), ctx, singleEvent({
         title: "X",
         description: "Y",
         type: "concert",
         event_scope: "main",
         start_time: "2026-05-16T18:00:00",
-        related_links: [],
-        tags: [],
-      }),
+      })),
     /MissingTimezoneError|no fallback timezone/i
   );
 });
@@ -287,8 +279,7 @@ test("sanitize throws when start_time is more than 7 days before publishTime", (
   const ctx = twitter.buildContext(item)!;
   assert.throws(
     () =>
-      twitter.sanitize(item, ctx, {
-        kind: "event",
+      twitter.sanitize(item, ctx, singleEvent({
         title: "X",
         description: "Y",
         type: "live_stream",
@@ -296,9 +287,7 @@ test("sanitize throws when start_time is more than 7 days before publishTime", (
         // Wrong-year inference: source says "5/16(土)" (Saturday in 2026), LLM
         // resolved to 2024-05-16 (a Thursday — also wrong day of week).
         start_time: "2024-05-16T19:00:00+09:00",
-        related_links: [],
-        tags: [],
-      }),
+      })),
     /precedes source publish time/
   );
 });
@@ -307,33 +296,76 @@ test("sanitize allows start_time within the 7-day grace window before publishTim
   const item = fakeTwitterRawItem({ created_at: "Sat May 16 09:00:00 +0000 2026" });
   const ctx = twitter.buildContext(item)!;
   // 6 days before publishTime — within the grace window, accepted.
-  const result = twitter.sanitize(item, ctx, {
-    kind: "event",
+  const result = twitter.sanitize(item, ctx, singleEvent({
     title: "Recap post",
     description: "Posted a few days after the event",
     type: "concert",
     event_scope: "main",
     start_time: "2026-05-10T19:00:00+09:00",
-    related_links: [],
-    tags: [],
-  });
-  assert.equal(result.start_time, "2026-05-10T10:00:00.000Z");
+  }));
+  assert.equal(result.events[0]!.start_time, "2026-05-10T10:00:00.000Z");
 });
 
 test("sanitize allows start_time after publishTime (the normal future-event case)", () => {
   const item = fakeTwitterRawItem({ created_at: "Sun May 17 09:00:00 +0000 2026" });
   const ctx = twitter.buildContext(item)!;
-  const result = twitter.sanitize(item, ctx, {
-    kind: "event",
+  const result = twitter.sanitize(item, ctx, singleEvent({
     title: "KAMITSUBAKI FES",
     description: "Future concert",
     type: "concert",
     event_scope: "main",
     start_time: "2026-09-05T00:00:00+09:00",
-    related_links: [],
-    tags: [],
+  }));
+  assert.equal(result.events[0]!.start_time, "2026-09-04T15:00:00.000Z");
+});
+
+// ---- multi-event sanitize ----
+
+test("sanitize handles multi-event arrays and orders main before sub", () => {
+  const item = fakeTwitterRawItem({ created_at: "Sun May 17 09:00:00 +0000 2026" });
+  const ctx = twitter.buildContext(item)!;
+  // LLM emits sub first, main second; sanitize re-orders defensively.
+  const result = twitter.sanitize(item, ctx, {
+    kind: "event",
+    events: [
+      {
+        title: "1次抽選先行 DAY-1",
+        description: "Lottery round 1",
+        type: "side_event",
+        event_scope: "sub",
+        parent_event_hint: "Concert",
+        start_time: "2026-05-12T12:00:00+09:00",
+        end_time: "2026-05-24T14:59:00+09:00",
+        related_links: [],
+        tags: [],
+      },
+      {
+        title: "Concert",
+        description: "Main concert",
+        type: "concert",
+        event_scope: "main",
+        start_time: "2026-09-05T00:00:00+09:00",
+        related_links: [],
+        tags: [],
+      },
+    ],
   });
-  assert.equal(result.start_time, "2026-09-04T15:00:00.000Z");
+  assert.equal(result.events.length, 2);
+  assert.equal(result.events[0]!.event_scope, "main");
+  assert.equal(result.events[1]!.event_scope, "sub");
+  assert.equal(result.events[1]!.parent_event_hint, "Concert");
+});
+
+test("sanitize on a single-event array preserves the per-event semantics", () => {
+  const ctx = twitter.buildContext(fakeTwitterRawItem())!;
+  const result = twitter.sanitize(fakeTwitterRawItem(), ctx, singleEvent({
+    title: "Solo announcement",
+    description: "One thing",
+    type: "release",
+    event_scope: "main",
+  }));
+  assert.equal(result.events.length, 1);
+  assert.equal(result.events[0]!.title, "Solo announcement");
 });
 
 // ---- buildPrompt() ----

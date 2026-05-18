@@ -24,8 +24,7 @@ export const ANNOTATION_CATEGORIES = ["milestone", "press_coverage", "recap", "r
  */
 export const NON_EVENT_CATEGORIES = ["mood", "fan_engagement", "other"] as const;
 
-const EventBranchSchema = z.object({
-  kind: z.literal("event"),
+const SingleEventSchema = z.object({
   title: z.string().min(1).describe("A short, descriptive title for the event. Preserve proper nouns and official titles in their original written form."),
   description: z.string().min(1).describe("A detailed English summary of the announcement. Preserve proper nouns and official titles in their original written form."),
   start_time: z.string().optional().describe("ISO 8601 timestamp of when the extracted event actually starts, if explicitly available or safely inferable from the source."),
@@ -40,6 +39,11 @@ const EventBranchSchema = z.object({
   event_scope: z.enum(EVENT_SCOPES).default("unknown").describe("Whether this is the main event, a sub-event related to a larger event, or unclear."),
   parent_event_hint: z.string().optional().describe("Best-effort name of the larger/main event if this is a sub-event and the source gives enough evidence."),
   tags: z.array(z.string()).default([]).describe("List of relevant tags"),
+});
+
+const EventBranchSchema = z.object({
+  kind: z.literal("event"),
+  events: z.array(SingleEventSchema).min(1).describe("One or more events extracted from the post. Most posts emit a single-element array. Multi-event posts (e.g. a concert announcement that also lists multiple ticket lottery windows) emit the main event first, followed by sub-events with event_scope='sub' and parent_event_hint set to the main event's title."),
 });
 
 const AnnotationBranchSchema = z.object({
@@ -71,6 +75,7 @@ export type EventType = typeof EVENT_TYPES[number];
 export type EventScope = typeof EVENT_SCOPES[number];
 export type AnnotationCategory = typeof ANNOTATION_CATEGORIES[number];
 export type NonEventCategory = typeof NON_EVENT_CATEGORIES[number];
+export type SingleEventResult = z.infer<typeof SingleEventSchema>;
 export type EventExtractionResult = z.infer<typeof EventBranchSchema>;
 export type AnnotationResult = z.infer<typeof AnnotationBranchSchema>;
 export type NotAnEventResult = z.infer<typeof NotAnEventBranchSchema>;
@@ -146,6 +151,8 @@ Language rules:
 - If a title combines an English summary with an official name, keep the official name in its original written form.
 
 Event branch (kind="event"):
+- Return "events" as an array. Most posts emit a single-element array — one announcement, one event. Some posts bundle a main event with several time-bounded sub-events (e.g. a concert announcement that also lists multiple ticket lottery windows, an album release with separate pre-order and ship dates, a tour with separate dates per city). When the source clearly describes more than one activity, emit one array element per activity.
+- For multi-event posts, emit the main event first (event_scope="main"), then each sub-event (event_scope="sub", parent_event_hint set to the main event's title exactly as you wrote it). Do NOT split a single activity into multiple events just because the post is long.
 - Extract the specific activity described by the source post. A post may announce a main event, or it may announce a sub-event such as a merch sale, ticket lottery, meet-and-greet, pre-show, after-show, campaign, booth, or stream related to a larger main event.
 - start_time should be an ISO 8601 timestamp for when the extracted activity happens, if the source gives an explicit time or enough context to infer it safely.
 - start_time and end_time MUST include a timezone offset (e.g. "2026-05-16T18:00:00+09:00" for JST, or trailing "Z" for UTC). If the source post does not state a timezone explicitly, infer it from the language, location, or venue. Never emit a bare local time like "2026-05-16T18:00:00".
@@ -190,31 +197,48 @@ Venue rules (event branch only):
   }
 
   sanitize(_rawItem: any, _context: SourceContext, extracted: EventExtractionResult): EventExtractionResult {
-    const title = requireNonEmpty(extracted.title, "title");
-    const description = requireNonEmpty(extracted.description, "description");
-    const fallbackTz = _context.fallbackTimezone ?? null;
-    const startTime = extracted.start_time ? parseDateOrThrow(extracted.start_time, "start_time", fallbackTz) : undefined;
-    const endTime = extracted.end_time ? parseDateOrThrow(extracted.end_time, "end_time", fallbackTz) : undefined;
-    if (startTime) {
-      assertStartTimeNotStale(startTime, _context.publishTime);
-    }
-    const eventScope = EVENT_SCOPES.includes(extracted.event_scope) ? extracted.event_scope : "unknown";
+    // Defensive ordering: main events first so the resolver (which also
+    // processes mains before subs across the batch) sees a consistent
+    // intra-tweet order. The prompt already asks for this order; this is a
+    // backstop for LLM drift.
+    const sanitizedEvents = extracted.events
+      .map((event) => sanitizeSingleEvent(_context, event))
+      .sort((a, b) => scopeRank(a.event_scope) - scopeRank(b.event_scope));
 
-    return {
-      kind: "event",
-      title,
-      description,
-      start_time: startTime?.toISOString(),
-      end_time: endTime?.toISOString(),
-      venue_name: extracted.venue_name?.trim() || undefined,
-      venue_url: extracted.venue_url?.trim() || undefined,
-      related_links: mergeRelatedLinks(extracted.related_links, _context.relatedLinkCandidates),
-      type: extracted.type,
-      event_scope: eventScope,
-      parent_event_hint: eventScope === "sub" ? extracted.parent_event_hint?.trim() || undefined : undefined,
-      tags: Array.isArray(extracted.tags) ? extracted.tags.map((tag) => tag.trim()).filter(Boolean) : [],
-    };
+    return { kind: "event", events: sanitizedEvents };
   }
+}
+
+function sanitizeSingleEvent(context: SourceContext, event: SingleEventResult): SingleEventResult {
+  const title = requireNonEmpty(event.title, "title");
+  const description = requireNonEmpty(event.description, "description");
+  const fallbackTz = context.fallbackTimezone ?? null;
+  const startTime = event.start_time ? parseDateOrThrow(event.start_time, "start_time", fallbackTz) : undefined;
+  const endTime = event.end_time ? parseDateOrThrow(event.end_time, "end_time", fallbackTz) : undefined;
+  if (startTime) {
+    assertStartTimeNotStale(startTime, context.publishTime);
+  }
+  const eventScope = EVENT_SCOPES.includes(event.event_scope) ? event.event_scope : "unknown";
+
+  return {
+    title,
+    description,
+    start_time: startTime?.toISOString(),
+    end_time: endTime?.toISOString(),
+    venue_name: event.venue_name?.trim() || undefined,
+    venue_url: event.venue_url?.trim() || undefined,
+    related_links: mergeRelatedLinks(event.related_links, context.relatedLinkCandidates),
+    type: event.type,
+    event_scope: eventScope,
+    parent_event_hint: eventScope === "sub" ? event.parent_event_hint?.trim() || undefined : undefined,
+    tags: Array.isArray(event.tags) ? event.tags.map((tag) => tag.trim()).filter(Boolean) : [],
+  };
+}
+
+function scopeRank(scope: EventScope): number {
+  if (scope === "main") return 0;
+  if (scope === "unknown") return 1;
+  return 2; // "sub"
 }
 
 /**

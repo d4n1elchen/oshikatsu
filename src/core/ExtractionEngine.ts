@@ -105,10 +105,10 @@ export class ExtractionEngine {
         return true;
       }
 
-      await this.saveExtractedEvent(item, context, result);
+      await this.saveExtractedEvents(item, context, result);
 
       await this.rawStorage.markProcessed(item.id);
-      log.info(`Extracted item ${item.id}`);
+      log.info(`Extracted item ${item.id} (${result.events.length} event${result.events.length > 1 ? "s" : ""})`);
       return true;
 
     } catch (e: any) {
@@ -162,58 +162,68 @@ export class ExtractionEngine {
   }
 
   /**
-   * Save the parsed event with inline source provenance.
+   * Save the parsed events (one or more, from a single raw item) with inline
+   * source provenance. Sanitize has already ordered mains before subs.
    */
-  private async saveExtractedEvent(rawItem: any, context: SourceContext, extracted: EventExtractionResult): Promise<void> {
-    const extractedEventId = randomUUID();
+  private async saveExtractedEvents(rawItem: any, context: SourceContext, extracted: EventExtractionResult): Promise<void> {
     const artistId = await this.getArtistIdForRawItem(rawItem);
-    const startTime = extracted.start_time ? parsePersistedDate(extracted.start_time, "start_time") : null;
-    const endTime = extracted.end_time ? parsePersistedDate(extracted.end_time, "end_time") : null;
-    const venueResolution = await this.venueResolver.resolve({
-      venueName: extracted.venue_name,
-      venueUrl: extracted.venue_url,
-    });
+
+    // Resolve venues outside the transaction (sync drizzle transaction blocks
+    // can't await). One pass per emitted event; same venue_name shows up
+    // resolved to the same venues row by the alias lookup.
+    const prepared = await Promise.all(extracted.events.map(async (event) => {
+      const venueResolution = await this.venueResolver.resolve({
+        venueName: event.venue_name,
+        venueUrl: event.venue_url,
+      });
+      return { event, venueResolution, id: randomUUID() };
+    }));
 
     this.db.transaction((tx) => {
-      tx.insert(extractedEvents).values({
-        id: extractedEventId,
-        rawItemId: rawItem.id,
-        artistId,
-        title: extracted.title,
-        description: extracted.description,
-        startTime,
-        endTime,
-        venueId: venueResolution?.venue.id || null,
-        venueName: extracted.venue_name || null,
-        // Fall back to the resolved venue's curated URL when the LLM didn't
-        // surface one (the common case — posts rarely include the venue URL
-        // inline). Operator edits to venues.url thus propagate to new events
-        // for that venue without re-extraction.
-        venueUrl: extracted.venue_url || venueResolution?.venue.url || null,
-        type: extracted.type,
-        recordKind: "event",
-        eventScope: extracted.event_scope,
-        parentEventHint: extracted.parent_event_hint || null,
-        isCancelled: false,
-        tags: extracted.tags,
-        // Source provenance (formerly source_references)
-        publishTime: context.publishTime,
-        author: context.author,
-        sourceUrl: context.url,
-        rawContent: context.rawContent,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }).run();
+      for (const { event, venueResolution, id: extractedEventId } of prepared) {
+        const startTime = event.start_time ? parsePersistedDate(event.start_time, "start_time") : null;
+        const endTime = event.end_time ? parsePersistedDate(event.end_time, "end_time") : null;
 
-      for (const link of extracted.related_links) {
-        tx.insert(extractedEventRelatedLinks).values({
-          id: randomUUID(),
-          extractedEventId,
+        tx.insert(extractedEvents).values({
+          id: extractedEventId,
           rawItemId: rawItem.id,
-          url: link.url,
-          title: link.title || null,
+          artistId,
+          title: event.title,
+          description: event.description,
+          startTime,
+          endTime,
+          venueId: venueResolution?.venue.id || null,
+          venueName: event.venue_name || null,
+          // Fall back to the resolved venue's curated URL when the LLM didn't
+          // surface one (the common case — posts rarely include the venue URL
+          // inline). Operator edits to venues.url thus propagate to new events
+          // for that venue without re-extraction.
+          venueUrl: event.venue_url || venueResolution?.venue.url || null,
+          type: event.type,
+          recordKind: "event",
+          eventScope: event.event_scope,
+          parentEventHint: event.parent_event_hint || null,
+          isCancelled: false,
+          tags: event.tags,
+          // Source provenance (formerly source_references)
+          publishTime: context.publishTime,
+          author: context.author,
+          sourceUrl: context.url,
+          rawContent: context.rawContent,
           createdAt: new Date(),
-        }).onConflictDoNothing().run();
+          updatedAt: new Date(),
+        }).run();
+
+        for (const link of event.related_links) {
+          tx.insert(extractedEventRelatedLinks).values({
+            id: randomUUID(),
+            extractedEventId,
+            rawItemId: rawItem.id,
+            url: link.url,
+            title: link.title || null,
+            createdAt: new Date(),
+          }).onConflictDoNothing().run();
+        }
       }
     });
   }

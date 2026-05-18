@@ -14,7 +14,7 @@ import * as schema from "../../db/schema";
 import { ExtractionEngine } from "../ExtractionEngine";
 import { RawStorage } from "../RawStorage";
 import type { LLMProvider } from "../LLMProvider";
-import type { EventExtractionResult, ExtractionOutput } from "../ExtractionStrategy";
+import type { EventExtractionResult, ExtractionOutput, SingleEventResult } from "../ExtractionStrategy";
 
 // ---- in-memory DB ----
 
@@ -134,16 +134,22 @@ function insertRawTwitterItem(db: TestDb, opts: {
   return id;
 }
 
-function defaultExtraction(overrides: Partial<EventExtractionResult> = {}): EventExtractionResult {
+function defaultExtraction(overrides: Partial<SingleEventResult> = {}): EventExtractionResult {
+  // Most existing tests pass per-event overrides (title, venue_name, etc.).
+  // Keep that ergonomics by wrapping the single event into the array shape
+  // the LLM contract now expects. Tests that need true multi-event output
+  // construct the array literal themselves.
   return {
     kind: "event",
-    title: "Tokyo Dome Concert",
-    description: "Live show tonight",
-    type: "concert",
-    event_scope: "main",
-    related_links: [],
-    tags: [],
-    ...overrides,
+    events: [{
+      title: "Tokyo Dome Concert",
+      description: "Live show tonight",
+      type: "concert",
+      event_scope: "main",
+      related_links: [],
+      tags: [],
+      ...overrides,
+    }],
   };
 }
 
