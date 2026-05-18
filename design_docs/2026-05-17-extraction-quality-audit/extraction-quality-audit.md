@@ -165,6 +165,48 @@ The "Singing My Favorite Songs # 145" row has both `https://t.co/w4D7rYl7Oe` *an
 
 **Proposal P7:** In `mergeRelatedLinks`, prefer the expanded URL when both are present (the Twitter GraphQL payload always provides both via `expanded_url` / `url`). Also: drop `t.co/...` links whose only purpose is to attach an embedded image (no event-relevant destination).
 
+### F9 — CRITICAL (post-audit): a single tweet can announce multiple events (LANDED)
+
+Not in the original 2026-05-17 audit pass; surfaced 2026-05-18 while reviewing
+the `#神椿横浜戦線2026` concert announcement. That tweet alone packages:
+
+- A main concert: Sept 5–6 at パシフィコ横浜 国立大ホール
+- 1次抽選先行 DAY-1: May 12 21:00 → May 24 23:59 (URL: `t.co/KWJld8w30e`)
+- 1次抽選先行 DAY-2: same window, separate URL
+- (Almost certainly more lottery rounds and a general sale in the rest of the
+  post we truncated.)
+
+The schema enforced 1:1 between tweets and extracted events via
+`uniqueIndex("idx_extracted_events_raw_item")`. So we extracted one row per
+tweet, with sub-event info buried in the description — invisible to the
+calendar, unactionable.
+
+**Fix (landed, [9742111](../../src/db/schema.ts), [581f54e](../../src/core/ExtractionStrategy.ts), [d546d80](../../src/core/EventResolver.ts)):**
+
+- Dropped the unique index. Multiple extracted_events can share a `raw_item_id`.
+- LLM event branch returns `{ kind: "event", events: [...] }`. Most tweets
+  still emit a single-element array; multi-event posts emit main first, subs
+  second with `parent_event_hint` set.
+- ExtractionEngine.saveExtractedEvents writes N rows in one transaction.
+- Resolver processes `event_scope='main'` before `'sub'` in processBatch, so
+  within-tweet parents land as normalized events before their subs try to
+  attach.
+- Resolver scoring adds a +0.6 "same source tweet" signal: when the sub
+  shares a raw_item_id with a main candidate's source, that's structural
+  truth (not a fuzzy match). Necessary because subs from the same tweet
+  routinely have different dates than the parent (a ticket lottery runs
+  months before its concert), so the existing hint+time scoring failed to
+  reach the auto-merge threshold on its own.
+
+Open question — should sub-events under a parent get their own iCal entries
+or appear bundled in the parent's description? Currently they get their own
+`normalized_events` rows with `parent_event_id` set; the export consumer
+treats them like any other normalized event. The "bundling" question is
+deferred to the design discussion of
+[2026-05-04-phase5-downstream-export](../2026-05-04-phase5-downstream-export/)
+(which already lists `Consumer.transform()` for parent+sub bundling as an
+explicitly out-of-scope item).
+
 ### F8 — LOW: release-type `start_time` blocked by overly-strict rule
 
 The Singing My Favorite Songs cover went live on YouTube *at the moment of the tweet*. The current rule ([ExtractionStrategy.ts:154](../../src/core/ExtractionStrategy.ts:154)) — *"Do not use the source publish time as start_time"* — was written for the scheduled-concert case where a tweet days in advance shouldn't anchor the event to itself. For a release that *is* the announcement of a just-published artifact, the publish time IS the event time.
@@ -173,6 +215,7 @@ The Singing My Favorite Songs cover went live on YouTube *at the moment of the t
 
 ## Recommended landing order
 
+0. ✅ **F9 (multi-event tweets)** — landed [9742111](../../src/db/schema.ts), [581f54e](../../src/core/ExtractionStrategy.ts), [d546d80](../../src/core/EventResolver.ts). Schema drops the 1:1 unique index; LLM emits an array of events; resolver processes mains first and credits same-tweet structural links.
 1. ✅ **P1 (date anchor)** — landed [723cbae](../../src/core/ExtractionStrategy.ts). Single prompt addition + sanitizer guard.
 2. **P2 (worked examples)** — measure against P1 first; only land if P1 alone doesn't lift concert/release `start_time` rates.
 3. **P4 (venue alias lookup)** — wires up existing tables, no model changes. High-impact on UI usability.
