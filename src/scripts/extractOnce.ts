@@ -10,10 +10,12 @@ const log = tagged("extract:once");
 
 function parseArgs(argv: string[]): { limit: number; retryErrors: boolean } {
   const limitArg = argv.find((arg) => arg.startsWith("--limit="));
-  const limit = limitArg ? Number(limitArg.split("=")[1]) : 5;
+  const parsed = limitArg ? Number(limitArg.split("=")[1]) : NaN;
 
   return {
-    limit: Number.isFinite(limit) && limit > 0 ? limit : 5,
+    // Default to "process all pending" — one-shot script is usually run to
+    // drain the queue. Pass --limit=N to cap for partial runs.
+    limit: Number.isFinite(parsed) && parsed > 0 ? parsed : Number.MAX_SAFE_INTEGER,
     retryErrors: argv.includes("--retry-errors"),
   };
 }
