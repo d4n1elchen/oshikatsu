@@ -138,7 +138,7 @@ function insertArtist(db: TestDb, id = "artist-1") {
   return id;
 }
 
-function insertNormalizedEvent(db: TestDb, opts: { artistId?: string; title: string; id?: string }) {
+function insertNormalizedEvent(db: TestDb, opts: { artistId?: string; title: string; id?: string; seriesName?: string; startTime?: Date }) {
   const id = opts.id ?? randomUUID();
   db.insert(schema.normalizedEvents).values({
     id,
@@ -146,12 +146,13 @@ function insertNormalizedEvent(db: TestDb, opts: { artistId?: string; title: str
     artistId: opts.artistId ?? null,
     title: opts.title,
     description: "",
-    startTime: NOW,
+    startTime: opts.startTime ?? NOW,
     endTime: null,
     venueId: null,
     venueName: null,
     venueUrl: null,
     type: "concert",
+    seriesName: opts.seriesName ?? null,
     isCancelled: false,
     tags: [],
     operatorOwned: false,
@@ -426,4 +427,96 @@ test("dispatches by record_kind: events run through event resolution, annotation
     .all();
   assert.equal(annDec.length, 1);
   assert.equal(annDec[0]!.decision, "annotation_attached");
+});
+
+// ---- Series-name fallback ----
+//
+// Per the 2026-05-17 audit, F3: 5 of 11 annotations failed because their
+// parent_event_hint pointed at a series umbrella ("GW特別投稿") that has
+// no event row of its own. P3a added series_name to extracted/normalized
+// events; this fallback path attaches such annotations to the most recent
+// episode in the matching series.
+
+test("series fallback: hint matches series_name when no title matches", async () => {
+  const db = createTestDb();
+  insertArtist(db);
+
+  // Three episodes of "GW特別投稿" — none of them title-matches the hint
+  // "GW特別投稿ラスト", but all carry series_name="GW特別投稿".
+  insertNormalizedEvent(db, {
+    artistId: "artist-1",
+    title: "「私論理」━「宿声 / 深愛」Live Ver.━",
+    seriesName: "GW特別投稿",
+    startTime: new Date("2026-05-01T03:00:00Z"),
+  });
+  insertNormalizedEvent(db, {
+    artistId: "artist-1",
+    title: "「景色」 Live Ver. Limited-Time Release",
+    seriesName: "GW特別投稿",
+    startTime: new Date("2026-05-03T03:00:00Z"),
+  });
+  const lastEpisode = insertNormalizedEvent(db, {
+    artistId: "artist-1",
+    title: "「それを世界と言うんだね」Live Ver.",
+    seriesName: "GW特別投稿",
+    startTime: new Date("2026-05-07T03:00:00Z"),
+  });
+
+  insertAnnotation(db, { artistId: "artist-1", parentHint: "GW特別投稿" });
+
+  const resolver = new EventResolver(db as any);
+  const result = await resolver.processBatch(10);
+
+  assert.equal(result.annotationsAttached, 1);
+  assert.equal(result.annotationsNoMatch, 0);
+
+  // Attached to the LATEST episode (May 7), not the earlier ones.
+  const sources = getSources(db);
+  assert.equal(sources.length, 1);
+  assert.equal(sources[0]!.normalizedEventId, lastEpisode);
+
+  const decisions = getDecisions(db);
+  assert.equal(decisions[0]!.decision, "annotation_attached");
+  assert.ok(
+    decisions[0]!.reason.includes("series"),
+    `reason should mention series fallback, got: ${decisions[0]!.reason}`,
+  );
+});
+
+test("series fallback: title match still takes precedence over series_name", async () => {
+  const db = createTestDb();
+  insertArtist(db);
+
+  // Both a perfect title match AND a series-name match exist. Title wins.
+  const titleMatch = insertNormalizedEvent(db, {
+    artistId: "artist-1",
+    title: "Spring Tour Final Show",
+    seriesName: undefined,
+  });
+  insertNormalizedEvent(db, {
+    artistId: "artist-1",
+    title: "「景色」 Live Ver.",
+    seriesName: "Spring Tour Final Show",
+  });
+  insertAnnotation(db, { artistId: "artist-1", parentHint: "Spring Tour Final Show" });
+
+  const resolver = new EventResolver(db as any);
+  await resolver.processBatch(10);
+
+  const sources = getSources(db);
+  assert.equal(sources.length, 1);
+  assert.equal(sources[0]!.normalizedEventId, titleMatch);
+});
+
+test("series fallback: no series_name candidates → still annotation_no_match", async () => {
+  const db = createTestDb();
+  insertArtist(db);
+  insertNormalizedEvent(db, { artistId: "artist-1", title: "Summer Concert" });
+  insertAnnotation(db, { artistId: "artist-1", parentHint: "Some Unrelated Umbrella" });
+
+  const resolver = new EventResolver(db as any);
+  const result = await resolver.processBatch(10);
+
+  assert.equal(result.annotationsAttached, 0);
+  assert.equal(result.annotationsNoMatch, 1);
 });

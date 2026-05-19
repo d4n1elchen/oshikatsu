@@ -407,6 +407,42 @@ export class EventResolver {
     }
 
     if (match.kind === "no_match") {
+      // Series fallback: the hint may name a series umbrella ("GW特別投稿",
+      // "コラボ企画「#組曲2」") that has no event of its own — every episode
+      // is its own normalized event. Match the hint against series_name
+      // instead and attach to the most-recently-announced episode.
+      const seriesMatch = await this.resolveAnnotationViaSeriesName(candidate);
+      if (seriesMatch) {
+        const seriesSignals = {
+          parent_event_hint: candidate.parentEventHint,
+          matched_via: "series_name",
+          series_name: seriesMatch.seriesName,
+          candidates: match.topCandidates.map((c) => ({ id: c.id, title: c.title, score: c.score })),
+        };
+        const now = new Date();
+        await this.db.transaction((tx) => {
+          tx.insert(normalizedEventSources).values({
+            id: randomUUID(),
+            normalizedEventId: seriesMatch.id,
+            extractedEventId: candidate.id,
+            role: "annotation",
+            createdAt: now,
+          }).run();
+          tx.insert(eventResolutionDecisions).values({
+            id: randomUUID(),
+            candidateExtractedEventId: candidate.id,
+            matchedNormalizedEventId: seriesMatch.id,
+            decision: "annotation_attached",
+            score: seriesMatch.score,
+            signals: seriesSignals,
+            reason: `Hint "${candidate.parentEventHint}" matched series "${seriesMatch.seriesName}" (sim=${seriesMatch.score.toFixed(2)}); attached to most recent episode "${seriesMatch.matchedTitle}".`,
+            createdAt: now,
+          }).run();
+        });
+        log.info(`Attached annotation ${candidate.id} → normalized ${seriesMatch.id} via series "${seriesMatch.seriesName}"`);
+        return "annotation_attached";
+      }
+
       const bestScore = match.topCandidates[0]?.score ?? 0;
       const bestTitle = match.topCandidates[0]?.title ?? "(none)";
       await this.db.insert(eventResolutionDecisions).values({
@@ -446,6 +482,68 @@ export class EventResolver {
     });
     log.info(`Attached annotation ${candidate.id} → normalized ${match.id} (sim=${match.score.toFixed(2)})`);
     return "annotation_attached";
+  }
+
+  /**
+   * Series-name fallback for annotation matching. Used when title-match
+   * fails to surface a parent for hints like "GW特別投稿" — umbrellas
+   * that name a recurring series without any single event of their own.
+   *
+   * Strategy: among same-artist normalized events whose series_name matches
+   * the hint (titleSimilarity ≥ threshold; asymmetric containment lets a
+   * stripped series_name like "GW特別投稿" match a more detailed hint),
+   * attach to the most recently announced episode (by primary source's
+   * publish_time desc, falling back to start_time).
+   */
+  private async resolveAnnotationViaSeriesName(
+    candidate: ExtractedEventRow,
+  ): Promise<{ id: string; seriesName: string; matchedTitle: string; score: number } | null> {
+    if (!candidate.artistId || !candidate.parentEventHint) return null;
+
+    const seriesEvents = await this.db
+      .select({
+        id: normalizedEvents.id,
+        title: normalizedEvents.title,
+        seriesName: normalizedEvents.seriesName,
+        startTime: normalizedEvents.startTime,
+        createdAt: normalizedEvents.createdAt,
+      })
+      .from(normalizedEvents)
+      .where(
+        and(
+          eq(normalizedEvents.artistId, candidate.artistId),
+          sql`${normalizedEvents.seriesName} IS NOT NULL`,
+        )
+      );
+
+    if (seriesEvents.length === 0) return null;
+
+    const matching = seriesEvents
+      .map((e) => ({
+        ...e,
+        score: titleSimilarity(candidate.parentEventHint!, e.seriesName!),
+      }))
+      .filter((e) => e.score >= this.thresholds.titleSimilarityThreshold);
+
+    if (matching.length === 0) return null;
+
+    // Pick the most recent episode (latest start_time, then createdAt as
+    // fallback for series episodes that lack a concrete start_time). A
+    // "ラスト" / final annotation will attach to the latest episode, which
+    // is the natural anchor for series-level commentary.
+    matching.sort((a, b) => {
+      const aTime = (a.startTime ?? a.createdAt).getTime();
+      const bTime = (b.startTime ?? b.createdAt).getTime();
+      return bTime - aTime;
+    });
+
+    const best = matching[0]!;
+    return {
+      id: best.id,
+      seriesName: best.seriesName!,
+      matchedTitle: best.title,
+      score: best.score,
+    };
   }
 
   /**
