@@ -143,6 +143,9 @@ export class RawStorage {
         status: "new",
         errorMessage: null,
         errorClass: null,
+        // Clear any prior not_an_event_category so a requeued orphan that
+        // re-extracts as a real event doesn't carry a stale category label.
+        notAnEventCategory: null,
       })
       .where(eq(rawItems.id, itemId));
   }

@@ -273,7 +273,7 @@ async function resetExtractedEvents(dryRun: boolean): Promise<void> {
     tx.delete(normalizedEvents).run();
     tx.delete(extractedEvents).run();
     tx.update(rawItems)
-      .set({ status: "new", errorMessage: null, errorClass: null })
+      .set({ status: "new", errorMessage: null, errorClass: null, notAnEventCategory: null })
       .where(ne(rawItems.status, "new"))
       .run();
   });
