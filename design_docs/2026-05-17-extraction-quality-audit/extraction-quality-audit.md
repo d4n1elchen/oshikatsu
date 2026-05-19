@@ -73,7 +73,7 @@ Of 11 annotations, 9 land in `event_resolution_decisions.decision = 'annotation_
 
 Three distinct problems, three proposals:
 
-#### P3a — Series membership via `series_name`, not parent hierarchy
+#### P3a — Series membership via `series_name`, not parent hierarchy (LANDED)
 
 GW特別投稿 (7-episode Golden Week run), Singing My Favorite Songs (#1–#145+), コラボ企画「#組曲2」 (multi-installment collab), 未確認少女観測部 (membership stream vol.N) — all share the shape *"N siblings that belong together, sometimes with an announcement post, sometimes recurring open-endedly."*
 
@@ -90,7 +90,9 @@ Prompt changes:
 
 Cold-start consequence accepted explicitly: a campaign joined mid-flight will be shown as "GW特別投稿 · episodes 3–7 seen", missing 1–2 and any end-date from the announcement. This is the same gap any fan calendar has when joining a fandom mid-campaign, and it doesn't compound — each new episode arrives complete in itself.
 
-#### P3b — Annotation matching falls back to `series_name`
+**Shipped** ([5f0f9b3](../../src/db/schema.ts), [e5766ff](../../src/core/ExtractionStrategy.ts)): migration 0029 adds `series_name` to both tables (plus an `(artist_id, series_name)` index for the fallback lookup); the LLM contract has an optional `series_name` field; the prompt has worked examples for the four observed series patterns; ExtractionEngine and EventResolver propagate the value through extraction and merge.
+
+#### P3b — Annotation matching falls back to `series_name` (LANDED)
 
 Once `series_name` exists, annotations whose `parent_event_hint` references a series umbrella can match. New resolver order:
 
@@ -99,6 +101,8 @@ Once `series_name` exists, annotations whose `parent_event_hint` references a se
 3. If still no match: `annotation_no_match`, as today.
 
 Concrete: "GW特別投稿ラスト" (publish 2026-05-07) → no title match → series_name match on "GW特別投稿" → attach to 7本目 (final episode, posted same day).
+
+**Shipped** ([0fed1d6](../../src/core/EventResolver.ts)): `resolveAnnotation` adds a fallback path after title-match no_match — `resolveAnnotationViaSeriesName` queries same-artist normalized events with non-null `series_name`, filters by `titleSimilarity(hint, series_name) ≥ threshold` (asymmetric containment lets a stripped series name match a more detailed hint), sorts by `COALESCE(start_time, created_at) DESC`, and attaches to the top one. Decision row records `signals.matched_via='series_name'` for audit transparency.
 
 #### P3c — Cross-artist hints should not enter the annotation queue
 
@@ -124,13 +128,15 @@ While auditing P3d, the two passes turned out to be doing the same thing with di
 
 `AnnotationReconciler` is now folded into `EventResolver`, with `findParentByHint` ([titleSimilarity.ts](../../src/core/titleSimilarity.ts)) as the shared matcher used by both annotation attachment and sub-event hierarchy. The daemon's Resolution task is a single `processBatch` call. This isn't a "fix" per the original audit, but it eliminated the duplication that made my P3d framing wrong in the first place.
 
-### F4 — HIGH: `venue_url` set on 4% of events
+### F4 — HIGH: `venue_url` set on 4% of events (INFRASTRUCTURE LANDED, NEEDS CURATION)
 
-`venue_name` is captured 27% of the time; `venue_url` only 4%. The two events that *do* have URLs both used `t.co/...` shortlinks (the post's embedded URL) — there's no enrichment step that resolves "パシフィコ横浜 国立大ホール" → `https://www.pacifico.co.jp/`.
+Original framing was again partially wrong: `VenueResolver` already auto-creates `discovered` venues from extracted names and matches future events back via aliases. The real gap was threefold:
 
-The `venues` table and `venueAliases` table exist for exactly this. Looking at the schema, the resolver/sanitizer doesn't appear to consult `venue_aliases` to upgrade a freshly-extracted `venue_name` into a known venue with a known URL.
+1. **`extracted_events.venue_url` only inherited the LLM-emitted URL** — never the resolved venue's URL — so even after curating `venues.url` manually, future events for that venue wouldn't pick it up. Fixed in [71c86dd](../../src/core/ExtractionEngine.ts): now falls back to `venueResolution.venue.url` when the LLM didn't supply one.
+2. **No operator surface to set URLs on discovered venues.** Added in [691ad4b](../../src/web/api/admin.ts) (REST endpoints), [efde0f6](../../src/web/client/AdminApp.tsx) (web admin panel — discovered first, sorted by mention count), and [0e94ed9](../../src/tui/views/Venues.tsx) (TUI `[6] Venues` view with single-keypress verify/ignore + inline URL edit).
+3. **The LLM was too conservative on stream URLs.** Live-stream posts containing explicit YouTube / bilibili links were leaving `venue_url` empty (0/8 in the re-extract). Fixed in [b6d1b74](../../src/core/ExtractionStrategy.ts) — the venue rule now explicitly says "if the post links to a specific stream URL, use it as `venue_url`."
 
-**Proposal P4:** In the extraction pipeline (after sanitize, before insert), look up `extracted.venue_name` against `venue_aliases.alias`. If a match exists, populate `venue_id` and inherit `venue_url` / `city` / etc. from the matched `venues` row. Net-new venues (no alias match) stay as free-text `venue_name`, status `discovered`, for admin review. This is what the venue tables are for — they're not being read in the extraction path right now (verify in [VenueResolver.ts](../../src/core/VenueResolver.ts)).
+Status: pipeline is right. Coverage improvement now depends on operator curation of `venues.url` for the ~10–20 venues that recur in the corpus.
 
 ### F5 — MEDIUM: tag normalization is absent
 
@@ -215,15 +221,22 @@ The Singing My Favorite Songs cover went live on YouTube *at the moment of the t
 
 ## Recommended landing order
 
-0. ✅ **F9 (multi-event tweets)** — landed [9742111](../../src/db/schema.ts), [581f54e](../../src/core/ExtractionStrategy.ts), [d546d80](../../src/core/EventResolver.ts). Schema drops the 1:1 unique index; LLM emits an array of events; resolver processes mains first and credits same-tweet structural links.
+0. ✅ **F9 (multi-event tweets)** — landed [9742111](../../src/db/schema.ts), [581f54e](../../src/core/ExtractionStrategy.ts), [d546d80](../../src/core/EventResolver.ts). Schema drops the 1:1 unique index; LLM emits an array of events; resolver processes mains first and credits same-tweet structural links. **Follow-up scope-guard** in [a118461](../../src/core/EventResolver.ts) prevents subs from spuriously merging with their own parent via same-source-URL signals.
 1. ✅ **P1 (date anchor)** — landed [723cbae](../../src/core/ExtractionStrategy.ts). Single prompt addition + sanitizer guard.
-2. **P2 (worked examples)** — measure against P1 first; only land if P1 alone doesn't lift concert/release `start_time` rates.
-3. **P4 (venue alias lookup)** — wires up existing tables, no model changes. High-impact on UI usability.
+2. ✅ **P2 + P8 (worked examples + release publish-time carve-out)** — landed [a2d532f](../../src/core/ExtractionStrategy.ts). Release start_time coverage jumped 18% → 88%; concert 30% → 100%.
+3. ✅ **P4 (venue inheritance + curation UI)** — landed [71c86dd](../../src/core/ExtractionEngine.ts), [691ad4b](../../src/web/api/admin.ts), [efde0f6](../../src/web/client/AdminApp.tsx), [0e94ed9](../../src/tui/views/Venues.tsx), and a live-stream prompt nudge in [b6d1b74](../../src/core/ExtractionStrategy.ts). Coverage gains now depend on operator curation.
 4. ✅ **P3d (asymmetric containment)** — landed [602e73e](../../src/core/titleSimilarity.ts) alongside the resolver merge.
-5. **P3a + P3b (series_name + series-fallback annotation match)** — schema + prompt + resolver. Biggest structural gain on annotation rate; together because P3b depends on P3a's column.
+5. ✅ **P3a + P3b (series_name + series-fallback annotation match)** — landed [5f0f9b3](../../src/db/migrations/0029_silent_nemesis.sql), [e5766ff](../../src/core/ExtractionStrategy.ts), [0fed1d6](../../src/core/EventResolver.ts). Biggest structural gain on annotation rate; impact pending the next re-extract.
 6. **P3c (cross-artist drop)** — only land if cross-artist annotations remain a meaningful slice of the no-match queue after P3a+b. Possibly never needed.
 7. **P6 (annotation_category column)** — schema hygiene; do before any downstream consumer starts reading `type` for annotations.
-8. **P5, P7, P8** — quality-of-life; bundle.
+8. **P5, P7** — quality-of-life; bundle.
+
+### Also landed (chronological)
+
+- ✅ Pipeline **chronological ordering** ([effaf63](../../src/core/RawStorage.ts)): extraction processes raw items oldest-first by `posted_at`; resolver orders extracted events by `event_scope` (main → unknown → sub) then by `publish_time` ASC. First-seen becomes canonical for an event; later mentions merge in.
+- ✅ Merge-time **field backfill** ([9f6cfa2](../../src/core/EventResolver.ts)): null canonical fields (start_time, end_time, venue_*, series_name) get filled from any merging source that has data. Populated values stay first-seen-wins. Operator-owned rows untouched.
+- ✅ **Resolver merge merged with AnnotationReconciler** ([74f8117](../../src/core/EventResolver.ts)): one `processBatch` handles both record_kinds; the workaround comment in `daemon.ts` is gone.
+- ✅ **`ticket_lottery` event type deferred** — captured in [TECH_DEBTS.md](../../TECH_DEBTS.md). Today these extract as `side_event`; new type waits on calendar UI design.
 
 ## What this audit did not cover
 
