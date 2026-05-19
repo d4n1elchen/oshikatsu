@@ -117,6 +117,15 @@ export const extractedEvents = sqliteTable("extracted_events", {
   recordKind: text("record_kind", { enum: ["event", "annotation"] }).notNull().default("event"),
   eventScope: text("event_scope", { enum: ["main", "sub", "unknown"] }).notNull().default("unknown"),
   parentEventHint: text("parent_event_hint"),
+  /**
+   * Open-ended series this event belongs to (e.g. "Singing My Favorite Songs",
+   * "GW特別投稿", "未確認少女観測部"). Free-text label, not a foreign key. Used
+   * by the annotation matcher as a fallback when parent_event_hint doesn't
+   * match any specific event title — a milestone for the series umbrella
+   * attaches to the most recent episode sharing this name. event_scope stays
+   * "main" for series episodes; the series is a grouping, not a parent event.
+   */
+  seriesName: text("series_name"),
   isCancelled: integer("is_cancelled", { mode: "boolean" }).notNull().default(false),
   tags: text("tags", { mode: "json" }).$type<string[]>().notNull(),
   // Source provenance for the single raw item this extracted event came from.
@@ -161,6 +170,13 @@ export const normalizedEvents = sqliteTable("normalized_events", {
   venueName: text("venue_name"),
   venueUrl: text("venue_url"),
   type: text("type").notNull(),
+  /**
+   * Open-ended series this event belongs to (e.g. "Singing My Favorite Songs",
+   * "GW特別投稿"). Inherited from the primary extracted_event at normalization
+   * time. Used by the annotation matcher's series-fallback path and by the
+   * web UI to group same-series events.
+   */
+  seriesName: text("series_name"),
   isCancelled: integer("is_cancelled", { mode: "boolean" }).notNull().default(false),
   tags: text("tags", { mode: "json" }).$type<string[]>().notNull(),
   /**
@@ -176,6 +192,7 @@ export const normalizedEvents = sqliteTable("normalized_events", {
   index("idx_normalized_events_artist_start_time").on(table.artistId, table.startTime),
   index("idx_normalized_events_start_time").on(table.startTime),
   index("idx_normalized_events_parent").on(table.parentEventId),
+  index("idx_normalized_events_series").on(table.artistId, table.seriesName),
 ]);
 
 export const normalizedEventSources = sqliteTable("normalized_event_sources", {

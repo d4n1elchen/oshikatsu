@@ -32,7 +32,7 @@ function createTestDb(opts: { logger?: { logQuery: () => void } } = {}) {
       start_time INTEGER, end_time INTEGER,
       venue_id TEXT, venue_name TEXT, venue_url TEXT,
       type TEXT NOT NULL, record_kind TEXT NOT NULL DEFAULT 'event', event_scope TEXT NOT NULL DEFAULT 'unknown',
-      parent_event_hint TEXT, is_cancelled INTEGER NOT NULL DEFAULT 0,
+      parent_event_hint TEXT, series_name TEXT, is_cancelled INTEGER NOT NULL DEFAULT 0,
       tags TEXT NOT NULL, publish_time INTEGER NOT NULL,
       author TEXT NOT NULL, source_url TEXT NOT NULL, raw_content TEXT NOT NULL,
       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
@@ -42,7 +42,7 @@ function createTestDb(opts: { logger?: { logQuery: () => void } } = {}) {
       title TEXT NOT NULL, description TEXT NOT NULL,
       start_time INTEGER, end_time INTEGER,
       venue_id TEXT, venue_name TEXT, venue_url TEXT,
-      type TEXT NOT NULL, is_cancelled INTEGER NOT NULL DEFAULT 0,
+      type TEXT NOT NULL, series_name TEXT, is_cancelled INTEGER NOT NULL DEFAULT 0,
       tags TEXT NOT NULL,
       operator_owned INTEGER NOT NULL DEFAULT 0, operator_edited_at INTEGER,
       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL

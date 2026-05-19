@@ -66,6 +66,7 @@ function createTestDb() {
       record_kind TEXT NOT NULL DEFAULT 'event',
       event_scope TEXT NOT NULL DEFAULT 'unknown',
       parent_event_hint TEXT,
+      series_name TEXT,
       is_cancelled INTEGER NOT NULL DEFAULT 0,
       tags TEXT NOT NULL,
       publish_time INTEGER NOT NULL, author TEXT NOT NULL,

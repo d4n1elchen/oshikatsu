@@ -203,6 +203,7 @@ export class ExtractionEngine {
           recordKind: "event",
           eventScope: event.event_scope,
           parentEventHint: event.parent_event_hint || null,
+          seriesName: event.series_name || null,
           isCancelled: false,
           tags: event.tags,
           // Source provenance (formerly source_references)

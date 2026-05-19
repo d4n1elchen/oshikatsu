@@ -903,6 +903,7 @@ export class EventResolver {
           venueName: candidate.venueName,
           venueUrl: candidate.venueUrl,
           type: candidate.type,
+          seriesName: candidate.seriesName,
           isCancelled: candidate.isCancelled,
           tags: candidate.tags,
           createdAt: new Date(),
@@ -960,6 +961,7 @@ export class EventResolver {
           venueName: candidate.venueName,
           venueUrl: candidate.venueUrl,
           type: candidate.type,
+          seriesName: candidate.seriesName,
           isCancelled: candidate.isCancelled,
           tags: candidate.tags,
           createdAt: new Date(),
@@ -1027,6 +1029,7 @@ export class EventResolver {
             venueId: normalizedEvents.venueId,
             venueName: normalizedEvents.venueName,
             venueUrl: normalizedEvents.venueUrl,
+            seriesName: normalizedEvents.seriesName,
           })
           .from(normalizedEvents)
           .where(eq(normalizedEvents.id, normalizedEventId))
@@ -1048,6 +1051,7 @@ export class EventResolver {
           if (e.venueId == null && candidate.venueId != null) patch.venueId = candidate.venueId;
           if (e.venueName == null && candidate.venueName != null) patch.venueName = candidate.venueName;
           if (e.venueUrl == null && candidate.venueUrl != null) patch.venueUrl = candidate.venueUrl;
+          if (e.seriesName == null && candidate.seriesName != null) patch.seriesName = candidate.seriesName;
 
           if (Object.keys(patch).length > 0) {
             fieldsBackfilled = true;

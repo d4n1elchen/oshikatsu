@@ -38,6 +38,7 @@ const SingleEventSchema = z.object({
   type: z.enum(EVENT_TYPES).describe("The category of the event"),
   event_scope: z.enum(EVENT_SCOPES).default("unknown").describe("Whether this is the main event, a sub-event related to a larger event, or unclear."),
   parent_event_hint: z.string().optional().describe("Best-effort name of the larger/main event if this is a sub-event and the source gives enough evidence."),
+  series_name: z.string().optional().describe("If the title contains a series marker (#N, vol.N, 第N回, 第N弾, N本目, etc.), the series name with the episode number stripped (e.g. 'Singing My Favorite Songs', 'GW特別投稿', '未確認少女観測部', 'コラボ企画「#組曲2」'). Leave unset for standalone events."),
   tags: z.array(z.string()).default([]).describe("List of relevant tags"),
 });
 
@@ -234,6 +235,7 @@ function sanitizeSingleEvent(context: SourceContext, event: SingleEventResult): 
     type: event.type,
     event_scope: eventScope,
     parent_event_hint: eventScope === "sub" ? event.parent_event_hint?.trim() || undefined : undefined,
+    series_name: event.series_name?.trim() || undefined,
     tags: Array.isArray(event.tags) ? event.tags.map((tag) => tag.trim()).filter(Boolean) : [],
   };
 }
