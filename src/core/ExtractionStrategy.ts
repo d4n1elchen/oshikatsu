@@ -157,7 +157,10 @@ Event branch (kind="event"):
 - start_time should be an ISO 8601 timestamp for when the extracted activity happens, if the source gives an explicit time or enough context to infer it safely.
 - start_time and end_time MUST include a timezone offset (e.g. "2026-05-16T18:00:00+09:00" for JST, or trailing "Z" for UTC). If the source post does not state a timezone explicitly, infer it from the language, location, or venue. Never emit a bare local time like "2026-05-16T18:00:00".
 - When the source states a date without a year (e.g. "5/16", "9.5 Sat.", "4月30日(木)"), resolve the year against the "Source posted at" timestamp above: pick the next occurrence of that month/day on or after the source post date. Never emit a start_time more than 7 days before the source post date.
-- Leave start_time unset when the source announces a real activity but does not provide the activity's own time. Do not use the source publish time as start_time.
+- When the source gives a date but no time of day (e.g. "9.5 Sat. パシフィコ横浜", "5月18日(月)開催", "9 / 5 (土)"), emit start_time at midnight in the inferred timezone (e.g. "2026-09-05T00:00:00+09:00"). Date-only is still a valid start_time; do NOT leave it unset just because the time of day is missing.
+- For multi-day events (e.g. "7/24-26にカリフォルニアのサンノゼ", "9.5 Sat. / 9.6 Sun."), set start_time to midnight of the first day and end_time to 23:59 of the last day in the inferred timezone.
+- Leave start_time unset when the source announces a real activity but does not provide the activity's own time. Do not use the source publish time as start_time for events that have their own scheduled time.
+- Exception for type="release": when the post announces a just-uploaded artifact (a YouTube video, a music platform link, a published article) and links to it, the post IS the release moment. Use the "Source posted at" timestamp as start_time. This rule does NOT apply to release-type posts that announce a *future* release ("Album drops 5/27"); those follow the usual rule and use the announced date.
 - end_time should only be set when an explicit end time is available.
 - related_links must contain only event-relevant candidate URLs and optional human-readable titles.
 - type must be one of: ${EVENT_TYPES.join(", ")}.
