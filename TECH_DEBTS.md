@@ -70,6 +70,24 @@ Follow-up:
 - Expand the strategy layer when the review queue or resolution decisions reveal a missing field or extraction rule.
 - Keep artist-, song-, concert-, and venue-specific rules out of the core engine.
 
+### Ticket lottery should be its own event type
+
+Surfaced during the F9 multi-event work (2026-05-18): concert announcements
+routinely bundle a main concert with one or more ticket lottery / general
+sale windows. These currently extract as `type='side_event'`, which works
+but loses the semantic distinction — a fan-calendar UI would benefit from
+showing "lottery closes in 2 days" with different styling than "pre-show
+booth opens." The 7-type taxonomy in `EVENT_TYPES` would grow to 8.
+
+Deferred until calendar UI design surfaces the visual need; for now,
+`side_event` is the catch-all and `parent_event_hint` carries the linkage.
+
+Follow-up:
+
+- Add `ticket_lottery` (or a broader `ticket_sale`) to `EVENT_TYPES`.
+- Update the extraction prompt with the new category + worked examples.
+- Decide whether existing `side_event` rows get backfilled or stay as-is.
+
 ### Orphan misclassifications have no auto-retry
 
 The admin Orphan posts panel lets an operator manually requeue misclassified rows (`POST /api/admin/orphans/:id/requeue` flips status back to `new`). The reset script is no longer the only path. What's still missing is any automated retry path: a row stays `not_an_event` indefinitely unless a human revisits it. Live with this until LLM-misclassification rate becomes a real signal.

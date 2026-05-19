@@ -192,10 +192,10 @@ Orphan branch (kind="not_an_event"):
 Venue rules (event branch only):
 - venue_name and venue_url describe where the event takes place.
 - For physical venues, venue_name is the venue's actual name and venue_url is the venue's official URL when available.
-- For virtual platforms:
-  - Prefer the channel or profile URL as venue_url.
-  - Put the specific stream URL into related_links instead.
-  - If only a stream URL is available and no channel URL can be inferred, you may use the stream URL as venue_url.
+- For virtual platforms (live_stream, release, broadcast on a streaming service):
+  - When the post links to a specific stream / video URL (YouTube, bilibili, Twitch, niconico, etc.), use that URL as venue_url. Set venue_name to the platform name ("YouTube", "bilibili", etc.).
+  - Prefer the channel or profile URL if the post mentions one explicitly; otherwise the stream URL is the right venue_url.
+  - When the post lists multiple platform URLs for the same event (e.g. "YouTube: … / bilibili: …" simulcast), pick the first listed as venue_url and put the others in related_links.
   - Never set venue_name to a bare platform name without an accompanying venue_url. If no URL is available, leave both venue_name and venue_url unset.`;
   }
 
