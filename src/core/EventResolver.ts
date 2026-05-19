@@ -634,10 +634,22 @@ export class EventResolver {
     if (conditions.length === 0) return [];
 
     const orConditions = conditions.length === 1 ? conditions[0]! : or(...conditions);
+
+    // Scope-mismatch guard: a sub-event candidate must only merge with other
+    // sub-events (parent_event_id IS NOT NULL); a main/unknown candidate
+    // must only merge with other mains (parent_event_id IS NULL). Without
+    // this filter, a sub from a multi-event tweet shares the parent's
+    // source URL and source raw_item, scoring high enough to merge into
+    // its own parent — losing its identity and its own dates. The sub→parent
+    // relationship is exclusively the job of tryHierarchyResolution.
+    const scopeGuard = candidate.eventScope === "sub"
+      ? sql`${normalizedEvents.parentEventId} IS NOT NULL`
+      : sql`${normalizedEvents.parentEventId} IS NULL`;
+
     return this.db
       .select()
       .from(normalizedEvents)
-      .where(orConditions!)
+      .where(and(orConditions!, scopeGuard)!)
       .limit(50);
   }
 

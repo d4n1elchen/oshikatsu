@@ -1100,6 +1100,16 @@ test("multi-event tweet: main and sub from one raw_item, sub links to main in sa
     updatedAt: NOW,
   }).run();
 
+  // Shared related links (tweet media URLs land on every extracted event
+  // from the same payload). Without the scope-guard in
+  // selectNormalizedCandidates, this used to put the just-created main
+  // into the sub's merge candidate set, where same_source_url scored +0.9
+  // and triggered a spurious "merged" decision — losing the sub's
+  // identity. With the scope-guard, the main is filtered out (sub merges
+  // only with subs); hierarchy resolution links them properly.
+  addLink(db, subId, "https://example.com/shared-media");
+  addLink(db, mainId, "https://example.com/shared-media");
+
   const resolver = new EventResolver(db as any);
   const result = await resolver.processBatch(10);
 
