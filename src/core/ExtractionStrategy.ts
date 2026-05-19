@@ -167,6 +167,7 @@ Event branch (kind="event"):
 - type must be one of: ${EVENT_TYPES.join(", ")}.
 - event_scope must be "main" for a standalone/main event, "sub" for an activity that belongs under a larger event, or "unknown" when the relationship is unclear.
 - parent_event_hint should be set only when event_scope is "sub" and the source names or clearly implies the larger/main event. Use the official title exactly as written. If the main event is not named, leave parent_event_hint unset.
+- series_name should be set when the title contains a series marker — episode/installment numbering like "#N", "vol.N", "第N回", "第N弾", "N本目" — that identifies the post as one entry in an open-ended recurring series. Extract the series name with the episode number stripped. Examples: "Singing My Favorite Songs # 145" → series_name="Singing My Favorite Songs"; "未確認少女観測部 vol.48" → series_name="未確認少女観測部"; "GW特別投稿4本目" → series_name="GW特別投稿"; "コラボ企画「#組曲2」第九弾「放課後ボーダーライン」" → series_name="コラボ企画「#組曲2」". event_scope stays "main" — the series is a grouping label, not a parent event. Leave series_name unset for standalone events.
 - tags should be short labels such as artist names, group names, platforms, product names, or campaign names.
 - Classify the underlying activity being announced, not the wording of the post. An informational post about a scheduled concert is type "concert"; a post about a merch sale is type "merchandise".
 - Do not invent a main event that is not named or clearly implied by the source. It is acceptable to extract a sub-event with parent_event_hint unset.
